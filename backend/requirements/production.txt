@@ -1,0 +1,4 @@
+-r base.txt
+
+# Faz 5+'te doldurulacak: gunicorn, sentry-sdk, uvicorn, whitenoise
+# Faz 1'de production target yok, placeholder.
