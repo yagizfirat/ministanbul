@@ -28,6 +28,7 @@ Phase-1 MVP schedule model does not cover frequency-based scheduling.
 from __future__ import annotations
 
 import json
+import re
 from datetime import timedelta
 from pathlib import Path
 from typing import Iterable
@@ -135,6 +136,36 @@ def _sanitize_coord(raw) -> tuple[float | None, str]:
 def _in_istanbul_bbox(lat: float, lon: float) -> bool:
     return (ISTANBUL_LAT_MIN <= lat <= ISTANBUL_LAT_MAX
             and ISTANBUL_LON_MIN <= lon <= ISTANBUL_LON_MAX)
+
+
+_HEX6_RE = re.compile(r"[0-9a-fA-F]{6}")
+_HEX3_RE = re.compile(r"[0-9a-fA-F]{3}")
+
+
+def _clean_hex(raw) -> str:
+    """Normalize a GTFS route_color / route_text_color cell to 6-char hex.
+
+    Public feed's routes.csv has empty color columns; with read_csv's
+    ``na_values=[""]`` those become float('nan'), then ``str(nan)`` gave
+    the literal string ``'nan'`` — which is truthy, so the old 'or ""'
+    guard never fell through to the default. Result was ``'#NAN'`` in DB
+    and invalid SVG strokes that rendered invisible polylines.
+
+    Returns "" on any unparseable value; caller picks the default.
+    """
+    if raw is None:
+        return ""
+    if isinstance(raw, float) and pd.isna(raw):
+        return ""
+    s = str(raw).strip()
+    if s.lower() in ("", "nan", "none", "null"):
+        return ""
+    if _HEX6_RE.fullmatch(s):
+        return s.upper()
+    if _HEX3_RE.fullmatch(s):
+        # Expand #abc → #aabbcc
+        return "".join(c * 2 for c in s).upper()
+    return ""
 
 
 class Command(BaseCommand):
@@ -440,8 +471,8 @@ class Command(BaseCommand):
             pk = agency_pk.get(aid, fallback_agency)
             if pk is None:
                 continue
-            color = str(getattr(r, "route_color", "") or "").strip()
-            text_color = str(getattr(r, "route_text_color", "") or "").strip()
+            color_hex = _clean_hex(getattr(r, "route_color", None))
+            text_hex = _clean_hex(getattr(r, "route_text_color", None))
             rt = getattr(r, "route_type", None)
             objs.append(Route(
                 route_id=f"{prefix}{rid_raw}",
@@ -449,8 +480,8 @@ class Command(BaseCommand):
                 short_name=str(getattr(r, "route_short_name", "") or "")[:50],
                 long_name=str(getattr(r, "route_long_name", "") or "")[:200],
                 route_type=_safe_int(rt, default=3),
-                color=f"#{color.upper()}"[:7] if color else "#000000",
-                text_color=f"#{text_color.upper()}"[:7] if text_color else "#FFFFFF",
+                color=f"#{color_hex}" if color_hex else "#000000",
+                text_color=f"#{text_hex}" if text_hex else "#FFFFFF",
             ))
         if skipped_malformed:
             self.stdout.write(self.style.WARNING(

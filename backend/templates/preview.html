@@ -81,6 +81,11 @@ async function loadAllStops() {
 const routeLines = L.layerGroup().addTo(map);
 const routesStatus = document.getElementById('routes-status');
 
+// Defense-in-depth: reject non-hex color values from the API (e.g. '#NAN'
+// from stale imports) before they reach the SVG stroke attribute.
+const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
+const safeColor = (v, fallback) => HEX_RE.test(v) ? v : fallback;
+
 async function loadSampleRoutes(limit = 30) {
   const res = await fetch(`/api/routes/?has_shape=true&page_size=${limit}`);
   if (!res.ok) { routesStatus.textContent = `hat hatası: ${res.status}`; return; }
@@ -95,23 +100,28 @@ async function loadSampleRoutes(limit = 30) {
     } catch (e) { return { ok: false }; }
   }));
 
-  let drawn = 0, skipped = 0;
+  let drawn = 0, skipped = 0, fallback = 0;
   for (const x of results) {
     if (!x.ok) { skipped++; continue; }
     const r = x.route;
+    const color = safeColor(r.color, '#ff7f0e');
+    if (color !== r.color) fallback++;
+    const textColor = safeColor(r.text_color, '#ffffff');
     const layer = L.geoJSON(x.geo, {
-      style: { color: r.color || '#ff7f0e', weight: 3, opacity: 0.8 },
+      style: { color, weight: 3, opacity: 0.8 },
     });
     layer.bindPopup(
-      `<b>${escapeHtml(r.short_name || r.route_id)}</b><br>` +
+      `<b style="color:${color}">${escapeHtml(r.short_name || r.route_id)}</b><br>` +
       `${escapeHtml(r.long_name || '')}<br>` +
       `<small>${r.route_type_label} — ${r.agency?.name || ''}</small>`
     );
     routeLines.addLayer(layer);
     drawn++;
   }
-  routesStatus.innerHTML =
-    `<b>${drawn}</b> hat çizildi` + (skipped ? ` (${skipped} başarısız)` : '');
+  let msg = `<b>${drawn}</b> hat çizildi`;
+  if (skipped) msg += ` (${skipped} başarısız)`;
+  if (fallback) msg += ` <span style="color:#c33">[${fallback} turuncu fallback — DB'de bozuk renk]</span>`;
+  routesStatus.innerHTML = msg;
 }
 
 // --- Layer control -----------------------------------------------------
