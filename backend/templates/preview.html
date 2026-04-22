@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Mini İstanbul 3D — Faz 1 veri doğrulama</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+<style>
+  html, body, #map { height: 100%; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
+  #status {
+    position: absolute; top: 10px; right: 10px; z-index: 1000;
+    background: rgba(255,255,255,.95); padding: 8px 12px; border-radius: 4px;
+    font-size: 13px; box-shadow: 0 1px 4px rgba(0,0,0,.3);
+    max-width: 300px;
+  }
+  #status .row { margin: 2px 0; }
+  #status b { color: #333; }
+  .leaflet-popup-content { font-size: 12px; line-height: 1.4; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="status">
+  <div class="row"><b>Mini İstanbul 3D — Faz 1</b></div>
+  <div class="row" id="stops-status">duraklar yükleniyor…</div>
+  <div class="row" id="routes-status">hatlar yükleniyor…</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+<script>
+const map = L.map('map').setView([41.015, 28.97], 11);
+// CartoDB Light — free raster tiles, OK for preview traffic.
+// Spec §5.2 targets OpenFreeMap, but that's vector-only; migration to
+// MapLibre GL JS in Faz 4 (spec §7.4) will pick up OpenFreeMap styles.
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  subdomains: 'abcd',
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+}).addTo(map);
+
+// --- Stops layer (clustered) -------------------------------------------
+const stopCluster = L.markerClusterGroup({
+  chunkedLoading: true,
+  showCoverageOnHover: false,
+  maxClusterRadius: 60,
+});
+const stopsStatus = document.getElementById('stops-status');
+
+async function loadAllStops() {
+  let url = '/api/stops/?page_size=5000';
+  let count = 0;
+  while (url) {
+    const res = await fetch(url);
+    if (!res.ok) { stopsStatus.textContent = `durak hatası: ${res.status}`; return; }
+    const data = await res.json();
+    for (const s of data.results) {
+      const m = L.circleMarker([s.lat, s.lon], {
+        radius: 4, color: '#1f77b4', weight: 1, fillOpacity: 0.7,
+      });
+      m.bindPopup(`<b>${escapeHtml(s.name)}</b><br>stop_id: ${s.stop_id}`);
+      stopCluster.addLayer(m);
+      count++;
+    }
+    stopsStatus.textContent = `${count.toLocaleString('tr-TR')} durak yüklendi…`;
+    url = data.next;
+  }
+  map.addLayer(stopCluster);
+  stopsStatus.innerHTML = `<b>${count.toLocaleString('tr-TR')}</b> durak yüklendi`;
+}
+
+// --- Routes layer — sample route shapes --------------------------------
+// has_shape=true skips the 9000+ İETT bus routes that have no geometry.
+const routeLines = L.layerGroup().addTo(map);
+const routesStatus = document.getElementById('routes-status');
+
+async function loadSampleRoutes(limit = 30) {
+  const res = await fetch(`/api/routes/?has_shape=true&page_size=${limit}`);
+  if (!res.ok) { routesStatus.textContent = `hat hatası: ${res.status}`; return; }
+  const data = await res.json();
+  routesStatus.textContent = `${data.results.length} hat için shape çekiliyor…`;
+
+  const results = await Promise.all(data.results.map(async r => {
+    try {
+      const shapeRes = await fetch(`/api/routes/${encodeURIComponent(r.route_id)}/shape/`);
+      if (shapeRes.status !== 200) return { ok: false };
+      return { ok: true, route: r, geo: await shapeRes.json() };
+    } catch (e) { return { ok: false }; }
+  }));
+
+  let drawn = 0, skipped = 0;
+  for (const x of results) {
+    if (!x.ok) { skipped++; continue; }
+    const r = x.route;
+    const layer = L.geoJSON(x.geo, {
+      style: { color: r.color || '#ff7f0e', weight: 3, opacity: 0.8 },
+    });
+    layer.bindPopup(
+      `<b>${escapeHtml(r.short_name || r.route_id)}</b><br>` +
+      `${escapeHtml(r.long_name || '')}<br>` +
+      `<small>${r.route_type_label} — ${r.agency?.name || ''}</small>`
+    );
+    routeLines.addLayer(layer);
+    drawn++;
+  }
+  routesStatus.innerHTML =
+    `<b>${drawn}</b> hat çizildi` + (skipped ? ` (${skipped} başarısız)` : '');
+}
+
+// --- Layer control -----------------------------------------------------
+const overlays = { 'Duraklar': stopCluster, 'Hat örnekleri (30)': routeLines };
+L.control.layers(null, overlays, { collapsed: false }).addTo(map);
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+loadAllStops();
+loadSampleRoutes(30);
+</script>
+</body>
+</html>
