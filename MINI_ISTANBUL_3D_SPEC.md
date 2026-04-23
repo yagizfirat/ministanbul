@@ -1151,14 +1151,14 @@ Yani İBB feed'leri hat renklerini hiçbir zaman publish etmiyor. Faz 4'te 3D ha
 
 Spec §4.2.1'de varsayılan endpoint davranışı WSDL discovery testiyle (2026-04-23) doğrulandı ve iki ciddi hata ortaya çıktı:
 
-**A.11.1 GetIettArsivGorev_json mevcut değil.** Endpoint `SeferGerceklesme.asmx` sadece 6 operation expose ediyor:
+**A.11.1 GetIettArsivGorev_json mevcut, ama farklı endpoint'te.** İlk varsayım metodun `SeferGerceklesme.asmx`'te olmasıydı (spec eski versiyonlarında böyle yazıldığı için). 2026-04-23 ampirik testi: `SeferGerceklesme.asmx`'e yapılan SOAP çağrısı HTTP 500 "Policy Falsified / Service Not Found" döndü — metot o endpoint'te yok. WSDL taraması doğruladı: `SeferGerceklesme.asmx` sadece 6 operation expose ediyor:
 
 - `GetBozukSatih_XML` / `GetBozukSatih_json`
 - `GetFiloAracKonum_json`
-- `GetHatOtoKonum_json` (yeni keşif, bkz. A.11.3)
+- `GetHatOtoKonum_json`
 - `GetKazaLokasyon_XML` / `GetKazaLokasyon_json`
 
-WSDL schema'sında 34+ method tipi tanımlı ama gateway'de restricted. "Arsiv", "Gorev" stringleri hiçbir operation/type adında geçmiyor. Spec'in bu metoda dayandırdığı "günlük kapı no → hat kodu eşlemesi" varsayımı ERRATUM statüsünde — Faz 2 mimarisi alternatif kaynak gerektirir (bkz. Ek A.12 sonrası ampirik test sonucuna göre kesinleşecek).
+"ArsivGorev" bu listede yok. Çözüm İBB resmi web servis dokümanından (PDF §10.1) geldi: metot `ibb360.asmx` endpoint'inde tanımlı, full URL `https://api.ibb.gov.tr/iett/ibb/ibb360.asmx`. Dünün tarihiyle tek atış test (2026-04-23 21:07): HTTP 200, SOAP envelope temiz, 55.682 kayıt döndü (detay A.13, A.14). **Ders:** WSDL discovery'de "metot yok" sonucuna varmadan önce tüm ilgili endpoint'lerin WSDL'leri taranmalı — bir endpoint'teki yokluk başka endpoint'te yokluk demek değil. Zeep hâlâ İETT WSDL'lerini parse edemiyor (binding tanımları nedeniyle); ham `requests` + string SOAP envelope yaklaşımı Faz 2 için de geçerli.
 
 **A.11.2 WSDL "broken" değil.** Spec §4.2.1'de "WSDL broken, zeep parse edemiyor" notu var. Ham HTTP GET ile WSDL 28 KB XML olarak 200 OK dönüyor, regex ile operation/message parse edilebiliyor. zeep'in parse edememesi kütüphane-seviyesi strict mode uyumsuzluğu, WSDL-seviyesi bozukluk değil. "Broken" ifadesi yanıltıcı, "zeep-incompatible" daha doğru.
 
@@ -1179,6 +1179,48 @@ Ampirik test (2026-04-23): 6.911 aracın konum response'unda hat identifier'ı Y
 
 Spec §5.3'teki "hat kodu YOK, sadece KapiNo" ifadesi doğrulandı, ama "günlük eşleme tablosu için GetIettArsivGorev_json çağrılır" önerisi çöktü (Ek A.11). Faz 2 mimarisinde alternatif yol gerekiyor.
 
+### A.13 ibb360.asmx::GetIettArsivGorev_json — intra-day boş, günlük batch yazılıyor
+
+Ampirik bulgu (2026-04-23): Bugünün tarihi (`20260423`) için metot boş array (`[]`, 2 byte) döndü. Aynı gün ayrı çağrıda dünün tarihi (`20260422`) için 55.682 kayıt geldi. İki rakip hipotez:
+
+- **H1 (tatil kaynaklı):** Bugün resmi tatil (23 Nisan — Ulusal Egemenlik ve Çocuk Bayramı), İETT görev akışı azaldı/durdu. Arşivin canlı yazımı var ama bugün yazılacak iş yok.
+- **H2 (günlük batch):** Servis intra-day yazmıyor, arşiv tablosu günlük batch ile (muhtemelen gece) dolar. Bugünün tarihi ertesi gün sabaha kadar boş görünür.
+
+Hangisinin doğru olduğunu ayırt etmek için başka bir iş günü sabahında ek test gerekir. Şimdi kritik değil; gerek duyulursa Faz 2 başlangıcında yapılır.
+
+**Pratik sonuç:** Mapping çağrısı günlük, "dün" tarihiyle yapılmalı. Response Redis'e cache'lenir, bugünün canlı `KapiNo`'larına uygulanır. TTL 26-28 saat (yarın yenilenince eski otomatik silinir).
+
+**Risk:** Pazartesi sabahı Cuma'nın mapping'i kullanılır (hafta sonu servisin yazdığı, hafta içi garaj dağıtımından farklı olabilecek kayıtlar). Hafta sonu + Pazartesi sabah davranışı Faz 2 canlı izlemesinde doğrulanmalı.
+
+### A.14 KapiNo → HatKodu 1:1 değil, zaman aralıklı görev listesi
+
+Ampirik dağılım (2026-04-22 dünün verisi): **6.212 araç, 799 hat, 55.682 görev.** Araç başına ortalama ~9 görev/gün — tek araç gün içinde birden fazla hatta atanıyor. Dolayısıyla `KapiNo → HatKodu` doğrudan 1:1 dict olamaz; zaman-bağımlı lookup gerekir.
+
+Response'un kritik field'ları:
+
+- `SKAPINUMARA` — araç kapı no
+- `SHATKODU` — hat kodu (ana granülerlik)
+- `SGUZERGAHKODU` — hat + yön + varyant (örn. `15SK_G_D0`, format: `{HatKodu}_{Yön}_{Varyant}`). `G`=Gidiş, `D`=Dönüş tahmin ediliyor — doğrulama Faz 2'de GTFS `trips` tablosuyla join ederek yapılır.
+- `DTBASLAMAZAMANI`, `DTBITISZAMANI` — görev zaman aralığı
+- `SGOREVDURUM` — dağılım: `T` (%95.2), `I` (%3.9), `YK` (%0.7), `B` (%0.14). Kodların anlamı PDF'te tanımsız; tahmini açılım: `T`=Tamamlandı, `I`=İptal, `YK`/`B` belirsiz. Güvenli yaklaşım: **sadece `SGOREVDURUM = "T"` kayıtları mapping'e al.** Kalan %5 gürültü olarak değerlendirilir.
+
+**Tarih formatı:** `/Date(1776863726000)/` — Microsoft JSON Date, epoch milisaniye. Python'da: `re.search(r"/Date\((\d+)\)/", v).group(1)` → `datetime.fromtimestamp(ms / 1000)`.
+
+**Mimari sonuç:** Redis cache yapısı düz dict değil, her araç için zaman aralıklı görev listesi:
+
+```
+iett:mapping:{KapiNo} → [
+  {start: epoch_ms, end: epoch_ms, hat: "15SK", guzergah: "15SK_G_D0"},
+  ...
+]
+```
+
+`GetFiloAracKonum_json`'dan gelen araç saati ile liste üzerinde binary search → aktif görevi bul → `HatKodu`/`GuzergahKodu` al.
+
+**`SGUZERGAHKODU` → GTFS `shape_id` eşlemesi:** Faz 4 interpolation için kritik. Bir araç sadece "15SK hattında" değil, "15SK Gidiş yönünde D0 varyantında" olarak bilinirse, doğru shape polyline'ına projekte edilebilir. §11'deki 6. açık soru ("İETT güzergah kodu GTFS'te neye eşleşir?") muhtemelen buradan çözülür — Faz 2'de GTFS `trips` tablosuyla join doğrulanmalı.
+
+**Cache boyutu:** Dünün tam dump'ı 24 MB (JSON). Sadece gerekli field'lar extract edilerek (`SKAPINUMARA`, `SHATKODU`, `SGUZERGAHKODU`, `DTBASLAMAZAMANI`, `DTBITISZAMANI` + `T` filtresi) ~5-8 MB'a inebilir.
+
 ---
 
 ## 14. Doküman Versiyon Geçmişi
@@ -1191,3 +1233,4 @@ Spec §5.3'teki "hat kodu YOK, sadece KapiNo" ifadesi doğrulandı, ama "günlü
 | 0.4 | 2026-04-22 | Ek A eklendi: Faz 1 geliştirmesinde ortaya çıkan 10 maddelik ampirik veri kalitesi bulguları. route_id collision, Excel Turkish locale coord artifact, NaN→'nan' color trap, İBB'nin renk metadata yayınlamaması dahil. |
 | 0.5 | 2026-04-23 | Faz 1.5 pre-flight WSDL discovery: GetIettArsivGorev_json metodunun mevcut olmadığı, WSDL'in aslında okunabilir olduğu ve GetHatOtoKonum_json'un yeni keşfi Ek A'ya (A.11) eklendi. Faz 2 mimarisi kapı no → hat kodu eşleme kaynağı bekliyor. |
 | 0.6 | 2026-04-23 | Ek A.12 eklendi: GetFiloAracKonum_json response'unda hat identifier olmadığı doğrulandı. KapiNo → HatKodu eşleme için API seçeneği kalmadı. Faz 2 öncesi İBB PDF incelenecek + GTFS heuristic değerlendirilecek. |
+| 0.6.1 | 2026-04-23 | Ek A.11 düzeltildi (endpoint yanlış varsayımıydı — metot `ibb360.asmx`'te mevcut ve çalışıyor, dünün tarihi için 55.682 kayıt test edildi). A.13 (refresh pattern: intra-day boş, günlük batch), A.14 (zaman-bağımlı mapping, SGUZERGAHKODU granülerliği) eklendi. |
