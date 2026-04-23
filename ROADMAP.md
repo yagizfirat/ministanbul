@@ -272,12 +272,14 @@ kullanılır, %56 tampon kalır.
 1. **`apps/realtime/` app'ini oluştur.** Spec §6.1'deki yapı.
 
 2. **İETT SOAP adaptörü** (`apps/realtime/adapters/iett_soap.py`):
-   - **`zeep` kullanma.** Servisin WSDL'i broken
-     (`GetBozukSatih_XMLAuthHeader` hatalı tanım). Ham `requests` +
-     SOAP envelope şablonu kullanılacak.
+   - **`zeep` kullanma.** zeep-incompatible WSDL (strict mode parse
+     başarısız). Ham `requests` + SOAP envelope şablonu kullanılacak.
    - `GetFiloAracKonum_json()` wrapper — tüm filonun tek snapshot'ı
-   - `GetIettArsivGorev_json(Tarih)` wrapper — günlük kapı no → hat
-     eşleme tablosu
+   - ~~`GetIettArsivGorev_json(Tarih)` wrapper~~ — **DOĞRULANMADI,
+     mevcut değil.** WSDL discovery (2026-04-23) gösterdi ki bu
+     method gateway'de expose edilmiyor ve schema'da tanımı yok
+     (spec Ek A.11). Kapı no → hat kodu eşleme kaynağı belirsiz,
+     bkz. aşağıdaki risk maddesi.
    - Pydantic `VehiclePosition` schema'sına normalize (spec §5.3)
 
 3. **Rate limit koruması** (kritik, kaybedilmemeli):
@@ -334,10 +336,13 @@ kullanılır, %56 tampon kalır.
 - **İBB endpoint'i değişirse.** Adaptör katmanı sayesinde tek dosya
   değişir. Fallback: `ulasav.csb.gov.tr`'de listelenmiş ikincil dataset
   (test edilmedi, belirsiz).
-- **Kapı no → hat eşlemesi bozulursa.** `GetIettArsivGorev_json` bugünkü
-  tarih için çalışıyor mu hâlâ test edilmedi — Faz 2'nin ilk günü
-  doğrulanacak. Çalışmazsa araçlar "bilinmeyen hat" olarak gösterilir,
-  log'a düşer, UX'i kırmaz.
+- **Kapı no → hat kodu eşleme kaynağı belirsiz.** Spec'teki
+  `GetIettArsivGorev_json` gateway'de mevcut değil (A.11). Faz 2
+  başlamadan önce senaryo (1) ampirik test ile
+  `GetFiloAracKonum_json` response'unda HatKodu olup olmadığı
+  doğrulanacak. Varsa: Faz 2 mimarisi basitleşir (tek çağrıda
+  konum + hat). Yoksa: alternatif yol bulunacak (İBB PDF'i oku,
+  başka endpoint probe et, heuristic).
 
 ---
 

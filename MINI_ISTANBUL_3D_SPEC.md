@@ -1147,6 +1147,28 @@ Strateji: 60sn server poll + client-side interpolation.
 
 Yani İBB feed'leri hat renklerini hiçbir zaman publish etmiyor. Faz 4'te 3D harita için renk kodlaması elde-yazılı bir map gerekecek: `short_name → hex` (M1A, M2, M3, ..., Marmaray, T1-T5, F1-F4 — Metro İstanbul ve İETT kurumsal renkleri). Fallback siyah/gri.
 
+### A.11 İETT SOAP gerçek yüzeyi — WSDL discovery
+
+Spec §4.2.1'de varsayılan endpoint davranışı WSDL discovery testiyle (2026-04-23) doğrulandı ve iki ciddi hata ortaya çıktı:
+
+**A.11.1 GetIettArsivGorev_json mevcut değil.** Endpoint `SeferGerceklesme.asmx` sadece 6 operation expose ediyor:
+
+- `GetBozukSatih_XML` / `GetBozukSatih_json`
+- `GetFiloAracKonum_json`
+- `GetHatOtoKonum_json` (yeni keşif, bkz. A.11.3)
+- `GetKazaLokasyon_XML` / `GetKazaLokasyon_json`
+
+WSDL schema'sında 34+ method tipi tanımlı ama gateway'de restricted. "Arsiv", "Gorev" stringleri hiçbir operation/type adında geçmiyor. Spec'in bu metoda dayandırdığı "günlük kapı no → hat kodu eşlemesi" varsayımı ERRATUM statüsünde — Faz 2 mimarisi alternatif kaynak gerektirir (bkz. Ek A.12 sonrası ampirik test sonucuna göre kesinleşecek).
+
+**A.11.2 WSDL "broken" değil.** Spec §4.2.1'de "WSDL broken, zeep parse edemiyor" notu var. Ham HTTP GET ile WSDL 28 KB XML olarak 200 OK dönüyor, regex ile operation/message parse edilebiliyor. zeep'in parse edememesi kütüphane-seviyesi strict mode uyumsuzluğu, WSDL-seviyesi bozukluk değil. "Broken" ifadesi yanıltıcı, "zeep-incompatible" daha doğru.
+
+**A.11.3 GetHatOtoKonum_json keşfi.** İlk planlamada fark edilmeyen bir method. İmza:
+
+- Input: `<HatKodu>` string
+- Output: JSON string (o hatta çalışan araçların listesi)
+
+Ters yönde (HatKodu → araçlar) çalışıyor, bizim istediğimizin tersi (KapiNo → HatKodu). Brute force mapping için 9.300 hat × 72 çağrı/40dk rate limit = 86 saat, uygulanamaz. Yan ürün olarak Faz 3+'te "hat seçildi, sadece o hattın araçlarını göster" için kullanılabilir.
+
 ---
 
 ## 14. Doküman Versiyon Geçmişi
@@ -1157,3 +1179,4 @@ Yani İBB feed'leri hat renklerini hiçbir zaman publish etmiyor. Faz 4'te 3D ha
 | 0.2 | 2026-04-19 | İETT resmi web servis dokümanı incelendi, rate limit keşfedildi (PDF'te "saatte 100" yazıyor), 3 strateji seçeneği eklendi |
 | 0.3 | 2026-04-19 | Ampirik testler yapıldı: rate limit'in ~40dk/72 çağrı sliding window olduğu ölçüldü, backend refresh rate'in 60s olduğu doğrulandı, token'ın SOAP'ta etkisiz olduğu gösterildi. 3 seçenek kaldırıldı, **60 saniye aralıklı çağrı + client-side interpolation** kesinleştirildi |
 | 0.4 | 2026-04-22 | Ek A eklendi: Faz 1 geliştirmesinde ortaya çıkan 10 maddelik ampirik veri kalitesi bulguları. route_id collision, Excel Turkish locale coord artifact, NaN→'nan' color trap, İBB'nin renk metadata yayınlamaması dahil. |
+| 0.5 | 2026-04-23 | Faz 1.5 pre-flight WSDL discovery: GetIettArsivGorev_json metodunun mevcut olmadığı, WSDL'in aslında okunabilir olduğu ve GetHatOtoKonum_json'un yeni keşfi Ek A'ya (A.11) eklendi. Faz 2 mimarisi kapı no → hat kodu eşleme kaynağı bekliyor. |
