@@ -12,3 +12,6 @@ tqdm==4.67.1
 celery>=5.4,<6
 redis>=5.0,<6
 django-celery-beat>=2.6,<3
+
+# Faz 2 Step 2 — schema validation between adapters and pipeline layers
+pydantic>=2.7,<3
