@@ -336,13 +336,18 @@ kullanılır, %56 tampon kalır.
 - **İBB endpoint'i değişirse.** Adaptör katmanı sayesinde tek dosya
   değişir. Fallback: `ulasav.csb.gov.tr`'de listelenmiş ikincil dataset
   (test edilmedi, belirsiz).
-- **Kapı no → hat kodu eşleme kaynağı belirsiz.** Spec'teki
-  `GetIettArsivGorev_json` gateway'de mevcut değil (A.11). Faz 2
-  başlamadan önce senaryo (1) ampirik test ile
-  `GetFiloAracKonum_json` response'unda HatKodu olup olmadığı
-  doğrulanacak. Varsa: Faz 2 mimarisi basitleşir (tek çağrıda
-  konum + hat). Yoksa: alternatif yol bulunacak (İBB PDF'i oku,
-  başka endpoint probe et, heuristic).
+- **Kapı no → hat kodu eşleme kaynağı çözülemedi.** 2026-04-23
+  ampirik testleri (spec Ek A.11 + A.12 devamı):
+  - `GetIettArsivGorev_json` gateway'de mevcut değil
+  - `GetFiloAracKonum_json` response'unda HatKodu veya benzer
+    hat identifier'ı **yok** (sadece KapiNo, Boylam, Enlem, Hız,
+    Garaj, Operator, Plaka, Saat)
+  - `GetHatOtoKonum_json` ters yönde çalışıyor, brute force
+    86 saat alır
+
+  Faz 2 öncesi tercih edilen yol: (1) İBB resmi PDF'i indirip
+  metot kataloğu okumak, (2) GTFS stop/shape proximity heuristic
+  ile best-guess hat tahmini üretmek. Detay Ek A.12'de (yazılacak).
 
 ---
 

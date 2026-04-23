@@ -1169,6 +1169,16 @@ WSDL schema'sında 34+ method tipi tanımlı ama gateway'de restricted. "Arsiv",
 
 Ters yönde (HatKodu → araçlar) çalışıyor, bizim istediğimizin tersi (KapiNo → HatKodu). Brute force mapping için 9.300 hat × 72 çağrı/40dk rate limit = 86 saat, uygulanamaz. Yan ürün olarak Faz 3+'te "hat seçildi, sadece o hattın araçlarını göster" için kullanılabilir.
 
+### A.12 GetFiloAracKonum_json field yüzeyi — spec §5.3 doğrulandı
+
+Ampirik test (2026-04-23): 6.911 aracın konum response'unda hat identifier'ı YOK. Her aracın 8 field'ı var:
+
+- `KapiNo`, `Plaka`, `Boylam`, `Enlem`, `Hiz`, `Saat`, `Garaj`, `Operator`
+
+15 candidate key (HatKodu, HatNo, RouteCode, Guzergah vs.) test edildi, hiçbiri yok. Raw string probe da negatif — nested JSON içinde saklı değil.
+
+Spec §5.3'teki "hat kodu YOK, sadece KapiNo" ifadesi doğrulandı, ama "günlük eşleme tablosu için GetIettArsivGorev_json çağrılır" önerisi çöktü (Ek A.11). Faz 2 mimarisinde alternatif yol gerekiyor.
+
 ---
 
 ## 14. Doküman Versiyon Geçmişi
@@ -1180,3 +1190,4 @@ Ters yönde (HatKodu → araçlar) çalışıyor, bizim istediğimizin tersi (Ka
 | 0.3 | 2026-04-19 | Ampirik testler yapıldı: rate limit'in ~40dk/72 çağrı sliding window olduğu ölçüldü, backend refresh rate'in 60s olduğu doğrulandı, token'ın SOAP'ta etkisiz olduğu gösterildi. 3 seçenek kaldırıldı, **60 saniye aralıklı çağrı + client-side interpolation** kesinleştirildi |
 | 0.4 | 2026-04-22 | Ek A eklendi: Faz 1 geliştirmesinde ortaya çıkan 10 maddelik ampirik veri kalitesi bulguları. route_id collision, Excel Turkish locale coord artifact, NaN→'nan' color trap, İBB'nin renk metadata yayınlamaması dahil. |
 | 0.5 | 2026-04-23 | Faz 1.5 pre-flight WSDL discovery: GetIettArsivGorev_json metodunun mevcut olmadığı, WSDL'in aslında okunabilir olduğu ve GetHatOtoKonum_json'un yeni keşfi Ek A'ya (A.11) eklendi. Faz 2 mimarisi kapı no → hat kodu eşleme kaynağı bekliyor. |
+| 0.6 | 2026-04-23 | Ek A.12 eklendi: GetFiloAracKonum_json response'unda hat identifier olmadığı doğrulandı. KapiNo → HatKodu eşleme için API seçeneği kalmadı. Faz 2 öncesi İBB PDF incelenecek + GTFS heuristic değerlendirilecek. |
