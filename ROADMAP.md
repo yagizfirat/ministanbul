@@ -241,6 +241,10 @@ Redis'e yayınlamak, rate limit ihlal etmeden sürdürülebilir kılmak.
 - **Memurai kurulumu** (Windows için Redis). Redis'in Windows native
   build'i yok; Memurai binary-compatible bir alternatif. Faz 2'nin ilk
   işi bu.
+- **RedisInsight (opsiyonel GUI)** — Memurai CLI tabanlı;
+  RedisInsight ayrıca indirilebilir, Memurai'ye localhost:6379
+  üzerinden bağlanır. Rate limit sayacını ve pub/sub kanalını
+  gözle izlemek Faz 2 debug'ında işe yarar.
 - `.env` dosyasına `REDIS_URL=redis://localhost:6379/0` eklenmesi
 - `requirements/development.txt`'e `celery`, `redis`, `django-celery-beat`
   eklenmesi
