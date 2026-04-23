@@ -49,9 +49,11 @@ INSTALLED_APPS = [
     "django_filters",
     "corsheaders",
     "django_extensions",
+    "django_celery_beat",
     # local
     "apps.core",
     "apps.gtfs",
+    "apps.realtime",
 ]
 
 MIDDLEWARE = [
@@ -120,3 +122,12 @@ REST_FRAMEWORK = {
         "rest_framework.renderers.BrowsableAPIRenderer",
     ],
 }
+
+# Celery — worker/beat config. Tasks populated in Phase 2 Step 2+.
+CELERY_BROKER_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = env("REDIS_URL", default="redis://localhost:6379/0")
+CELERY_TIMEZONE = "UTC"
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+CELERY_BEAT_SCHEDULE = {}
