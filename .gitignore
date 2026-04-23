@@ -53,3 +53,8 @@ awesome-claude-skills/
 claude-code/
 superpowers/
 .claude/
+
+# Research response dumps (reproducible, may contain IP/timestamp traces)
+_research/*.json
+_research/*.xml
+!_research/*.py
