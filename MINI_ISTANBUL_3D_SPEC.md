@@ -1062,6 +1062,93 @@ Her şey çalışıyorsa şunları görmelisin:
 
 ---
 
+## Ek A: Veri Gerçekliği Bulguları
+
+Faz 1 geliştirmesi sırasında İBB verisinin gerçekte ne durumda olduğu ampirik olarak ortaya çıktı. Bu bulgular implementasyon kararlarını şekillendirdi ve Faz 2+ için referans olarak burada kayıt altına alınıyor.
+
+### A.1 Format tutarsızlığı
+
+İETT ve Public dataset'leri farklı ekiplerden derlenmiş:
+
+- İETT: UTF-8 with BOM + semicolon delimiter (GTFS spec virgül ister)
+- Public: cp1254 (Windows Turkish) + comma delimiter
+
+Sonuç: `gtfs-kit` kullanılamaz, ham `pandas.read_csv` + auto-detect encoding/delimiter gerekli. Her CSV dosyası için ayrı tespit yapılır çünkü aynı dataset içinde bile dosyalar farklı encoding kullanabilir.
+
+### A.2 Koordinat bozulması — Excel Turkish locale
+
+İETT stops.csv'deki ~15.378 satırda koordinatlar Excel'de açılıp kaydedilince Turkish thousand-separator (nokta) artifact'i oluşmuş:
+
+`410.191.700.005.564` → gerçekte `41.0191700005564`
+
+Çözüm: `_sanitize_coord()` ilk noktayı koru, diğerlerini sil, sonra float'a çevir. Recovery oranı: %99.9 (3 satır corrupt kaldı, skip).
+
+### A.3 Route_id 118-way collision
+
+Public (Mart 2024) ve İETT (Mart 2026) feed'leri **aynı route_id**'yi tamamen farklı hatlara atamış. Örnek:
+
+- Public `1296` = M1A Metro (Yenikapı-Atatürk Havalimanı)
+- İETT `1296` = 19E Otobüs (Yenidoğan-İmes Camii)
+
+Toplamda 118 çakışma. Bunların 7'si metro hattı (M1A, M1B, M2, M3, M4, T4, TF1) — İETT upsert ile overwrite edilince shape'leri ve renkleri kaybolacaktı.
+
+Çözüm: route_id'ye feed prefix (`public:1296`, `iett:1296`). Sonuç: Route sayısı 9655 → 9773 (+118).
+
+### A.4 İETT hat geometrisi yok
+
+İETT'nin GTFS dataset'inde `shapes.csv` bulunmuyor. Yani İETT otobüsleri için hat güzergahı İBB tarafından yayınlanmıyor.
+
+- Faz 1 MVP: duraklar arası düz çizgi (görünüm bozuk ama çalışır)
+- Faz 5+: OSM Overpass API'den route snapping (pgr_dijkstra)
+
+### A.5 İBB CKAN dataset şeması
+
+Her iki dataset de 6-8 loose CSV olarak sunuluyor. İETT dataset'inde `stop_times.zip` adlı bir resource var — bu tam GTFS bundle **değil**, sadece büyük stop_times.csv'nin gzip'li halidir. Yanıltıcı.
+
+### A.6 Küçük veri kalitesi sorunları
+
+- `stop_lat` kolonuna timestamp, `stop_desc`, direction label sızmış (4 satır İETT)
+- Public routes.csv'de 1 satır embedded comma ile 104-char route_id üretmiş (malformed)
+- İETT routes.csv'de 4 intra-file duplicate route_id
+- 451 trip'in direction_id'si NaN
+- BOM olması encoding'in UTF-8 olduğunu garanti etmiyor (iki aşamalı doğrulama şart)
+
+### A.7 İstanbul bbox (kalibre edilmiş)
+
+- `lat_min = 40.7` (Gebze'nin güneyi)
+- `lat_max = 41.5` (Yalıköy/Kırklareli sınırı — İETT kırsal hatlar)
+- `lon_min = 27.95` (Silivri batısı, Binkılıç/Hallaçlı köyleri)
+- `lon_max = 29.95` (Şile ÇELEBİKÖY)
+
+### A.8 shape_pt_sequence int sort
+
+Sequence kolonu `dtype=str` ile okunuyor, lexicographic sort `"1","10","11","2"...` üretiyor → polyline zigzag. `pd.to_numeric` ile int'e çevirmek şart.
+
+### A.9 İETT SOAP canlı veri rate limit (ampirik)
+
+- ~40 dakikalık sliding window
+- ~72 çağrı/pencere hard limit
+- ~30 dakika cooldown ihlal durumunda
+- Backend refresh rate: ~60 saniye ortalama (min 57.1, max 68.1)
+- Auth: anonim (CKAN token SOAP'ta etkisiz)
+
+Strateji: 60sn server poll + client-side interpolation.
+
+### A.10 Pandas NaN → 'nan' string tuzağı (route color)
+
+`read_csv(na_values=[""])` + `dtype=str` → boş hücre `float('nan')`, `str(nan) = "nan"` (truthy string). `'or ""'` zincirine düşmez, DB'ye `'#NAN'` yazılır. SVG `stroke="#NAN"` geçersiz → polyline görünmez ama Leaflet `addLayer` çağrısı gerçekleştiği için "N hat çizildi" sayacı yanıltıcı.
+
+Çözüm: `_clean_hex()` regex-validated 6-char hex; else default. Frontend `HEX_RE` guard defense-in-depth + turuncu fallback sayacı. Etkilenen: 498 public route color + 498 text_color (aynı satırlar). İETT etkilenmedi (bkz. ek gözlem).
+
+**Ek gözlem — İBB renk metadata'sı hiç yayınlanmıyor:**
+
+- public/routes.csv: `route_color` + `route_text_color` kolonları header'da VAR ama tüm 499 satırda boş.
+- iett/routes.csv: `route_color`/`route_text_color` kolonları header'da YOK.
+
+Yani İBB feed'leri hat renklerini hiçbir zaman publish etmiyor. Faz 4'te 3D harita için renk kodlaması elde-yazılı bir map gerekecek: `short_name → hex` (M1A, M2, M3, ..., Marmaray, T1-T5, F1-F4 — Metro İstanbul ve İETT kurumsal renkleri). Fallback siyah/gri.
+
+---
+
 ## 14. Doküman Versiyon Geçmişi
 
 | Versiyon | Tarih | Değişiklik |
@@ -1069,3 +1156,4 @@ Her şey çalışıyorsa şunları görmelisin:
 | 0.1 | 2026-04-19 | İlk taslak |
 | 0.2 | 2026-04-19 | İETT resmi web servis dokümanı incelendi, rate limit keşfedildi (PDF'te "saatte 100" yazıyor), 3 strateji seçeneği eklendi |
 | 0.3 | 2026-04-19 | Ampirik testler yapıldı: rate limit'in ~40dk/72 çağrı sliding window olduğu ölçüldü, backend refresh rate'in 60s olduğu doğrulandı, token'ın SOAP'ta etkisiz olduğu gösterildi. 3 seçenek kaldırıldı, **60 saniye aralıklı çağrı + client-side interpolation** kesinleştirildi |
+| 0.4 | 2026-04-22 | Ek A eklendi: Faz 1 geliştirmesinde ortaya çıkan 10 maddelik ampirik veri kalitesi bulguları. route_id collision, Excel Turkish locale coord artifact, NaN→'nan' color trap, İBB'nin renk metadata yayınlamaması dahil. |
