@@ -57,4 +57,5 @@ superpowers/
 # Research response dumps (reproducible, may contain IP/timestamp traces)
 _research/*.json
 _research/*.xml
+_research/*.pdf
 !_research/*.py
