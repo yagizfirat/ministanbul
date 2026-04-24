@@ -123,9 +123,13 @@ REST_FRAMEWORK = {
     ],
 }
 
+# Redis — shared across Celery (broker/result), rate limiter, distributed
+# lock, mapping cache, and pub/sub. Single URL, single source of truth.
+REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+
 # Celery — worker/beat config. Tasks populated in Phase 2 Step 2+.
-CELERY_BROKER_URL = env("REDIS_URL", default="redis://localhost:6379/0")
-CELERY_RESULT_BACKEND = env("REDIS_URL", default="redis://localhost:6379/0")
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TIMEZONE = "UTC"
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
