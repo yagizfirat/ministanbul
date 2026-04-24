@@ -7,8 +7,8 @@ Bu doküman projenin **nihai yol haritasıdır**: ne yapıldı, ne yapılacak,
 her fazda hangi kararlar alındı. Her yeni geliştirme oturumunda ilk
 okunacak doküman budur.
 
-**Durum:** Faz 1 tamamlandı. Faz 2 başlangıcında.
-**Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md)
+**Durum:** Faz 1 tamamlandı. Faz 2 Adım 4 tamamlandı (SOAP adapter + rate limiter + lock + parser'lar, 43/43 test yeşil). Adım 5 (Celery wiring + hat-merkezli pipeline) başlıyor.
+**Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md) (v0.7 — hat-merkezli UI modeli)
 
 ---
 
@@ -228,26 +228,21 @@ Reimport sonrası 498 bozuk satır temizlendi (DB'de `#NAN` residue = 0).
 
 ### Faz 2 — Canlı veri adaptörü 🟡
 
-**Durum:** Sırada (Yağız onayı bekleniyor).
-**Tahmini süre:** 2-3 hafta.
+**Durum:** Adım 4 tamamlandı (2026-04-24). Adım 5 (Celery wiring + hat-merkezli pipeline) başlıyor.
+**Tahmini süre (Adım 5):** 1-2 hafta.
 
 #### Hedef
 
-İETT SOAP servisinden canlı otobüs konumlarını 60 saniyede bir çekmek,
-Redis'e yayınlamak, rate limit ihlal etmeden sürdürülebilir kılmak.
+İETT SOAP servisinden canlı otobüs konumlarını 60 saniyede bir çekmek, `KapiNo → HatKodu` enrichment sonrası hat bazlı gruplayıp Redis'e yazmak ve hat bazlı pub/sub kanallarına yayınlamak. Rate limit ihlal etmeden sürdürülebilir. Spec §5.7 bu pipeline'ın tam tanımı.
+
+**Önemli:** v0.6.1'deki endişe (KapiNo→HatKodu eşleme kaynağı belirsiz) 2026-04-23 ampirik testleriyle çözüldü. Metot `ibb360.asmx` endpoint'inde mevcut, dün tarihiyle çağrıldığında 55.682 kayıt döner. Detay spec Ek A.11/A.13/A.14.
 
 #### Ön koşullar
 
-- **Memurai kurulumu** (Windows için Redis). Redis'in Windows native
-  build'i yok; Memurai binary-compatible bir alternatif. Faz 2'nin ilk
-  işi bu.
-- **RedisInsight (opsiyonel GUI)** — Memurai CLI tabanlı;
-  RedisInsight ayrıca indirilebilir, Memurai'ye localhost:6379
-  üzerinden bağlanır. Rate limit sayacını ve pub/sub kanalını
-  gözle izlemek Faz 2 debug'ında işe yarar.
-- `.env` dosyasına `REDIS_URL=redis://localhost:6379/0` eklenmesi
-- `requirements/development.txt`'e `celery`, `redis`, `django-celery-beat`
-  eklenmesi
+- ✅ **Memurai kurulumu** tamamlandı (Memurai 8.1.240, Windows service, port 6379)
+- ✅ **RedisInsight (opsiyonel GUI)** — Memurai'ye `localhost:6379` üzerinden bağlanır, pub/sub kanallarını gözle izlemek için faydalı
+- ✅ `.env` dosyasında `REDIS_URL=redis://localhost:6379/0` hazır
+- ✅ `requirements/base.txt`'te `celery`, `redis`, `django-celery-beat`, `pydantic`
 
 #### Teknik yaklaşım
 
@@ -260,94 +255,121 @@ Redis'e yayınlamak, rate limit ihlal etmeden sürdürülebilir kılmak.
 | Cooldown | ~30 dakika | Ampirik |
 | Backend refresh rate | ~60 saniye (ort. 60.3s) | Ampirik |
 | Authentication | Anonim (token etkisiz) | Ampirik |
-| Endpoint | `https://api.ibb.gov.tr/iett/FiloDurum/SeferGerceklesme.asmx` | Resmi |
-| Metod | `GetFiloAracKonum_json()` (~6900 araç, ~1.1MB) | Resmi |
+| Fleet endpoint | `https://api.ibb.gov.tr/iett/FiloDurum/SeferGerceklesme.asmx` | Resmi |
+| Fleet metod | `GetFiloAracKonum_json()` (~6900 araç, ~1.1MB) | Resmi |
+| Arşiv endpoint | `https://api.ibb.gov.tr/iett/ibb/ibb360.asmx` | PDF §10.1 |
+| Arşiv metod | `GetIettArsivGorev_json(Tarih)` (yyyyMMdd) | PDF §10.1 + ampirik |
 
-**Strateji:** 60 saniyede bir çağrı + client-side interpolation (Mini
-Tokyo 3D yaklaşımı). Saatte 60 çağrı → pencere kapasitesinin %44'ü
-kullanılır, %56 tampon kalır.
+**Strateji:** 60 saniyede bir fleet fetch + client-side interpolation (Mini Tokyo 3D yaklaşımı). Saatte 60 çağrı → pencere kapasitesinin %44'ü kullanılır, %56 tampon kalır.
 
-#### Yapılacak iş
+#### Adım 4 — Adapter çekirdeği (tamamlandı 2026-04-24)
 
-1. **`apps/realtime/` app'ini oluştur.** Spec §6.1'deki yapı.
+**Commit hash'leri (rebase sonrası):**
+- `3fca3af` chore(realtime): scaffold Celery + Redis + realtime app skeleton
+- `1a88ed1` feat(realtime): VehiclePosition + IettArsivGorev pydantic schemas
+- `6ac2436` feat(realtime): BaseAdapter abstract contract
+- `7d2e7cb` feat(realtime): Redis sliding window rate limiter
+- `4878b22` feat(realtime): Redis distributed lock with atomic release
+- `93f329b` feat(realtime): IETT SOAP parsers for fleet and archive
+- `b67ba63` feat(realtime): IettSoapAdapter with rate-limit and lock gates
 
-2. **İETT SOAP adaptörü** (`apps/realtime/adapters/iett_soap.py`):
-   - **`zeep` kullanma.** zeep-incompatible WSDL (strict mode parse
-     başarısız). Ham `requests` + SOAP envelope şablonu kullanılacak.
-   - `GetFiloAracKonum_json()` wrapper — tüm filonun tek snapshot'ı
-   - ~~`GetIettArsivGorev_json(Tarih)` wrapper~~ — **DOĞRULANMADI,
-     mevcut değil.** WSDL discovery (2026-04-23) gösterdi ki bu
-     method gateway'de expose edilmiyor ve schema'da tanımı yok
-     (spec Ek A.11). Kapı no → hat kodu eşleme kaynağı belirsiz,
-     bkz. aşağıdaki risk maddesi.
-   - Pydantic `VehiclePosition` schema'sına normalize (spec §5.3)
+**Çıktılar:**
+- ✅ `apps/realtime/adapters/iett_soap.py` — ham `requests` + string SOAP envelope (zeep kullanılmadı, WSDL strict mode incompatible)
+  - `GetFiloAracKonum_json()` wrapper — tüm filo, ~6900 araç, ~1.1MB
+  - `GetIettArsivGorev_json(Tarih)` wrapper — `ibb360.asmx` endpoint, `yyyyMMdd` format, `SGOREVDURUM=T` filtresi
+- ✅ Pydantic şemalar: `VehiclePosition`, `IettArsivGorev`, `parse_msdate` (Microsoft JSON Date)
+- ✅ `BaseAdapter` soyut sınıfı (fetch() contract, health() default, class-level name/source/mode)
+- ✅ `SlidingWindowLimiter` (Redis ZSET, 4 state: OK/WARNING/BLOCKED/COOLDOWN, UUID-suffixed member'lar, dual cooldown mechanism)
+- ✅ Distributed lock (Redis SETNX + Lua atomic release, per-acquire UUID token)
+- ✅ Parser'lar — fleet ve arsiv, summary log pattern'i (`non_T_status`/`null_start`/`null_end`/`malformed` ayrımı)
+- ✅ Cassette test suite (`tests/cassettes/` + `_build_from_research.py`): 4 cassette, stratified sampling (550 rows, seed=42)
+- ✅ 43 test yeşil, 0.64 saniye — canlı API'ye gitmiyor
 
-3. **Rate limit koruması** (kritik, kaybedilmemeli):
-   - Redis sliding window sayacı (`ZADD` timestamp'li, `ZREMRANGEBYSCORE`
-     40dk önceki temizler, `ZCARD` anlık sayıyı verir)
-   - Soft limit 60 (hedef), hard limit 72 (pencere kapasitesi), ikisi
-     arasında warning log + Slack-vari alert (şimdilik sadece admin
-     panele)
-   - HTTP 500 + "Policy Falsified" tespit → 30dk `stale_cache_mode` (TTL
-     uzatılır, yeni çağrı yapılmaz)
-   - Exponential backoff 1dk → 2dk → 4dk → 8dk → 30dk floor
-   - **Distributed lock** (Redis `SETNX` + expire) — birden fazla
-     Celery worker aynı anda `GetFiloAracKonum_json` çağırmasın
+**Tasarım kararları not edilenler:**
+- Rate limiter'da ZSET member `{timestamp}:{uuid4}` — frozen-clock testlerde collision önleme + production'da race safety
+- Cooldown'da hem `SET EX` hem absolute until-timestamp — fakeredis TTL + freezegun uyumsuzluğunu çözmek için
+- Distributed lock release Lua script — naive GET-then-DEL yarış riskini engelliyor
+- Summary log grep-edilebilir tek satır — ileride ops alerts için load-bearing
+- `record_call()` sadece 2xx response sonrası tetikleniyor — ampirik ölçüm de muhtemelen 2xx'leri saymıştı
 
-4. **Celery tasks** (`apps/realtime/tasks.py`):
-   - `fetch_iett_fleet` — her 60 saniye (celery beat schedule)
-   - `refresh_kapino_hat_mapping` — her gün saat 04:00 (düşük trafik)
-   - Sonuçlar Redis'e yazılır (TTL 5dk normal, 45dk hata modunda),
-     `vehicles:iett` kanalına pub
+#### Adım 5 — Celery wiring + hat-merkezli pipeline (sırada)
 
-5. **Stale cache fallback:** Son başarılı snapshot her zaman cache'te
-   tutulur. API fail olursa UI "Veri X saniye önce güncellendi" banner'ı
-   gösterir (90s sarı, 180s kırmızı — spec §4.3).
+**1. Discovery query** (ilk iş, ~15 dk):
+- DB'deki 9.773 Route kaydını spec §3.3'teki kategorilere göre sınıflandır:
+  - Metro regex `^M\d+[A-Z]?$` → kaç hat?
+  - Tramvay regex `^T\d+$` → kaç?
+  - Füniküler `^F\d+$` → kaç?
+  - Metrobüs whitelist `{"34","34A","34AS","34B","34BZ","34C","34G","34T","34Z","34U"}` → tüm 10'u DB'de var mı?
+  - `route_type=4` (ferry) → kaç?
+  - Kalan (normal İETT otobüs) → kaç?
+- Sonuçlar spec §3.3 tablosundaki "tahmini hat sayısı" kolonuna yazılır
+- Beklenmedik kategoriler varsa raporlanır
 
-6. **Admin panel:** Yeni "Live Vehicles" sayfası.
-   - Son 60 saniyedeki araç sayısı
-   - Son çağrının timestamp'i
-   - Son 40 dakikadaki çağrı sayısı (grafikle)
-   - API health (green/yellow/red)
-   - Rate limit kullanım oranı ("44/72 — 28 hak kaldı")
+**2. Mapping cache** (`refresh_iett_mapping` Celery task, günlük 04:00):
+- `adapter.fetch_arsiv_gorev(yesterday)` → 55k kayıt, `SGOREVDURUM=T` filtreli
+- §5.7'deki JSON formatına build et: `by_kapi` + `active_routes` + `routes_by_mode`
+- Redis'e tek key: `iett:mapping:current` (TTL 28 saat)
+- Atomik `SET` — worker'lar eski cache okumasın
 
-7. **Unit testler:**
-   - `test_iett_soap_parser.py` — VCR.py ile kaydedilmiş gerçek
-     response'lar üstünde parsing
-   - `test_rate_limiter.py` — sliding window, backoff, distributed lock
-     edge case'leri
-   - `test_stale_cache.py` — cache TTL davranışı, health state transition
+**3. Enrichment helper** (`apps/realtime/enrich.py`):
+- `enrich_with_route_id(vehicles: list[VehiclePosition], mapping: dict) -> list[VehiclePosition]`
+- Binary search (bisect) ile O(log n) lookup per araç
+- Mapping eksik araç → `route_id=None`, sayaç artır
+- Unit testler: tam match, interval boşluğu, eksik KapiNo, eski/yeni timestamp
+
+**4. Fetch task** (`fetch_iett_positions` Celery task, 60sn beat):
+- `adapter.fetch()` → enrichment → `defaultdict(list)` groupby
+- Her hat için: `SET vehicles:route:{id}` (TTL 120sn) + `PUBLISH`
+- Unmapped sayacı: `stats:unmapped_count`
+- Stale cache: fetch fail → eski snapshot TTL süresince kalır
+- Hata durumunda Celery retry YOK — next tick zaten 60sn sonra
+
+**5. Celery beat schedule** (`config/settings/base.py`):
+```python
+CELERY_BEAT_SCHEDULE = {
+    "fetch-iett-positions": {
+        "task": "apps.realtime.tasks.fetch_iett_positions",
+        "schedule": 60.0,
+    },
+    "refresh-iett-mapping": {
+        "task": "apps.realtime.tasks.refresh_iett_mapping",
+        "schedule": crontab(hour=4, minute=0),
+    },
+}
+```
+
+**6. Admin panel "Live Vehicles" sayfası:**
+- Son 60 saniyedeki toplam araç sayısı + hat bazlı breakdown (en aktif 20 hat)
+- Son çağrı timestamp'i
+- Son 40 dakikadaki çağrı sayısı (grafikle)
+- API health (green/yellow/red)
+- Rate limit durumu ("44/72 — 28 hak kaldı")
+- Unmapped vehicle sayısı + yüzdesi
+
+**7. Entegrasyon testleri:**
+- `test_enrichment.py` — mapping lookup edge case'leri
+- `test_fetch_task.py` — adapter mock + Redis write + pub verification
+- `test_refresh_task.py` — arsiv fetch + mapping build + atomic write
+
+**8. Canlı smoke test** (Adım 5'in en sonu, Yağız onayıyla, kontrollü, tek çağrı)
 
 #### Bitiş kriteri
 
 `celery -A config worker` + `celery -A config beat` çalışıyorken:
-
-- 60 saniye beklendikten sonra Redis CLI `SUBSCRIBE vehicles:iett`
-  dinleyince ~6900 aracın konumu akıyor
+- 60 saniye sonra Redis CLI `PSUBSCRIBE vehicles:route:*` dinleyince hat bazlı mesajlar akıyor
+- `GET iett:mapping:current` → JSON parse edilebilir, `active_routes` listesi dolu
 - Admin panelinde 40dk pencere kullanım oranı %56 civarında (~40/72 çağrı)
-- Network kesilirse veya API 500 dönerse UI "Veri gecikiyor" gösteriyor,
-  Celery worker çökmüyor, rate limit ihlal edilmiyor
+- Unmapped vehicle oranı %5'in altında
+- Network kesilirse veya API 500 dönerse Celery worker çökmüyor, rate limit ihlal edilmiyor
 
-#### Riskler
+#### Riskler (güncel)
 
-- **Birden fazla geliştirici aynı endpoint'i test ederse rate limit
-  paylaşılır.** İBB IP bazlı mı kullanıcı bazlı mı bilmiyoruz. Test
-  sırasında dikkat, tercihen VCR.py replay.
-- **İBB endpoint'i değişirse.** Adaptör katmanı sayesinde tek dosya
-  değişir. Fallback: `ulasav.csb.gov.tr`'de listelenmiş ikincil dataset
-  (test edilmedi, belirsiz).
-- **Kapı no → hat kodu eşleme kaynağı çözülemedi.** 2026-04-23
-  ampirik testleri (spec Ek A.11 + A.12 devamı):
-  - `GetIettArsivGorev_json` gateway'de mevcut değil
-  - `GetFiloAracKonum_json` response'unda HatKodu veya benzer
-    hat identifier'ı **yok** (sadece KapiNo, Boylam, Enlem, Hız,
-    Garaj, Operator, Plaka, Saat)
-  - `GetHatOtoKonum_json` ters yönde çalışıyor, brute force
-    86 saat alır
-
-  Faz 2 öncesi tercih edilen yol: (1) İBB resmi PDF'i indirip
-  metot kataloğu okumak, (2) GTFS stop/shape proximity heuristic
-  ile best-guess hat tahmini üretmek. Detay Ek A.12'de (yazılacak).
+- **Çözüldü:** ~~KapiNo→HatKodu eşleme kaynağı belirsiz~~ — `ibb360.asmx::GetIettArsivGorev_json` doğrulandı, 55k kayıt test edildi
+- **ibb360 rate limit davranışı belirsiz.** SeferGerceklesme ile ayrı sayaç mı paylaşımlı mı test edilmedi. İlk mapping refresh'inde dikkatli gözlem
+- **Hafta sonu + Pazartesi davranışı.** Cuma arşivi Pazartesi mapping'i olarak kullanılır — iş günü vs tatil atama farkları olabilir. İlk hafta canlı izlemede doğrulanacak
+- **SGOREVDURUM T dışı kodlar.** Güvenli filtre "sadece T" ama %5 veri kaybı. Pattern büyürse yeniden değerlendir
+- **Intra-day arşiv boş** (Ek A.13): Bugünün tarihi genelde boş döner, dün kullanıyoruz. Ama Pazartesi sabah `yesterday=Sunday` — cumartesi değil — davranış doğrulanmalı
+- **Birden fazla geliştirici aynı endpoint'i test ederse rate limit paylaşılır.** İBB IP bazlı mı kullanıcı bazlı mı bilmiyoruz. Cassette replay disiplini şart
 
 ---
 
@@ -358,66 +380,63 @@ kullanılır, %56 tampon kalır.
 
 #### Hedef
 
-Redis'teki canlı araç konumlarını WebSocket üzerinden tarayıcıya push
-eden bir katman kurmak. Faz 4'teki 3D frontend için altyapı.
+Redis'teki hat bazlı canlı araç snapshot'larını ve pub mesajlarını WebSocket üzerinden tarayıcıya push eden bir katman. Abonelik modeli **hat-merkezli** (spec §6.4): client `route_ids` listesi gönderir, server sadece o hatların mesajlarını iletir.
 
 #### Ön koşullar
 
 - Django Channels 4.x kurulumu
-- Daphne ASGI server (port 8011)
-- `.env`'e `CHANNEL_LAYERS` Redis URL'i
+- Daphne ASGI server (port 8011, `.env`'den override edilebilir)
+- `.env`'e `CHANNEL_LAYERS` Redis URL'i (önerilen: `db=1`, Celery'den ayrı)
 
 #### Teknik yaklaşım
 
-**Transport:** WebSocket (HTTP long-polling fallback yok — modern
-tarayıcılar yeter). Port 8011'de Daphne, port 8010'daki Django HTTP'den
-ayrı process.
+**Transport:** WebSocket (HTTP long-polling fallback yok — modern tarayıcılar yeter). Port 8011'de Daphne, port 8010'daki Django HTTP'den ayrı process.
 
-**Abonelik modeli:** Client-initiated filtering. Tarayıcı bbox ve mode
-listesi göndererek abone olur; server sadece o bbox içindeki araçları
-push eder. Bu ~6900 aracın tamamını her client'a her saniye göndermenin
-önüne geçer.
+**Abonelik modeli (hat-merkezli, REPLACE semantiği):** Tarayıcı `route_ids` listesi göndererek abone olur; her `subscribe` mesajı mevcut listeyi tamamen değiştirir (delta değil). Server her `route_id` için Redis channel `vehicles:route:{id}`'a abone olur, gelen mesajları client'a forward eder. Bbox desteği opsiyonel (tight filter olarak).
 
 #### Yapılacak iş
 
-1. **Channels kurulumu** (`config/asgi.py`, `settings/base.py`
-   `CHANNEL_LAYERS`)
+1. **Channels kurulumu** (`config/asgi.py`, `settings/base.py` `CHANNEL_LAYERS`)
 
 2. **`VehiclePositionConsumer`** (`apps/realtime/consumers.py`):
    - `connect` — anonim bağlantı kabul, cap: aynı IP'den max 5 eşzamanlı
-   - `disconnect` — group'tan çıkar
-   - `receive_json` — `subscribe` / `unsubscribe` mesajları
-   - `subscribe` handler: bbox + modes doğrular, Redis'ten mevcut
-     snapshot'ı anında gönder, group'a ekle
-   - Redis pub/sub → group broadcast bridge (spec §6.4 mesaj formatı)
+   - `disconnect` — tüm hat gruplarından çıkar
+   - `receive_json` — `subscribe` / `unsubscribe_all` mesajları
+   - `subscribe` handler:
+     - `route_ids` listesini doğrula (mapping cache'inden active set)
+     - Mevcut aboneliklerden çık (REPLACE semantiği)
+     - Yeni her `route_id` için Channels group'a join
+     - Her hat için Redis `GET vehicles:route:{id}` → ilk snapshot'ı hemen gönder
+     - `subscription_ack` mesajıyla rejected listesi (inaktif ID'ler)
+   - Redis pub/sub → Channels group broadcast bridge (spec §6.4 mesaj formatı)
 
 3. **Routing** (`apps/realtime/routing.py`):
    - `ws/vehicles/` URL path
 
-4. **Fallback REST endpoint:** `GET /api/vehicles/live/` — WebSocket
-   kurulmazsa (firewall, eski tarayıcı) son snapshot JSON olarak dönsün.
+4. **REST API endpoint'leri** (Faz 3 kapsamında, frontend için hazır olsun):
+   - `GET /api/routes/active/` — bugün aktif hatlar + kategoriler (mapping cache'ten)
+   - `GET /api/routes/{route_id}/live/` — tek hat son snapshot (ilk render için)
+   - `GET /api/vehicles/live/` — fallback tüm sistem snapshot
 
-5. **Rate limit per IP:** aşırı `subscribe`/`unsubscribe` döngüsü atan
-   bir client'ı throttle et (Django Channels middleware).
+5. **Rate limit per IP:** aşırı `subscribe` döngüsü atan client throttle (Channels middleware)
+
+6. **Smoke test sayfası:** Basit HTML + WebSocket client, 3-4 hat seç → araçlar akıyor
 
 #### Bitiş kriteri
 
 - Django HTTP + Daphne + Celery worker + Celery beat aynı anda çalışıyor
-- Browser DevTools → Network → WS: `ws://localhost:8011/ws/vehicles/`
-  bağlantısı 101 Switching Protocols
-- `subscribe` mesajından sonra saniyede araç konumu akıyor, `unsubscribe`
-  akışı durduruyor
-- Basit Leaflet test sayfası (Faz 4 öncesi smoke test) — noktalar
-  haritada hareket ediyor
+- Browser DevTools → Network → WS: `ws://localhost:8011/ws/vehicles/` bağlantısı 101 Switching Protocols
+- `subscribe ["M2", "34BZ"]` → sadece bu iki hat için `route_vehicles_update` mesajları
+- `subscribe ["M2"]` (yenile) → 34BZ akışı kesildi, M2 devam
+- `subscribe []` (boş liste) → hiç mesaj gelmiyor, connection live kalıyor
+- Test sayfasında Leaflet haritada seçilen hatların araçları hareket ediyor
 
 #### Riskler
 
-- **Port 8011 çakışması.** Kullanıcının diğer projeleri 8001'i alıyor;
-  8011 planda ama kullanımda olabilir. `.env`'den override edilebilir
-  olsun.
-- **Channel layer (Redis) ile Celery Redis aynı instance.** Memory
-  basıncı artabilir, özellikle çok client'lı test senaryosunda. DB 0
-  Celery, DB 1 Channels önerisi.
+- **Port 8011 çakışması.** Diğer projeler 8001'i alıyor; 8011 planda ama kullanımda olabilir. `.env`'den override edilebilir olsun
+- **Channel layer (Redis) ile Celery Redis aynı instance.** Memory basıncı artabilir, özellikle çok client'lı test senaryosunda. DB 0 Celery, DB 1 Channels öneriliyor
+- **Group join patlaması.** Bir client 100 hat subscribe ederse 100 group join olur. Üst sınır koy (örn. max 20 hat/client), aşarsa error mesaj
+- **Redis pub/sub connection limiti.** Channels her grupa abonelik için Redis connection açar. Prod'da connection pool ayarı kritik olabilir
 
 ---
 
@@ -428,46 +447,51 @@ push eder. Bu ~6900 aracın tamamını her client'a her saniye göndermenin
 
 #### Hedef
 
-MapLibre GL JS + Three.js + deck.gl ile İstanbul'un 3D haritası. Araçlar
-60 saniye aralıklı snapshot'lara rağmen **akıcı** (60 FPS) hareket ediyor
-— client-side interpolation sayesinde.
+MapLibre GL JS + Three.js + deck.gl ile İstanbul'un 3D haritası. Açılışta **sürekli görünür kategoriler** (metro/tramvay/füniküler/Marmaray/metrobüs/vapur) haritada — polyline'lar + araçlar. Otobüs hatları opt-in panelden seçilir. Araçlar 60 saniye aralıklı snapshot'lara rağmen **akıcı** (60 FPS) hareket ediyor, client-side interpolation sayesinde.
+
+#### Görünüm modeli (Tokyo-vibes, hat-merkezli)
+
+- **Açılış:** Sürekli görünür setin ~50-60 hattı haritada, polyline'lar ve üstlerinde araçlar
+- **Sağ panel — "Hatlar":**
+  - Arama kutusu (Türkçe fuzzy search, "29b" → 29B bulunur)
+  - Mod bazlı gruplar (Metro, Metrobüs, Vapur, ... başlıkları altında)
+  - Her hat toggle'lı: seçili → haritada, değil → gizli
+  - Sürekli görünür kategoriler varsayılan açık, otobüsler varsayılan kapalı
+- **Etkileşim:**
+  - Hat tıkla → highlight (opaklık), diğer hatlar sönükleşir (focus mode)
+  - Araç tıkla → popup: KapiNo, Plaka, hat, son hız, son güncelleme
+  - Durak tıkla → popup: durak adı, geçen hatlar, yaklaşan araçlar
+  - Pitch/bearing/zoom ile kamera kontrolü
 
 #### Ön koşullar
 
 - Node.js 20 LTS kurulumu
 - `frontend/` dizini Vite + TypeScript projesi olarak init'lenir
-- Vite dev server port 5173, `/api/*` Django'ya 8010'a, `/ws/*` Daphne'ye
-  8011'e proxy
+- Vite dev server port 5173, `/api/*` Django'ya 8010'a, `/ws/*` Daphne'ye 8011'e proxy
 
 #### Teknik yaklaşım
 
-**Harita motoru seçimi:** MapLibre GL JS 5.x. Spec §5.2'de gerekçeler.
-OpenFreeMap "bright" stili, tamamen ücretsiz + API key'siz. Mapterhorn
-DEM raster terrain için.
+**Harita motoru seçimi:** MapLibre GL JS 5.x. Spec §5.2'de gerekçeler. OpenFreeMap "bright" stili, tamamen ücretsiz + API key'siz. Mapterhorn DEM raster terrain için.
 
-**3D binalar:** MapLibre `fill-extrusion` layer'ı + OSM `building` tag'i.
-Konu-bazlı iyileştirme yok — OSM'de ne kadar detaylı mappe edilmişse o
-kadar görünür.
+**3D binalar:** MapLibre `fill-extrusion` + OSM `building` tag'i. Konu-bazlı iyileştirme yok — OSM'de ne kadar detaylı mappe edilmişse o kadar görünür.
 
-**Araçlar:** Three.js custom layer (MapLibre `CustomLayerInterface`).
-Faz 4 başlangıcında basit `BoxGeometry` + mod-bazlı renk. Detaylı
-geometri Faz 6+.
+**Araçlar:** Three.js custom layer (MapLibre `CustomLayerInterface`). Basit `BoxGeometry` + mod-bazlı renk. Detaylı geometri Faz 6+.
 
-**Veri kutlu sayı:** 6900 otobüs + ~500 metro trenı + ~200 vapur =
-~7500 aynı anda hareket eden nesne. Three.js `InstancedMesh` kullanılır
-(tek draw call, GPU'da instancing). deck.gl hat çizgileri için.
+**Sürekli görünür + opt-in yük:**
+- Açılışta: ~60 hat polyline + ~500-800 araç (metrobüs canlı + raylı sistem/vapur simüle)
+- Opt-in seçimle: her kullanıcı için +1-5 hat × ~9 araç = ~50 ek araç
+- Tahmini toplam anlık render: 500-1000 araç, 60-100 polyline
+- Three.js `InstancedMesh` (GPU instancing) — 6900 değil ~1000 için de hâlâ uygun
 
 #### Client-side interpolation (kritik)
 
-Bu Faz 4'ün kalbi. İETT verisi 60 saniyede bir geliyor; araçlar ekranda
-zıplamamalı.
+Bu Faz 4'ün kalbi. İETT verisi 60 saniyede bir geliyor; araçlar ekranda zıplamamalı.
 
-Algoritma (`apps/frontend/src/simulation/bus_interpolator.ts`):
+Algoritma (`frontend/src/simulation/bus_interpolator.ts`):
 
 1. T₀ ve T₁ snapshot'ları arasında, her araç için:
-   - Aracın hattını bul (`KapiNo → HatKodu` eşlemesinden)
-   - Hattın `shapes.txt` geometrisini (polyline) yükle — yoksa düz çizgi
-     fallback
+   - Aracın hat ID'si (WebSocket mesajında gelen route_id)
+   - Hattın `shapes.txt` geometrisini (polyline) yükle — yoksa düz çizgi fallback
    - T₀ konumunu polyline üstündeki en yakın noktaya projekte et (P₀)
    - T₁ konumunu aynı şekilde (P₁)
    - P₀ ile P₁ arasındaki polyline segmentini takip et
@@ -477,45 +501,52 @@ Algoritma (`apps/frontend/src/simulation/bus_interpolator.ts`):
    - Mesh pozisyonunu güncelle
 
 **Edge case'ler:**
-
-- Araç polyline'dan sapmışsa (GPS hatası, sefer dışı): iki konum arası
-  düz çizgi fallback, log'a not düş
-- T₁ geldiğinde araç T₀-T₁ segmentini henüz tamamlamamışsa: cubic ease ile
-  yeni hedefe kısa geçiş (zıplama yok)
-- İETT hattı GTFS public feed'inde yoksa (İETT'de shapes yok, Faz 5
-  OSM snapping sonrası düzelir): düz çizgi
+- Araç polyline'dan sapmışsa (GPS hatası, sefer dışı): düz çizgi fallback, log'a not
+- T₁ geldiğinde araç T₀-T₁ segmentini henüz tamamlamamışsa: cubic ease ile yeni hedefe kısa geçiş
+- İETT hattı GTFS public feed'inde yoksa (İETT'de shapes yok, Faz 5'te OSM snapping sonrası düzelir): düz çizgi
 
 #### Yapılacak iş
 
 1. Vite + TypeScript init + MapLibre kurulumu
 2. OpenFreeMap style yükleme + 3D binalar + Mapterhorn terrain
-3. WebSocket client (`apps/frontend/src/data/websocket.ts`) — reconnect,
-   bbox-based subscribe on map pan
-4. REST API client (`apps/frontend/src/data/api.ts`) — route/shape/stop
-   fetching
-5. Three.js custom layer + `InstancedMesh` araç sistemi
-6. Interpolator (yukarıdaki algoritma)
-7. Kamera kontrolleri (pitch, bearing, zoom limitleri)
-8. Durak tıklama → popup (yaklaşan araçlar)
-9. Hat tıklama → highlight + sadece o hattın araçlarını filtrele
-10. "Son güncelleme X saniye önce" health indicator
+3. **Hat filtreleme paneli** (Faz 6'dan MVP'ye taşındı — hat-merkezli modelde olmazsa olmaz):
+   - `src/ui/RoutePanel.ts` — mod bazlı gruplar, arama, toggle
+   - Turkish normalize: ö/ü/ı/ş/ğ/ç → fuzzy search
+   - Seçili hat sayısı göstergesi
+4. WebSocket client (`src/data/websocket.ts`):
+   - Reconnect (exponential backoff)
+   - Hat seçim değişikliğinde `subscribe` gönder (REPLACE semantiği)
+   - Per-route `route_vehicles_update` mesajlarını hat state'lerine route et
+5. REST API client (`src/data/api.ts`):
+   - `GET /api/routes/active/` — kategori listesi (panel doldurma)
+   - `GET /api/routes/{id}/shape/` — polyline (hat eklenince cache'le)
+   - `GET /api/routes/{id}/live/` — ilk render snapshot
+6. Three.js custom layer + `InstancedMesh` araç sistemi
+7. Interpolator (yukarıdaki algoritma)
+8. Kamera kontrolleri (pitch, bearing, zoom limitleri)
+9. Durak tıklama → popup (yaklaşan araçlar)
+10. Hat tıklama → highlight + focus mode
+11. Araç tıklama → popup
+12. "Son güncelleme: X saniye önce" UI göstergesi (90sn sarı, 180sn kırmızı)
 
 #### Bitiş kriteri
 
-- `npm run dev` + backend (Django + Daphne + Celery) çalışıyor
+- `npm run dev` + backend (Django + Daphne + Celery worker + beat) çalışıyor
 - `localhost:5173` → İstanbul 3D haritası yükleniyor
-- 6900 otobüs 60 FPS akıcı hareket ediyor — snapshot geçişleri görünmüyor
-- M2 metro Yenikapı-Hacıosman hattı boyunca tarifeye uygun ilerliyor
+- **Açılışta sürekli görünür set haritada:** metrobüs otobüsleri canlı hareket ediyor, metro/tramvay/Marmaray/vapur tarife-bazlı simülasyonla hareket ediyor
+- Sağ panelden "29B" seç → haritaya eklendi, kendi araçlarıyla
+- Seçimden çıkar → haritadan temizlendi
+- Hat tıkla → focus mode (diğerleri sönükleşir)
 - Kamera rotasyonu + 3D bina yükseklikleri Boğaz kenarında belirgin
+- 60 FPS akıcı interpolation, snapshot geçişleri görünmüyor
 
 #### Riskler
 
-- **Performans çöküşü 7500 mesh'te.** InstancedMesh kullanımı doğru
-  kurulmazsa GPU'da driver darboğazı. Profiler ile erken ölçüm.
-- **İETT otobüsleri için düz çizgi görsel bozukluk.** Faz 5'e
-  (OSM snapping) kadar kabul edilecek geçici durum.
-- **Mapterhorn DEM tile boyutu.** İlk yüklemede yavaşlık olabilir,
-  lazy load + LOD stratejisi.
+- **Performans çöküşü.** 1000 araç × 60 FPS InstancedMesh doğru kurulmazsa GPU driver darboğazı. Profiler ile erken ölçüm
+- **İETT otobüsleri için düz çizgi görsel bozukluk.** Faz 5 OSM snapping'e kadar kabul edilecek geçici durum
+- **Mapterhorn DEM tile boyutu.** İlk yüklemede yavaşlık olabilir, lazy load + LOD stratejisi
+- **Türkçe fuzzy search hatası.** "İETT 29b" araması karakter normalize olmazsa "29B" bulmaz. `Intl.Collator("tr")` ya da manuel map kullan
+- **Hat polyline boyutu.** Bir hat polyline'ı 500-5000 nokta olabilir, 60 hat × ortalama 2000 = 120k nokta sadece polyline'lar. deck.gl layer'a toplu push, hat ekleme/çıkarmada partial update
 
 ---
 
@@ -618,7 +649,12 @@ yayına hazır hale getirmek.
   feed'lerinde yok).
 - **Durak arama:** Autocomplete input, PostGIS `pg_trgm` ile fuzzy
   Turkish search (ö/ü/ı normalize).
-- **Hat filtreleme paneli:** Operatöre, moda, renge göre toggle.
+- ~~**Hat filtreleme paneli:** Operatöre, moda, renge göre toggle.~~ →
+  **Faz 4'e taşındı (MVP özelliği).** Hat-merkezli UI modeli gereği
+  (v0.7 spec §3.3), bu panel olmadan otobüsler gösterilemez. Faz 4
+  sağ "Hatlar" paneli olarak doğdu.
+- **Gelişmiş panel özellikleri:** Favori hatları yıldızla, renge göre
+  gruplama, grup seç/kaldır (v1.1 ile senkron)
 - **Saat çubuğu (opsiyonel, v2'ye ertelenebilir):** Şu anki zaman
   +/- 2 saat kaydırılabilir, simülasyon o zamana göre.
 - **Landmark GeoJSON'ları (opsiyonel):** Ayasofya, Galata Kulesi vb.

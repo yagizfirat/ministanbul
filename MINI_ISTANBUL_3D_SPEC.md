@@ -3,10 +3,23 @@
 > İstanbul'un toplu taşıma ağının gerçek zamanlı 3D dijital haritası.
 > [Mini Tokyo 3D](https://github.com/nagix/mini-tokyo-3d)'den ilham alınmıştır.
 
-**Versiyon:** 0.3 (Planlama Aşaması — API davranışı ölçüldü, strateji kesinleşti)
+**Versiyon:** 0.7 (Faz 2 devam ediyor — hat-merkezli UI modeli benimsendi)
 **Hedef:** Antigravity agent ile geliştirilecek, Python Django tabanlı bir web uygulaması
 **Lisans:** MIT (planlanıyor)
-**Statü:** Henüz geliştirmeye başlanmadı — bu doküman geliştirme için tek referanstır
+**Statü:** Faz 1 tamamlandı. Faz 2 Adım 4 (IETT SOAP adaptörü + rate limiter + lock + parser'lar) tamamlandı; Adım 5 (Celery wiring) başlıyor.
+
+> **v0.7 değişiklikleri (2026-04-24):** UI modeli **araç-merkezli**den **hat-merkezli**ye taşındı. Kullanıcı artık bireysel araç değil, hat izler ("29B hattı ne yapıyor"). Bazı kategoriler sürekli görünür (metro, tramvay, füniküler, Marmaray, metrobüs, vapur), otobüs hatları opt-in (kullanıcı seçerse görünür). Değişen bölümler:
+> - Yeni §3.3 "Mod Sınıflandırması ve Görünürlük Politikası"
+> - Yeni §5.7 "Hat-Merkezli Pipeline" (cache stratejisi, pub/sub modeli)
+> - §5.3 WebSocket mesaj formatı — per-route update (her hat ayrı mesaj)
+> - §6.3 REST API — yeni endpoint'ler: `/api/routes/active/`, `/api/routes/{id}/live/`
+> - §6.4 WebSocket protokolü — subscribe modeli `route_ids` odaklı
+> - §7 Faz 2-4 — hat-merkezli pipeline ve UI paneli entegrasyonu
+> - Yeni US-9 (hat izleme)
+>
+> Pipeline çekirdeği (adapter, rate limiter, lock, parser'lar) değişmedi — hat-merkezli mantık fetch task'ının son adımında `groupby(route_id)` olarak ekleniyor.
+
+> **v0.6.1 değişiklikleri (2026-04-23):** Ek A.11 düzeltildi (endpoint yanlış varsayımıydı), A.13 ve A.14 eklendi (intra-day refresh pattern, zaman-bağımlı mapping).
 
 > **v0.3 değişiklikleri (2026-04-19):** İETT SOAP servisine 3 farklı ampirik test yapıldı (token uyumluluğu, dayanıklılık, backend refresh rate). Ölçülen kritik gerçekler:
 > - **Rate limit:** ~40 dakikalık sliding window, ~72 istek/pencere. İhlalde ~30 dakika cooldown.
@@ -23,6 +36,8 @@
 
 ### Ne yapıyoruz?
 İstanbul'daki otobüs, metro, Marmaray ve vapurların gerçek zamanlı konumlarını 3D bir harita üzerinde canlı olarak gösteren web uygulaması. Kullanıcı bir metro istasyonuna tıklayınca yaklaşan trenleri, bir hattı seçince o hattaki tüm araçları, bir durakta bekleyince varış sürelerini görebilir. Harita pitch/bearing ile döndürülebilir, binalar 3D'de yükseltilmiştir, Boğaz ve tepeler topografik olarak doğrudur.
+
+**Görünüm modeli hat-merkezli:** Kullanıcı bireysel araç değil, hat takip eder ("29B ne yapıyor", "M2 hattındaki trenler nerede"). Sürekli görünür kategoriler — metro (M1-M11), tramvay (T1-T5), füniküler (F1-F4), Marmaray, metrobüs (10 hat), vapur — açılışta haritada yer alır. İETT'nin ~800 normal otobüs hattı varsayılan olarak gizlidir; kullanıcı hat adı arayarak veya panelden seçerek haritaya ekler (bir nevi "favori hatlara abone olma"). Detaylar §3.3'te.
 
 ### Niye yapıyoruz?
 Tokyo, Londra, Berlin, Singapur gibi şehirlerin böyle görselleştirmeleri var. İstanbul gibi 16 milyon nüfuslu, karmaşık bir toplu taşıma ağı olan bir metropol için yok. İBB açık veri portalı bu tür bir uygulamayı mümkün kılacak verileri yayınlıyor — sadece kimse oturup yapmamış. Proje:
@@ -56,7 +71,7 @@ Mevcut İETT "Otobüsüm Nerede" uygulaması veriyi 2D sunuyor, turist dostu de�
 ### Keşif
 **US-4:** Turist, İstanbul'daki toplu taşıma ağının genel yapısını tek bir ekrana bakarak anlamak ister (hangi metro nereye gidiyor, vapur hatları nereler vs.).
 
-**US-5:** Kullanıcı belirli bir hattı seçip o hat boyunca tüm duraklarını ve şu an hat üzerinde giden araçları görmek ister.
+**US-5:** Kullanıcı haritanın varsayılan görünümünde metro, tramvay, füniküler, Marmaray, metrobüs ve vapurların canlı durumunu görür. İlgilendiği bir otobüs hattını (örn. 29B) listeden seçerek o hatta ait araçları da haritaya ekler; seçimden çıkarınca haritadan temizler.
 
 **US-6:** Kullanıcı iki nokta seçip aralarında en uygun toplu taşıma rotasını görmek ister (Faz 6+, opsiyonel).
 
@@ -65,6 +80,8 @@ Mevcut İETT "Otobüsüm Nerede" uygulaması veriyi 2D sunuyor, turist dostu de�
 
 **US-8:** Araştırmacı, geçmiş bir tarih aralığındaki sefer verilerini indirmek ister (Faz 7+).
 
+**US-9:** Kullanıcı 29B hattını seçer; o hatta ait tüm araçların güzergâh boyunca dağılımını, hangi durakta hangi aracın olduğunu, araçlar arasındaki aralıkları (headway) görür. Hat tıklanınca polyline vurgulanır, diğer hatların araçları arka plana çekilir.
+
 ---
 
 ## 3. Kapsam (Scope)
@@ -72,10 +89,10 @@ Mevcut İETT "Otobüsüm Nerede" uygulaması veriyi 2D sunuyor, turist dostu de�
 ### İlk sürüm (v1.0) — MVP
 **Dahil:**
 - **Coğrafi kapsam:** İstanbul geneli (39 ilçe)
-- **Ulaşım modları:** İETT otobüsleri, Metro İstanbul tüm hatları (M1-M11, T1-T5, F1-F4), Marmaray, şehir hatları vapurları (İDO)
-- **Canlı veri:** Otobüsler gerçek konum, metrolar/vapurlar tarife-bazlı simülasyon (aşağıda açıklanıyor)
+- **Ulaşım modları:** Metro (M1-M11), tramvay (T1-T5), füniküler (F1-F4), Marmaray, metrobüs (10 hat), vapur (İDO + Şehir Hatları) **sürekli görünür**; İETT normal otobüs hatları (~800) kullanıcı seçimine göre (opt-in). Sınıflandırma detayı §3.3'te.
+- **Canlı veri:** Otobüsler (metrobüs dahil) gerçek konum; metro, tramvay, füniküler, Marmaray, vapur tarife-bazlı simülasyon
 - **Harita:** OpenStreetMap tabanlı, 3D bina extrusion, 3D terrain
-- **Etkileşim:** Durak tıklama, hat tıklama, araç tıklama, zoom/pan/rotate/pitch
+- **Etkileşim:** Durak tıklama, hat tıklama, araç tıklama, hat arama/seçim paneli, zoom/pan/rotate/pitch
 - **Diller:** Türkçe (varsayılan) ve İngilizce
 - **Cihaz:** Masaüstü (öncelik) ve mobil tarayıcı (responsive)
 
@@ -94,6 +111,59 @@ Mevcut İETT "Otobüsüm Nerede" uygulaması veriyi 2D sunuyor, turist dostu de�
 - **v1.4:** Landmark 3D modelleri (Ayasofya, Galata Kulesi vb.)
 - **v2.0:** Zaman kaydırma, geçmiş veri analizi
 - **v2.1:** Mobil native uygulama (opsiyonel)
+
+### 3.3. Mod Sınıflandırması ve Görünürlük Politikası
+
+İstanbul'un toplu taşıma ağı ölçek olarak büyük: Faz 1 sonunda DB'de 9.773 Route kaydı var (hat × yön × varyant çarpımı dahil), her biri farklı yoğunlukta. Hepsini aynı anda haritada göstermek hem görsel kirlilik yaratır hem performans problemi çıkarır. Bu yüzden hatları **görünürlük politikası**na göre iki kategoriye ayırıyoruz:
+
+#### Sürekli görünür (varsayılan açık)
+
+Kullanıcı müdahalesi olmadan haritada görünen, kapasitesi yönetilebilir ve "şehir omurgası" niteliğinde hatlar. Açılışta polyline'ları çizilir, üstlerinde araçlar hareket eder.
+
+| Kategori | Tespit mekanizması | Tahmini hat sayısı | Canlı veri | Hareket kaynağı |
+|---|---|---|---|---|
+| **Metro** (M1-M11) | `short_name` regex: `^M\d+[A-Z]?$` | ~12 | Yok | Tarife simülasyonu (Faz 5) |
+| **Tramvay** (T1-T5) | `short_name` regex: `^T\d+$` | ~5 | Yok | Tarife simülasyonu (Faz 5) |
+| **Füniküler** (F1-F4) | `short_name` regex: `^F\d+$` | ~4 | Yok | Tarife simülasyonu (Faz 5) |
+| **Marmaray** | `agency_id` veya özel short_name | ~1-2 | Yok | Tarife simülasyonu (Faz 5) |
+| **Metrobüs** | `short_name` whitelist (aşağıda) | 10 | **Var (İETT SOAP)** | Canlı GPS |
+| **Vapur** (İDO + Şehir Hatları) | `route_type=4` | ~20-30 | Yok | Tarife simülasyonu (Faz 5) |
+
+**Toplam sürekli görünür:** ~50-60 hat, ~500-800 araç/obje anlık ekranda.
+
+**Metrobüs whitelist** (değişmez, İETT'nin resmi hat listesi):
+
+```python
+METROBUS_ROUTES = {
+    "34",    # Avcılar - Zincirlikuyu (ana)
+    "34A",   # Cevizlibağ - Söğütlüçeşme
+    "34AS",  # Avcılar - Söğütlüçeşme
+    "34B",   # Beylikdüzü - Avcılar
+    "34BZ",  # Beylikdüzü - Zincirlikuyu
+    "34C",   # Beylikdüzü - Cevizlibağ
+    "34G",   # Beylikdüzü - Söğütlüçeşme (gece)
+    "34T",   # Avcılar - Topkapı
+    "34Z",   # Zincirlikuyu - Söğütlüçeşme
+    "34U",   # Uzunçayır - Zincirlikuyu
+}
+```
+
+Whitelist neden regex değil: `^34[A-Z]*$` pattern'i `340`, `341` gibi normal İETT otobüs hatlarını ve gelecekte eklenebilecek `34D`, `34X` gibi değişiklikleri yanlış pozitif/negatif yakalar. Sabit liste, yılda 1-2 kez elle güncellenen bir veri.
+
+#### Opt-in (varsayılan kapalı)
+
+Yaklaşık ~800 adet İETT normal otobüs hattı. Tespit: sürekli-görünür kategorilerinin dışında kalan tüm `route_type=3` İETT hatları. Kullanıcı akışı:
+
+1. Açılışta haritada görünmezler
+2. Sağda "Hatlar" paneli: arama kutusu + hat listesi (hat kodu + isim)
+3. Kullanıcı hat seçer → haritaya polyline + araçları eklenir, WebSocket subscribe gönderilir
+4. Seçimden çıkarır → haritadan temizlenir
+
+**Neden opt-in?** 800 hat × ~9 araç = ~7000 otobüs anlık render; hem GPU baskısı hem "her şey renkli çizgi" kirliliği. Kullanıcı gerçekten ilgilendiği 1-5 hattı izliyor, geri kalan arka plan gürültü.
+
+#### Kategori doğrulaması
+
+Yukarıdaki tablo "tahmini hat sayısı" kolonları placeholder değer — Faz 2'de agent, DB üzerinde discovery query çalıştırıp gerçek dağılımı ölçecek (Adım 5'in ilk işi). Sonuçlar bu tabloya yazılacak, hata varsa (örn. whitelist'te olmayan bir metrobüs hat kodu, tespit edilememiş bir raylı sistem) düzeltme yapılacak.
 
 ---
 
@@ -250,12 +320,12 @@ Metro İstanbul, REST endpoint'leri üzerinden aşağıdaki verileri veriyor:
 
 | Veri Türü | Güncelleme Sıklığı | Notlar |
 |---|---|---|
-| İETT canlı konumlar (sunucu) | **60 saniye** | Backend refresh rate'iyle (~60s) senkron |
+| İETT canlı konumlar (sunucu) | **60 saniye** | Backend refresh rate'iyle (~60s) senkron. ~6900 araç fetch edilir, `KapiNo → HatKodu` enrichment sonrası hat bazlı gruplanır, ~800 hat key'ine yazılır |
 | İETT canlı konumlar (istemci) | **Sürekli (60 FPS)** | Client-side interpolation ile akıcı render |
 | Metro tarife simülasyonu | **Sürekli (client-side)** | `stop_times` + `shapes` ile interpolasyon |
 | Marmaray simülasyonu | **Sürekli (client-side)** | Tarayıcı içinde interpolasyon |
 | Vapur simülasyonu | **Sürekli (client-side)** | Tarayıcı içinde interpolasyon |
-| Kapı no → hat eşlemesi | **Günde 1** | `GetIettArsivGorev_json` bir kez çağrılır |
+| Kapı no → hat eşlemesi | **Günde 1** | `GetIettArsivGorev_json` (ibb360.asmx) dün tarihiyle çağrılır, Redis'e yazılır |
 | Statik GTFS | **Haftada 1** | Celery beat günlük kontrol, değişiklik varsa yeniden import |
 | İETT duyuruları | **5 dakika** | `GetDuyurular_json` (ayrı endpoint) |
 | Metro İstanbul duyuruları | **5 dakika** | `GetAnnouncements` |
@@ -297,9 +367,11 @@ Metro İstanbul, REST endpoint'leri üzerinden aşağıdaki verileri veriyor:
            ▼                                           ▼
 ┌──────────────────────────────┐    ┌───────────────────────────────┐
 │  PostgreSQL + PostGIS        │    │  Redis                         │
-│  • GTFS statik veri           │    │  • Canlı konum pub/sub         │
-│  • Hatlar, duraklar, rotalar  │    │  • API response cache          │
-│  • Kullanıcılar (v1.1+)       │    │  • Channel layer (Channels)    │
+│  • GTFS statik veri           │    │  • Mapping cache (günlük)      │
+│  • Hatlar, duraklar, rotalar  │    │  • Hat bazlı snapshot'lar      │
+│  • Kullanıcılar (v1.1+)       │    │    (vehicles:route:{id})       │
+│                               │    │  • Hat bazlı pub/sub kanalları │
+│                               │    │  • Channel layer (Channels)    │
 └──────────┬───────────────────┘    └──────────┬────────────────────┘
            │                                    │
            ▼                                    ▼
@@ -376,22 +448,27 @@ class VehiclePosition(BaseModel):
 
 **Frontend WebSocket mesaj formatı (JSON):**
 
+Hat-merkezli model gereği her hat için ayrı update mesajı gider. Frontend sadece izlediği hatların mesajını işler, toplu büyük payload çözmek zorunda kalmaz.
+
 ```json
+// Her hat için ayrı mesaj, 60sn'de bir (hat başına)
 {
-  "type": "vehicles_update",
+  "type": "route_vehicles_update",
+  "route_id": "29B",
   "timestamp": "2026-04-19T14:23:45Z",
   "vehicles": [
     {
       "id": "C-231",
-      "route": "15B",
       "lat": 41.04885,
       "lon": 29.10322,
       "bearing": 87.5,
-      "mode": "bus"
+      "speed": 24.0
     }
   ]
 }
 ```
+
+Detaylı pub/sub ve cache stratejisi §5.7'de.
 
 ### 5.4. Tarife-Bazlı Simülasyon (Metro, Marmaray, Vapur)
 
@@ -473,6 +550,69 @@ server: {
   }
 }
 ```
+
+### 5.7. Hat-Merkezli Pipeline
+
+UI modeli hat-merkezli olduğu için (§3.3), pipeline'ın son aşaması veriyi araç bazlıdan hat bazlına dönüştürür. Upstream'den gelen ham veri hâlâ araç granülerliğinde (her araç ayrı kayıt) — bu değişmedi, değişmiyor. Değişen tek şey fetch task'ının son adımı.
+
+#### Veri akışı (60 saniyelik tick)
+
+```
+1. adapter.fetch() → list[VehiclePosition]         # ~6900 araç, route_id=None
+2. Mapping cache'ten her araç için route_id set et  # KapiNo + timestamp → HatKodu
+3. defaultdict(list) ile hat bazlı grupla           # {"29B": [...], "34BZ": [...]}
+4. Her hat için iki Redis işlemi:
+   a. SET vehicles:route:{route_id} = JSON (TTL 120 sn)  ← son snapshot cache
+   b. PUBLISH vehicles:route:{route_id} = JSON           ← WebSocket trigger
+```
+
+Çıkan sonuç: 6900 araç fetch'i, ~800 hat key'ine ve ~800 pub mesajına dönüşür. Redis trafik artışı kabul edilebilir (her değer 1-20 kayıt, ortalama ~4 KB).
+
+#### Mapping cache formatı
+
+Günlük refresh task (`refresh_iett_mapping`) `GetIettArsivGorev_json(yesterday)` çağırır, sonucu tek Redis key'inde JSON olarak tutar:
+
+```json
+{
+  "date": "2026-04-22",
+  "by_kapi": {
+    "A-231": [
+      {"start_ms": 1776863726000, "end_ms": 1776868886000,
+       "hat": "29B", "guzergah": "29B_G_D0"},
+      {"start_ms": 1776870000000, "end_ms": 1776875000000,
+       "hat": "15B", "guzergah": "15B_D_D0"}
+    ],
+    "A-232": [...]
+  },
+  "active_routes": ["29B", "34BZ", "15B", "M2", ...],
+  "routes_by_mode": {
+    "metrobus": ["34", "34A", "34AS", "34B", "34BZ", "34C", "34G", "34T", "34Z", "34U"],
+    "bus":      ["29B", "15B", "36T", ...]
+  }
+}
+```
+
+Tek key (~2-3 MB JSON), her fetch task'ında bir `GET` + bir parse, ~10-30ms overhead. Tüm fetch worker'ları aynı cache'i okur, `refresh_iett_mapping` task günde bir kez güncelleyip atomik `SET` yapar (tutarlılık sorunu yok).
+
+**Lookup algoritması** (`route_id` enrichment): araç için `by_kapi[KapiNo]` listesini al, araç timestamp'ini her interval'in `[start_ms, end_ms]` aralığıyla karşılaştır. Liste zaman-sıralı olduğu için binary search (`bisect`) kullanılır, O(log n). Eşleşme bulunamazsa (görev arası boşluk, veya mapping eksik) araç `route_id=None` ile geçer, fetch task UI göstermez ama sayacı ("unmapped vehicles") admin panele yansır.
+
+#### Pub/sub kanal modeli
+
+Her hat bağımsız bir Redis channel: `vehicles:route:{route_id}`. Frontend bir hatta abone olduğunda Django Channels consumer o Redis channel'ına subscribe olur ve gelen mesajları client'a push eder.
+
+**Neden hat bazlı kanallar?**
+- **Performans:** Frontend 5 hat izliyorsa, 5 hat mesajı alır — 800 hat değil
+- **Bandwidth:** Her hat update'i 1-20 araçlık küçük payload (<10 KB), büyük toplu snapshot değil
+- **UX:** Metrobüs hareketi akıcı kalır otobüs paneli kullanılmazken; frontend hat başına bağımsız interpolation state yönetir
+- **Backend basitliği:** Consumer "hangi group'a mesaj göndereceğini" hat ID'siyle seçer, bbox veya mode filtresi yapmak zorunda değil
+
+#### Fetch task'ı hata modunda ne olur?
+
+1. **Rate limit BLOCKED/COOLDOWN:** Adapter boş liste döner. Fetch task Redis'te var olan snapshot'lara dokunmaz — TTL 120sn geçtiyse kaybolurlar, geçmediyse frontend stale cache'ten okur. Admin panelde "son başarılı fetch 180sn önce" sarı→kırmızı uyarı göstergesi.
+2. **Parser hatası:** Kayıt bazlı skip (summary log'da sayılır), başarılı kayıtlar yine pub edilir.
+3. **Mapping cache eksik:** `route_id=None` ile geçen araç fetch task'ta gruplama dışında kalır (hangi hat'a ait olduğu bilinmiyor). Admin panelde "unmapped" sayacı. Ertesi gün 04:00'da mapping yenilenir, sorun sıfırlanır.
+
+Detaylı implementasyon Faz 2 Adım 5'te (Celery wiring).
 
 ---
 
@@ -634,75 +774,126 @@ class StopTime(models.Model):
 ### 6.3. REST API Endpoint'leri
 
 ```
-GET  /api/agencies/                   Tüm operatörler
-GET  /api/routes/                     Tüm hatlar (pagination)
-GET  /api/routes/?mode=bus            Filtreleme
-GET  /api/routes/{route_id}/          Tek hat detayı (geometri dahil)
-GET  /api/routes/{route_id}/stops/    Hatın durakları (sıralı)
-GET  /api/routes/{route_id}/shape/    Hatın geometrisi (GeoJSON LineString)
+GET  /api/agencies/                    Tüm operatörler
+GET  /api/routes/                      Tüm hatlar (pagination)
+GET  /api/routes/?mode=bus             Filtreleme
+GET  /api/routes/{route_id}/           Tek hat detayı (geometri dahil)
+GET  /api/routes/{route_id}/stops/     Hatın durakları (sıralı)
+GET  /api/routes/{route_id}/shape/     Hatın geometrisi (GeoJSON LineString)
 
-GET  /api/stops/                      Tüm duraklar (pagination + bbox filtre)
+# Hat-merkezli endpoint'ler (v0.7):
+GET  /api/routes/active/               Bugün aktif hatlar + kategorileri.
+                                       Response: {
+                                         "categories": {
+                                           "metro": ["M1A", "M2", ...],
+                                           "tram": ["T1", ...],
+                                           "funicular": ["F1", ...],
+                                           "marmaray": ["MRM"],
+                                           "metrobus": ["34", "34A", ...],
+                                           "ferry": [...],
+                                           "bus": ["29B", "15B", ...]
+                                         },
+                                         "total_active": 820,
+                                         "refreshed_at": "2026-04-24T04:00:00Z"
+                                       }
+GET  /api/routes/active/?mode=metrobus Kategori filtresi
+GET  /api/routes/{route_id}/live/      Tek hatın canlı araçları (snapshot)
+                                       — frontend hat seçince ilk render için
+
+GET  /api/stops/                       Tüm duraklar (pagination + bbox filtre)
 GET  /api/stops/?bbox=28.9,41.0,29.1,41.1  Bbox içindeki duraklar
-GET  /api/stops/{stop_id}/            Tek durak detayı
-GET  /api/stops/{stop_id}/upcoming/   Yaklaşan araçlar (next N arrivals)
+GET  /api/stops/{stop_id}/             Tek durak detayı
+GET  /api/stops/{stop_id}/upcoming/    Yaklaşan araçlar (next N arrivals)
 
-GET  /api/trips/active/               Şu an aktif tripler
-GET  /api/trips/active/?mode=metro    Mod filtresi
-GET  /api/trips/{trip_id}/            Trip detayı (stop_times dahil)
+GET  /api/trips/active/                Şu an aktif tripler (tarife simülasyonu için)
+GET  /api/trips/active/?mode=metro     Mod filtresi
+GET  /api/trips/{trip_id}/             Trip detayı (stop_times dahil)
 
-GET  /api/vehicles/live/              Son bilinen canlı araç konumları (snapshot)
-                                      (WebSocket yoksa fallback)
+GET  /api/vehicles/live/               Tüm sistem snapshot (fallback, WebSocket yoksa)
 
-WS   /ws/vehicles/                    Canlı araç konumları (WebSocket)
-                                      Mesaj: subscribe, unsubscribe
-                                      Abone ol: { "action": "subscribe", "bbox": [...], "modes": [...] }
+WS   /ws/vehicles/                     Canlı araç konumları (WebSocket)
+                                       Subscribe: { "action": "subscribe",
+                                                    "route_ids": [...] }
+                                       Detaylar §6.4'te.
 ```
 
 ### 6.4. WebSocket Protokolü
 
 **Bağlantı:** `ws://localhost:8001/ws/vehicles/`
 
+Hat-merkezli model gereği abonelik route_ids odaklı. Kullanıcı hangi hatları izliyorsa o hatların mesajını alır. Bbox filtresi desteklenir ama ikincil — çoğu kullanıcı sürekli-görünür sete ek olarak 1-5 hat seçer, bbox'a değil hat listesine göre filtrelenir.
+
 **Client → Server mesajları:**
 
 ```json
-// Sadece belirli bbox ve modlar için abone ol (performans için)
+// İzlemek istediğin hatları bildir. Her subscribe komutunda mevcut liste
+// REPLACE edilir — delta değil, snapshot semantik. İki hat bırakmak
+// isteyen client her iki hattın ID'sini de gönderir.
 {
   "action": "subscribe",
-  "bbox": [28.9, 40.9, 29.2, 41.2],
-  "modes": ["bus", "metro", "ferry"]
+  "route_ids": ["M2", "M7", "34BZ", "29B"],
+  "bbox": [28.9, 40.9, 29.2, 41.2]  // opsiyonel, server-side tight filter için
 }
 
-// Abonelikten çık
+// Tüm aboneliklerden çık (örn. harita açıkken sekme değiştirildi)
 {
-  "action": "unsubscribe"
+  "action": "unsubscribe_all"
 }
 ```
 
 **Server → Client mesajları:**
 
 ```json
-// Periyodik güncelleme (3-5 saniyede bir)
+// Her hat için ayrı update. Fetch task (60sn) yeni snapshot aldığında
+// sadece abone olunan hatların mesajı gelir. Araç sayısı azsa küçük
+// payload, çoksa sadece o hat için büyük — toplu big-bang yok.
 {
-  "type": "vehicles_update",
+  "type": "route_vehicles_update",
+  "route_id": "29B",
   "timestamp": "2026-04-19T14:23:45Z",
   "vehicles": [
     {
-      "id": "C-231",
-      "route": "15B",
+      "id": "C-231",        // KapiNo
       "lat": 41.04885,
       "lon": 29.10322,
-      "bearing": 87.5,
-      "mode": "bus"
+      "bearing": 87.5,      // hesaplanabilirse
+      "speed": 24.0         // km/h, upstream'den geliyorsa
     }
-    // ... diğer araçlar
+  ]
+}
+
+// Hatta şu an araç yoksa da bir mesaj gelir (frontend stale göstermesin)
+{
+  "type": "route_vehicles_update",
+  "route_id": "M2",
+  "timestamp": "2026-04-19T14:23:45Z",
+  "vehicles": []
+}
+
+// Sürekli görünür setteki simülasyon araçları için (Faz 5)
+// — canlı veri yok, client-side tarife interpolation yapıyor, server
+// sadece hangi trip'lerin aktif olduğunu söylüyor
+{
+  "type": "route_trips_active",
+  "route_id": "M2",
+  "timestamp": "2026-04-19T14:23:45Z",
+  "trips": [
+    {"trip_id": "M2_T_0001", "direction": 0, "shape_id": "..."}
   ]
 }
 
 // Hata
 {
   "type": "error",
-  "code": "INVALID_BBOX",
-  "message": "bbox must be [west, south, east, north]"
+  "code": "UNKNOWN_ROUTE",
+  "message": "route_id 'XXX' is not active today"
+}
+
+// Abonelik doğrulaması (client state sync için)
+{
+  "type": "subscription_ack",
+  "route_ids": ["M2", "M7", "34BZ", "29B"],
+  "rejected": []  // aktif olmayan ID'ler
 }
 ```
 
@@ -729,68 +920,114 @@ Her faz **çalışır bir uygulama** çıkarır. Antigravity agent her faz sonun
 
 ### Faz 2: Canlı Veri Adaptörü (2-3 hafta)
 
-**Hedef:** İETT SOAP servisinden canlı otobüs konumları alınıyor (60 saniyede bir), Redis'e yayınlanıyor, admin panelinden sayı takip edilebiliyor.
+**Hedef:** İETT SOAP servisinden canlı otobüs konumları alınıyor (60 saniyede bir), `KapiNo → HatKodu` enrichment sonrası hat bazlı Redis key'lerine yazılıyor, hat bazlı pub/sub ile WebSocket'e hazır. Admin panelinden sayı takip edilebiliyor.
 
-**Çıktılar:**
-- [ ] `apps/realtime/adapters/iett_soap.py` — ham HTTP ile SOAP client (zeep kullanma, WSDL parse sorunu var)
-  - `GetFiloAracKonum_json()` çağrısı (tüm filo, tek çağrı, ~1.1MB response)
-  - `GetIettArsivGorev_json(Tarih)` günlük çağrısı (kapı no → hat eşlemesi)
-- [ ] Kapı no → hat mapping Redis'te günlük cache'leniyor
-- [ ] `apps/realtime/tasks.py` — Celery periyodik görevi **her 60 saniyede** (backend refresh rate'iyle senkron)
-- [ ] Redis pub/sub ile konumlar `vehicles:iett` kanalına yayınlanıyor
-- [ ] **Rate limit koruması (kritik):**
-  - Redis sliding window sayacı (40 dakika, 60 çağrı soft limit, 72 hard limit)
-  - 500 hata durumunda 30 dakika pause
-  - Distributed lock (Redis SETNX) — sadece bir worker instance çağrı yapsın
-- [ ] Admin panelinde "Live Vehicles" sayfası:
-  - Son 60 saniyedeki araç sayısı
-  - Son çağrının timestamp'i
+**Adım 4 (tamamlandı 2026-04-24) — Adapter çekirdeği:**
+- [x] `apps/realtime/adapters/iett_soap.py` — ham HTTP + string SOAP envelope (zeep WSDL parse edemiyor, bkz. Ek A.11.2)
+  - `GetFiloAracKonum_json()` — tüm filo, ~6900 araç, ~1.1MB
+  - `GetIettArsivGorev_json(Tarih)` (`ibb360.asmx`, bkz. Ek A.11.1) — günlük mapping
+- [x] Pydantic şemalar: `VehiclePosition`, `IettArsivGorev`, `parse_msdate`
+- [x] `BaseAdapter` soyut sınıfı
+- [x] `SlidingWindowLimiter` (Redis ZSET tabanlı, 4 state: OK/WARNING/BLOCKED/COOLDOWN)
+- [x] Distributed lock (Redis SETNX + Lua atomic release)
+- [x] Fleet + arsiv parser'ları (summary log: non_T_status/null_start/null_end/malformed ayrımı)
+- [x] Cassette-based test suite (43 test, 0.64s, canlı API'ye gitmiyor)
+
+**Adım 5 (sırada) — Celery wiring + hat-merkezli pipeline:**
+- [ ] **Discovery query** (ilk iş): DB'deki 9.773 Route kaydının §3.3'teki kategorilere dağılımını ölç. Her regex/whitelist kaç hat eşliyor? Beklenmedik kategoriler var mı? Sonuç spec §3.3 tablosuna yazılır.
+- [ ] **Mapping cache** (`refresh_iett_mapping` Celery task, günde 1 kez 04:00):
+  - `fetch_arsiv_gorev(yesterday)` → Pydantic filtreleme
+  - §5.7'deki JSON formatında Redis'e yaz (`iett:mapping:current` tek key, TTL 28 saat)
+  - `by_kapi` + `active_routes` + `routes_by_mode` hesapla
+- [ ] **Enrichment helper** (`apps/realtime/enrich.py`):
+  - `enrich_with_route_id(vehicles, mapping)` — araç listesine `route_id` set et
+  - Binary search (bisect) ile O(log n) lookup per araç
+  - Mapping eksik olan araç → `route_id=None`, sayacı artır
+- [ ] **Fetch task** (`fetch_iett_positions` Celery task, 60sn beat):
+  - `adapter.fetch()` → enrichment → `defaultdict(list)` groupby(route_id)
+  - Her hat için `SET vehicles:route:{id}` (TTL 120sn) + `PUBLISH`
+  - Unmapped araç sayısı Redis sayacı (`stats:unmapped_count`)
+  - Stale cache fallback: fetch fail olsa bile önceki snapshot TTL süresince kalır
+- [ ] **Celery beat schedule** config'te:
+  - `fetch_iett_positions` → every 60 seconds
+  - `refresh_iett_mapping` → daily 04:00 UTC
+- [ ] **Admin panel** "Live Vehicles" sayfası:
+  - Son 60 saniyedeki toplam araç sayısı
+  - Hat bazlı breakdown (en aktif 20 hat, araç sayısıyla)
+  - Son çağrı timestamp'i
   - Son 40 dakikadaki çağrı sayısı (grafikle)
   - API health durumu (green/yellow/red)
-  - Rate limit durumu ("44 çağrı / 40dk | 28 hak kaldı")
-- [ ] Unit testler: `test_iett_soap_parser.py`, `test_rate_limiter.py`, `test_stale_cache.py`
-- [ ] Stale data fallback: son başarılı veriyi 5 dk cache'te tut, hata durumunda 45 dk
+  - Rate limit durumu ("44/72 — 28 hak kaldı")
+  - Unmapped vehicle sayısı + yüzdesi
+- [ ] Entegrasyon testleri: `test_enrichment.py`, `test_fetch_task.py`, `test_refresh_task.py`
+- [ ] **Canlı smoke test** (Yağız onayıyla, kontrollü, tek çağrı)
 
-**Bitiş kriteri:** `celery -A config worker` + `beat` çalışırken, 60 saniye boyunca bekleyince Redis CLI'dan `SUBSCRIBE vehicles:iett` dinleyince ~6900 aracın konumu akıyor. Admin panelinde 40-dk pencere kullanım oranı %56 civarında (40/72 çağrı).
+**Bitiş kriteri:** `celery -A config worker` + `beat` çalışırken, 60 saniye sonra Redis CLI `SUBSCRIBE vehicles:route:*` dinleyince hat bazlı mesajlar akıyor. Admin panelinde 40dk pencere kullanım oranı %56 civarında (~40/72 çağrı), unmapped oran %5'in altında.
 
 ### Faz 3: WebSocket Katmanı (1-2 hafta)
 
-**Hedef:** Frontend bir sayfa açıp canlı noktaları Leaflet haritada hareketli görüyor.
+**Hedef:** Redis'teki hat bazlı pub/sub mesajlarını WebSocket üzerinden tarayıcıya push eden bir katman. Hat-merkezli abonelik modeli.
 
 **Çıktılar:**
-- [ ] Django Channels kuruldu, Daphne port 8001'de
+- [ ] Django Channels kuruldu, Daphne port 8001 (ya da 8011, `.env`'den override'lanabilir)
 - [ ] `apps/realtime/consumers.py` — `VehiclePositionConsumer`
-- [ ] Client subscribe/unsubscribe mantığı (bbox + modes filtresi)
-- [ ] Redis pub/sub → WebSocket push bridge
-- [ ] Basit frontend test sayfası: Leaflet + ws bağlantısı, hareket eden noktalar
+  - Connect: anonim, aynı IP'den max 5 eşzamanlı bağlantı
+  - `subscribe` action: `route_ids` listesi REPLACE semantiğiyle, opsiyonel bbox
+  - Her `route_id` için Redis channel `vehicles:route:{id}`'a subscribe
+  - Redis pub/sub → WebSocket group broadcast bridge
+  - İlk abone olunca ilgili hatların son snapshot'ını (Redis `GET vehicles:route:{id}`) hemen gönder
+  - `subscription_ack` mesajıyla aktif hat listesini doğrula (aktif olmayan ID'ler `rejected`'a düşer)
+- [ ] `apps/realtime/routing.py` — `ws/vehicles/` URL path
+- [ ] Fallback REST: `GET /api/vehicles/live/` (WebSocket kurulmazsa tüm sistem snapshot fallback)
+- [ ] `GET /api/routes/{route_id}/live/` — tek hatın son snapshot'ı (frontend hat seçince ilk render için)
+- [ ] `GET /api/routes/active/` — bugün aktif hatlar + kategorileri (mapping cache'ten)
+- [ ] Rate limit per IP: aşırı `subscribe`/`unsubscribe` döngüsü throttle
+- [ ] Basit Leaflet test sayfası: 3-4 hat seç → hareketli araçlar görünür
 
-**Bitiş kriteri:** `python manage.py runserver` + `daphne` + `celery` aynı anda çalışırken tarayıcıda noktalar gerçekten hareket ediyor.
+**Bitiş kriteri:** Django HTTP + Daphne + Celery worker + beat aynı anda çalışıyor. Browser DevTools → Network → WS: bağlantı 101 Switching Protocols. `subscribe` ile `["M2", "34BZ"]` gönder → sadece bu iki hat için `route_vehicles_update` mesajları geliyor. `subscribe ["M2"]` (yenile) → 34BZ akışı duruyor, M2 devam.
 
 ### Faz 4: 3D Frontend (3-4 hafta)
 
-**Hedef:** MapLibre + Three.js ile 3D harita, araçlar kutu olarak görünüyor ve **akıcı** hareket ediyor (60sn aralıklı verinin üstüne interpolasyon).
+**Hedef:** MapLibre + Three.js ile 3D harita, hat-merkezli açılış (sürekli görünür kategoriler), hat filtreleme paneli, araçlar akıcı (60 FPS) hareket ediyor.
+
+**Görünüm modeli (Tokyo vibes):**
+- Açılışta haritada **sürekli görünür setin** polyline'ları çizilir, üstlerinde araçlar hareket eder
+- Sağ panel: "Hatlar" sekmesi — arama kutusu + mod bazlı gruplar (Metro, Metrobüs, vapur, ...) + otobüs hat listesi (arama ile filtrelenir)
+- Otobüs hatları opt-in: kullanıcı checkbox'la ekler → haritaya polyline + araçlar gelir, WebSocket subscribe
+- Hat tıklanınca highlight, diğerleri sönükleşir (focus mode); tekrar tıklanınca toplu görünüme döner
+- Araç tıklanınca popup: KapiNo, Plaka, hangi hatta, son hız
 
 **Çıktılar:**
 - [ ] Vite + TypeScript frontend kuruldu
 - [ ] MapLibre GL JS ile OpenFreeMap stil yüklendi
 - [ ] 3D binalar (`fill-extrusion`) aktif
 - [ ] Mapterhorn terrain aktif
-- [ ] Three.js custom layer yazıldı (araçlar için)
-- [ ] WebSocket → vehicle state → 3D mesh update pipeline
+- [ ] Three.js custom layer (araçlar için)
+- [ ] **Hat filtreleme paneli** (Faz 6'dan taşındı — MVP için kritik, bu olmadan otobüsler gösterilemez):
+  - Sürekli görünür kategoriler açılışta seçili
+  - Arama kutusu: "29B" yaz → o hat listede aşağı filtrelenir
+  - Hat toggle: WebSocket `subscribe` / `unsubscribe` trigger
+  - Seçili hat sayısı göstergesi (örn. "8 hat izleniyor")
+- [ ] WebSocket client (`src/data/websocket.ts`):
+  - Reconnect
+  - Hat seçim değişikliklerinde `subscribe` mesajı gönder
+  - Per-route `route_vehicles_update` mesajlarını hat state'lerine route et
+- [ ] REST API client (`src/data/api.ts`):
+  - `GET /api/routes/active/` → kategori listesi
+  - `GET /api/routes/{route_id}/shape/` → hat polyline'ı (cache'lenir)
+  - `GET /api/routes/{route_id}/live/` → hat seçilince ilk render için snapshot
+- [ ] Three.js `InstancedMesh` araç render sistemi (GPU'da instancing)
 - [ ] **Client-side interpolation (zorunlu, zira veri 60sn aralıklı):**
-  - `apps/frontend/src/simulation/bus_interpolator.ts`
-  - T₀ (önceki) ve T₁ (yeni) konumlar arasında yol-bilinçli interpolasyon
-  - Araç hat bilgisi (kapı no → hat eşlemesinden) `shapes.txt` polyline'a map edilir
-  - Polyline üzerinde aracı "en yakın nokta"ya projekte et
-  - İki snapshot arasında polyline boyunca lineer ilerleme
-  - 60 FPS `requestAnimationFrame` döngüsü
-  - **Edge case'ler:** Araç polyline'dan sapmışsa (GPS hatası, rota değişikliği) fallback — iki konum arasında düz çizgi
-- [ ] Kamera kontrolleri (pitch, bearing, zoom)
-- [ ] Durak tıklama → popup
-- [ ] Hat tıklama → hat highlight
-- [ ] "Son güncelleme: X saniye önce" UI göstergesi
+  - T₀ ve T₁ konumları arasında polyline-aware interpolasyon
+  - Aracın hattının `shapes.txt` polyline'ına projekte et
+  - Polyline üstünde lineer ilerleme, 60 FPS `requestAnimationFrame`
+  - Edge case: polyline'dan sapma → düz çizgi fallback; shape yok (İETT otobüsleri için) → düz çizgi (Faz 5'te OSM snapping ile çözülür)
+- [ ] Kamera kontrolleri (pitch, bearing, zoom limitleri)
+- [ ] Durak tıklama → popup (yaklaşan araçlar)
+- [ ] Hat tıklama → highlight + focus mode
+- [ ] "Son güncelleme: X saniye önce" UI göstergesi (90sn sarı, 180sn kırmızı)
 
-**Bitiş kriteri:** `npm run dev` + backend çalışırken `localhost:5173`'te İstanbul'un 3D haritası geliyor ve otobüsler akıcı (60 FPS, sanki sürekli veri geliyormuş gibi) hareket ediyor. 60 saniyede bir snapshot değişiyor ama kullanıcı bunu hissedemeyecek.
+**Bitiş kriteri:** `npm run dev` + backend tüm process'leri çalışıyor. `localhost:5173` → İstanbul 3D haritası, metrobüs otobüsleri + metro/marmaray/vapur simüle araçları akıcı hareket ediyor. Sağ panelden "29B" seç → haritaya eklendi, kendi araçlarıyla. Seçimden çıkar → haritadan temizlendi. Kamera rotasyonu + 3D bina yükseklikleri Boğaz kenarında belirgin.
 
 ### Faz 5: Metro / Marmaray / Vapur Simülasyonu (2 hafta)
 
@@ -1234,3 +1471,4 @@ iett:mapping:{KapiNo} → [
 | 0.5 | 2026-04-23 | Faz 1.5 pre-flight WSDL discovery: GetIettArsivGorev_json metodunun mevcut olmadığı, WSDL'in aslında okunabilir olduğu ve GetHatOtoKonum_json'un yeni keşfi Ek A'ya (A.11) eklendi. Faz 2 mimarisi kapı no → hat kodu eşleme kaynağı bekliyor. |
 | 0.6 | 2026-04-23 | Ek A.12 eklendi: GetFiloAracKonum_json response'unda hat identifier olmadığı doğrulandı. KapiNo → HatKodu eşleme için API seçeneği kalmadı. Faz 2 öncesi İBB PDF incelenecek + GTFS heuristic değerlendirilecek. |
 | 0.6.1 | 2026-04-23 | Ek A.11 düzeltildi (endpoint yanlış varsayımıydı — metot `ibb360.asmx`'te mevcut ve çalışıyor, dünün tarihi için 55.682 kayıt test edildi). A.13 (refresh pattern: intra-day boş, günlük batch), A.14 (zaman-bağımlı mapping, SGUZERGAHKODU granülerliği) eklendi. |
+| 0.7 | 2026-04-24 | **UI modeli değişimi: araç-merkezli → hat-merkezli.** Kullanıcı bireysel araç değil, hat izler. Sürekli görünür kategoriler (metro/tramvay/füniküler/Marmaray/metrobüs/vapur) açılışta haritada; otobüs hatları opt-in. Yeni bölümler: §3.3 (mod sınıflandırması, metrobüs whitelist), §5.7 (hat-merkezli pipeline, cache stratejisi, pub/sub kanal modeli). Güncellenmiş: §5.3 (WebSocket mesaj formatı per-route), §6.3 (yeni endpoint'ler `/api/routes/active/` ve `/api/routes/{id}/live/`), §6.4 (subscribe `route_ids` odaklı), §7 Faz 2/3/4 (hat filtreleme UI MVP'ye taşındı). Yeni US-9 (hat izleme). Pipeline çekirdeği (adapter, rate limiter, lock, parser'lar — Faz 2 Adım 4'te tamamlandı) değişmedi. |
