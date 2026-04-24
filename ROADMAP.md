@@ -294,37 +294,46 @@ Reimport sonrası 498 bozuk satır temizlendi (DB'de `#NAN` residue = 0).
 
 #### Adım 5 — Celery wiring + hat-merkezli pipeline (sırada)
 
-**1. Discovery query** (ilk iş, ~15 dk):
-- DB'deki 9.773 Route kaydını spec §3.3'teki kategorilere göre sınıflandır:
-  - Metro regex `^M\d+[A-Z]?$` → kaç hat?
-  - Tramvay regex `^T\d+$` → kaç?
-  - Füniküler `^F\d+$` → kaç?
-  - Metrobüs whitelist `{"34","34A","34AS","34B","34BZ","34C","34G","34T","34Z","34U"}` → tüm 10'u DB'de var mı?
-  - `route_type=4` (ferry) → kaç?
-  - Kalan (normal İETT otobüs) → kaç?
-- Sonuçlar spec §3.3 tablosundaki "tahmini hat sayısı" kolonuna yazılır
-- Beklenmedik kategoriler varsa raporlanır
+**5a. Discovery query ✅ (tamamlandı 2026-04-24):**
 
-**2. Mapping cache** (`refresh_iett_mapping` Celery task, günlük 04:00):
+DB'deki 9.773 Route kaydı spec §3.3 kategorilerine göre sınıflandırıldı. Unique short_name bazında sonuçlar:
+- Metro (`^M\d+[A-Z]?$`) → 12 unique / 60 DB row → M1A, M1B, M2, M2A, M3, M3A, M4-M9
+- Tramvay (`^T\d+$`) → 4 unique / 5 DB row → T1-T4 (T5 İstanbul'da var ama feed'de yok)
+- Füniküler (`^F\d+$`) → 3 unique / 12 DB row → F1-F3 (F4 İstanbul'da var ama feed'de yok)
+- Marmaray (`agency_id=2 AND route_type=2`) → 3 unique / 3 DB row → Marmaray, Marmaray1, Marmaray2
+- Metrobüs (whitelist) → 10 unique / 113 DB row → whitelist %100 match, 34-prefix'li başka short_name yok
+- Vapur (`agency_id=1 AND route_type=4`) → 99 unique / 100 DB row
+- Normal İETT otobüs → 1.080 unique / 8.885 DB row
+
+**Toplam sürekli görünür: 131 unique hat.**
+
+Kapsam dışı (MVP'ye dahil edilmeyecek, v1.3'e ertelendi):
+- `route_type=9` (Minibus agency) → 317 DB row
+- `route_type=10` (Taksi Dolmus agency) → 58 DB row
+
+Detaylar spec §3.3 tablosunda.
+
+**5b. Mapping cache** (`refresh_iett_mapping` Celery task, günlük 04:00):
 - `adapter.fetch_arsiv_gorev(yesterday)` → 55k kayıt, `SGOREVDURUM=T` filtreli
 - §5.7'deki JSON formatına build et: `by_kapi` + `active_routes` + `routes_by_mode`
 - Redis'e tek key: `iett:mapping:current` (TTL 28 saat)
 - Atomik `SET` — worker'lar eski cache okumasın
+- **Alignment check:** mapping'den gelen unique `SHATKODU` set'i ile DB `Route.short_name` set'i karşılaştırılır, fark loglanır (spec §5.7 mapping drift riski)
 
-**3. Enrichment helper** (`apps/realtime/enrich.py`):
+**5c. Enrichment helper** (`apps/realtime/enrich.py`):
 - `enrich_with_route_id(vehicles: list[VehiclePosition], mapping: dict) -> list[VehiclePosition]`
 - Binary search (bisect) ile O(log n) lookup per araç
 - Mapping eksik araç → `route_id=None`, sayaç artır
 - Unit testler: tam match, interval boşluğu, eksik KapiNo, eski/yeni timestamp
 
-**4. Fetch task** (`fetch_iett_positions` Celery task, 60sn beat):
+**5d. Fetch task** (`fetch_iett_positions` Celery task, 60sn beat):
 - `adapter.fetch()` → enrichment → `defaultdict(list)` groupby
-- Her hat için: `SET vehicles:route:{id}` (TTL 120sn) + `PUBLISH`
+- Her hat için: `SET vehicles:route:{short_name}` (TTL 120sn) + `PUBLISH vehicles:route:{short_name}`
 - Unmapped sayacı: `stats:unmapped_count`
 - Stale cache: fetch fail → eski snapshot TTL süresince kalır
 - Hata durumunda Celery retry YOK — next tick zaten 60sn sonra
 
-**5. Celery beat schedule** (`config/settings/base.py`):
+**5e. Celery beat schedule** (`config/settings/base.py`):
 ```python
 CELERY_BEAT_SCHEDULE = {
     "fetch-iett-positions": {
@@ -338,20 +347,21 @@ CELERY_BEAT_SCHEDULE = {
 }
 ```
 
-**6. Admin panel "Live Vehicles" sayfası:**
+**5f. Admin panel "Live Vehicles" sayfası:**
 - Son 60 saniyedeki toplam araç sayısı + hat bazlı breakdown (en aktif 20 hat)
 - Son çağrı timestamp'i
 - Son 40 dakikadaki çağrı sayısı (grafikle)
 - API health (green/yellow/red)
 - Rate limit durumu ("44/72 — 28 hak kaldı")
 - Unmapped vehicle sayısı + yüzdesi
+- Mapping drift durumu (SHATKODU ↔ Route.short_name hizalama raporu)
 
-**7. Entegrasyon testleri:**
+**5g. Entegrasyon testleri:**
 - `test_enrichment.py` — mapping lookup edge case'leri
 - `test_fetch_task.py` — adapter mock + Redis write + pub verification
 - `test_refresh_task.py` — arsiv fetch + mapping build + atomic write
 
-**8. Canlı smoke test** (Adım 5'in en sonu, Yağız onayıyla, kontrollü, tek çağrı)
+**5h. Canlı smoke test** (Adım 5'in en sonu, Yağız onayıyla, kontrollü, tek çağrı)
 
 #### Bitiş kriteri
 
@@ -392,7 +402,7 @@ Redis'teki hat bazlı canlı araç snapshot'larını ve pub mesajlarını WebSoc
 
 **Transport:** WebSocket (HTTP long-polling fallback yok — modern tarayıcılar yeter). Port 8011'de Daphne, port 8010'daki Django HTTP'den ayrı process.
 
-**Abonelik modeli (hat-merkezli, REPLACE semantiği):** Tarayıcı `route_ids` listesi göndererek abone olur; her `subscribe` mesajı mevcut listeyi tamamen değiştirir (delta değil). Server her `route_id` için Redis channel `vehicles:route:{id}`'a abone olur, gelen mesajları client'a forward eder. Bbox desteği opsiyonel (tight filter olarak).
+**Abonelik modeli (hat-merkezli, REPLACE semantiği):** Tarayıcı `route_ids` listesi (değerler short_name, ör. `["29B", "M2"]`) göndererek abone olur; her `subscribe` mesajı mevcut listeyi tamamen değiştirir (delta değil). Server her short_name için Redis channel `vehicles:route:{short_name}`'a abone olur, gelen mesajları client'a forward eder. Bbox desteği opsiyonel (tight filter olarak).
 
 #### Yapılacak iş
 
@@ -406,7 +416,7 @@ Redis'teki hat bazlı canlı araç snapshot'larını ve pub mesajlarını WebSoc
      - `route_ids` listesini doğrula (mapping cache'inden active set)
      - Mevcut aboneliklerden çık (REPLACE semantiği)
      - Yeni her `route_id` için Channels group'a join
-     - Her hat için Redis `GET vehicles:route:{id}` → ilk snapshot'ı hemen gönder
+     - Her hat için Redis `GET vehicles:route:{short_name}` → ilk snapshot'ı hemen gönder
      - `subscription_ack` mesajıyla rejected listesi (inaktif ID'ler)
    - Redis pub/sub → Channels group broadcast bridge (spec §6.4 mesaj formatı)
 

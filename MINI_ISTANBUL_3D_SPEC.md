@@ -114,24 +114,30 @@ Mevcut İETT "Otobüsüm Nerede" uygulaması veriyi 2D sunuyor, turist dostu de�
 
 ### 3.3. Mod Sınıflandırması ve Görünürlük Politikası
 
-İstanbul'un toplu taşıma ağı ölçek olarak büyük: Faz 1 sonunda DB'de 9.773 Route kaydı var (hat × yön × varyant çarpımı dahil), her biri farklı yoğunlukta. Hepsini aynı anda haritada göstermek hem görsel kirlilik yaratır hem performans problemi çıkarır. Bu yüzden hatları **görünürlük politikası**na göre iki kategoriye ayırıyoruz:
+İstanbul'un toplu taşıma ağı ölçek olarak büyük: Faz 1 sonunda DB'de 9.773 Route kaydı var (hat × yön × varyant × feed çarpımı dahil), her biri farklı yoğunlukta. Hepsini aynı anda haritada göstermek hem görsel kirlilik yaratır hem performans problemi çıkarır. Bu yüzden hatları **görünürlük politikası**na göre iki kategoriye ayırıyoruz.
+
+**DB row vs unique fiziksel hat.** Route tablosu `route_id` bazında unique; aynı fiziksel hattın gidiş/dönüş yönleri, varyantları ve iki feed (`public:` + `iett:`) prefix'i ayrı row'lar üretiyor. Mesela `AVR1` short_name'i 149 row'a sahip, `M7` 29 row'a. Hat-merkezli UI için önemli olan **unique `short_name`** sayısı, row sayısı değil. Aşağıdaki tablo ikisini de gösteriyor; subscribe ve kanal kararları unique'e dayalı.
 
 #### Sürekli görünür (varsayılan açık)
 
 Kullanıcı müdahalesi olmadan haritada görünen, kapasitesi yönetilebilir ve "şehir omurgası" niteliğinde hatlar. Açılışta polyline'ları çizilir, üstlerinde araçlar hareket eder.
 
-| Kategori | Tespit mekanizması | Tahmini hat sayısı | Canlı veri | Hareket kaynağı |
-|---|---|---|---|---|
-| **Metro** (M1-M11) | `short_name` regex: `^M\d+[A-Z]?$` | ~12 | Yok | Tarife simülasyonu (Faz 5) |
-| **Tramvay** (T1-T5) | `short_name` regex: `^T\d+$` | ~5 | Yok | Tarife simülasyonu (Faz 5) |
-| **Füniküler** (F1-F4) | `short_name` regex: `^F\d+$` | ~4 | Yok | Tarife simülasyonu (Faz 5) |
-| **Marmaray** | `agency_id` veya özel short_name | ~1-2 | Yok | Tarife simülasyonu (Faz 5) |
-| **Metrobüs** | `short_name` whitelist (aşağıda) | 10 | **Var (İETT SOAP)** | Canlı GPS |
-| **Vapur** (İDO + Şehir Hatları) | `route_type=4` | ~20-30 | Yok | Tarife simülasyonu (Faz 5) |
+**Tablo Faz 2 Adım 5a discovery query sonuçlarıyla doldurulmuştur (2026-04-24, DB snapshot: 9.773 Route):**
 
-**Toplam sürekli görünür:** ~50-60 hat, ~500-800 araç/obje anlık ekranda.
+| Kategori | Tespit mekanizması | Unique short_name | DB row | Gerçek liste | Canlı veri | Hareket kaynağı |
+|---|---|---|---|---|---|---|
+| **Metro** | `short_name` regex `^M\d+[A-Z]?$` | **12** | 60 | M1A, M1B, M2, M2A, M3, M3A, M4, M5, M6, M7, M8, M9 | Yok | Tarife simülasyonu (Faz 5) |
+| **Tramvay** | `short_name` regex `^T\d+$` | **4** | 5 | T1, T2, T3, T4 | Yok | Tarife simülasyonu (Faz 5) |
+| **Füniküler** | `short_name` regex `^F\d+$` | **3** | 12 | F1, F2, F3 | Yok | Tarife simülasyonu (Faz 5) |
+| **Marmaray** | `agency_id=2 AND route_type=2` | **3** | 3 | Marmaray, Marmaray1, Marmaray2 | Yok | Tarife simülasyonu (Faz 5) |
+| **Metrobüs** | `short_name` whitelist (aşağıda) | **10** | 113 | 34, 34A, 34AS, 34B, 34BZ, 34C, 34G, 34T, 34U, 34Z | **Var (İETT SOAP)** | Canlı GPS |
+| **Vapur** | `agency_id=1 AND route_type=4` | **~99** | 100 | (kısaltma isimler, "BOSTANCI-B.KÖY" vs.) | Yok | Tarife simülasyonu (Faz 5) |
 
-**Metrobüs whitelist** (değişmez, İETT'nin resmi hat listesi):
+**Toplam sürekli görünür:** 131 unique short_name. Fiziksel dünya karşılığı ~131 polyline, ~500-800 hareketli araç/obje anlık ekranda (metrobüs canlı filosu + raylı/vapur aktif trip simülasyonları).
+
+**Feed eksikleri (gözlemden):** T5 tramvay ve F4 füniküler İstanbul'da gerçekten servis veriyor ancak İBB GTFS feed'inde şu anda yoklar. Faz 1 import'unda DB'ye girmediler. Spec bu iki hattı "dahil ama henüz feed'de yok" olarak belgeliyor — İBB feed'i güncellenirse otomatik dahil olacaklar, kod tarafında özel bir iş gerekmez.
+
+**Metrobüs whitelist** (değişmez, İETT'nin resmi hat listesi, tümü DB'de mevcut):
 
 ```python
 METROBUS_ROUTES = {
@@ -143,27 +149,52 @@ METROBUS_ROUTES = {
     "34C",   # Beylikdüzü - Cevizlibağ
     "34G",   # Beylikdüzü - Söğütlüçeşme (gece)
     "34T",   # Avcılar - Topkapı
-    "34Z",   # Zincirlikuyu - Söğütlüçeşme
     "34U",   # Uzunçayır - Zincirlikuyu
+    "34Z",   # Zincirlikuyu - Söğütlüçeşme
 }
 ```
 
-Whitelist neden regex değil: `^34[A-Z]*$` pattern'i `340`, `341` gibi normal İETT otobüs hatlarını ve gelecekte eklenebilecek `34D`, `34X` gibi değişiklikleri yanlış pozitif/negatif yakalar. Sabit liste, yılda 1-2 kez elle güncellenen bir veri.
+Whitelist neden regex değil: `^34[A-Z]*$` pattern'i `340`, `341` gibi normal İETT otobüs hatlarını ve gelecekte eklenebilecek `34D`, `34X` gibi değişiklikleri yanlış pozitif/negatif yakalar. Sabit liste, yılda 1-2 kez elle güncellenen bir veri. Discovery query (Adım 5a) whitelist'teki 10 hat için tam match doğruladı, 34-prefix'li başka short_name DB'de yok.
 
 #### Opt-in (varsayılan kapalı)
 
-Yaklaşık ~800 adet İETT normal otobüs hattı. Tespit: sürekli-görünür kategorilerinin dışında kalan tüm `route_type=3` İETT hatları. Kullanıcı akışı:
+**1.080 unique short_name** (~8.885 DB row), sürekli-görünür kategorilerinin dışında kalan `agency_id=9` (İETT) `route_type=3` hatları. Normal İETT otobüs hatları bu grupta. Kullanıcı akışı:
 
 1. Açılışta haritada görünmezler
-2. Sağda "Hatlar" paneli: arama kutusu + hat listesi (hat kodu + isim)
+2. Sağda "Hatlar" paneli: arama kutusu + hat listesi (short_name + long_name)
 3. Kullanıcı hat seçer → haritaya polyline + araçları eklenir, WebSocket subscribe gönderilir
 4. Seçimden çıkarır → haritadan temizlenir
 
-**Neden opt-in?** 800 hat × ~9 araç = ~7000 otobüs anlık render; hem GPU baskısı hem "her şey renkli çizgi" kirliliği. Kullanıcı gerçekten ilgilendiği 1-5 hattı izliyor, geri kalan arka plan gürültü.
+**Neden opt-in?** 1.080 hat × ortalama ~6 araç/hat = ~6.900 otobüs anlık render; hem GPU baskısı hem "her şey renkli çizgi" kirliliği. Kullanıcı gerçekten ilgilendiği 1-5 hattı izliyor, geri kalan arka plan gürültü.
+
+#### Kapsam dışı (MVP'ye dahil değil)
+
+| Kategori | Tespit | DB row | Kapsam |
+|---|---|---|---|
+| **Minibüs** | `route_type=9` (GTFS extended) | 317 | v1.3'e ertelendi (spec §3.2) |
+| **Taksi-dolmuş** | `route_type=10` (GTFS extended) | 58 | v1.3'e ertelendi |
+
+Discovery query (2026-04-24) iki route type'ı da `agency_id=4` (Minibus) ve `agency_id=5` (Taksi Dolmus) ile tam eşledi. Bu kayıtlar pipeline'a dahil edilmeyecek, mapping'e girmeyecek, `active_routes` listesine eklenmeyecek. Frontend filtreleme panelinde de görünmezler.
+
+#### Kanal ve subscribe granülerliği — `short_name` bazlı
+
+Redis pub/sub kanalları ve WebSocket subscribe'ı **`short_name` bazlı** yapılır, `route_id` bazlı değil:
+
+- Redis channel: `vehicles:route:{short_name}` (ör. `vehicles:route:29B`, `vehicles:route:M2`)
+- Redis cache key: `vehicles:route:{short_name}` aynı namespace, 120sn TTL
+- WebSocket subscribe: `{"route_ids": ["29B", "M2", "34BZ"]}` — semantik olarak short_name listesi (adlandırma spec'te bu biçimde sabit kalır, ama değerler short_name)
+
+**Neden short_name:**
+- Kullanıcı mental modeli: "29B" izler, `iett:1296` veya `public:25378` değil
+- 1 fiziksel hat × 29 DB row varsa 29 kanal saçma — 1 kanal mantıklı
+- Frontend arama input'u short_name'i döndürür doğal olarak
+
+**Enrichment ile mapping bağı:** Mapping cache (§5.7) `SHATKODU` değerlerini `short_name` namespace'i olarak kullanır. Faz 2 Adım 5b/5c'de mapping'den gelen `hat_kodu` değerlerinin DB'deki `short_name` kolonuyla ne kadar hizalı olduğu doğrulanacak. %100 hizalı değilse (mapping'de olup DB'de olmayan veya tersi), "unknown route" sayacı admin panelde görünür, araç `route_id=None` olarak pipeline'dan geçer.
 
 #### Kategori doğrulaması
 
-Yukarıdaki tablo "tahmini hat sayısı" kolonları placeholder değer — Faz 2'de agent, DB üzerinde discovery query çalıştırıp gerçek dağılımı ölçecek (Adım 5'in ilk işi). Sonuçlar bu tabloya yazılacak, hata varsa (örn. whitelist'te olmayan bir metrobüs hat kodu, tespit edilememiş bir raylı sistem) düzeltme yapılacak.
+Bu tablonun rakamları **Faz 2 Adım 5a** (2026-04-24) discovery query'sinden gelir. Spec'e zamanla yeni kategoriler eklenirse ya da İBB feed'inde değişiklik olursa discovery query yeniden koşturulup tablo güncellenir.
+
 
 ---
 
@@ -369,7 +400,7 @@ Metro İstanbul, REST endpoint'leri üzerinden aşağıdaki verileri veriyor:
 │  PostgreSQL + PostGIS        │    │  Redis                         │
 │  • GTFS statik veri           │    │  • Mapping cache (günlük)      │
 │  • Hatlar, duraklar, rotalar  │    │  • Hat bazlı snapshot'lar      │
-│  • Kullanıcılar (v1.1+)       │    │    (vehicles:route:{id})       │
+│  • Kullanıcılar (v1.1+)       │    │    (vehicles:route:{short_name})│
 │                               │    │  • Hat bazlı pub/sub kanalları │
 │                               │    │  • Channel layer (Channels)    │
 └──────────┬───────────────────┘    └──────────┬────────────────────┘
@@ -555,18 +586,21 @@ server: {
 
 UI modeli hat-merkezli olduğu için (§3.3), pipeline'ın son aşaması veriyi araç bazlıdan hat bazlına dönüştürür. Upstream'den gelen ham veri hâlâ araç granülerliğinde (her araç ayrı kayıt) — bu değişmedi, değişmiyor. Değişen tek şey fetch task'ının son adımı.
 
+**Not: `route_id` semantikleri.** `VehiclePosition.route_id` field'ı (bkz. §5.3) şema seviyesinde değişmedi, ama içine atanan değer artık GTFS'in `routes.route_id` primary key'i değil, hattın **`short_name` değeridir** (ör. `"29B"`, `"M2"`, `"34BZ"`). Kanal isimlendirmesi, Redis key'leri ve WebSocket subscribe'ı hepsi bu değere bağlı. Gerekçe §3.3'te (DB row ≠ fiziksel hat, kullanıcı short_name ile mental model kuruyor).
+
 #### Veri akışı (60 saniyelik tick)
 
 ```
 1. adapter.fetch() → list[VehiclePosition]         # ~6900 araç, route_id=None
-2. Mapping cache'ten her araç için route_id set et  # KapiNo + timestamp → HatKodu
+2. Mapping cache'ten her araç için route_id set et  # KapiNo + timestamp → SHATKODU
+                                                    # route_id = short_name
 3. defaultdict(list) ile hat bazlı grupla           # {"29B": [...], "34BZ": [...]}
 4. Her hat için iki Redis işlemi:
-   a. SET vehicles:route:{route_id} = JSON (TTL 120 sn)  ← son snapshot cache
-   b. PUBLISH vehicles:route:{route_id} = JSON           ← WebSocket trigger
+   a. SET vehicles:route:{short_name} = JSON (TTL 120 sn)  ← son snapshot cache
+   b. PUBLISH vehicles:route:{short_name} = JSON           ← WebSocket trigger
 ```
 
-Çıkan sonuç: 6900 araç fetch'i, ~800 hat key'ine ve ~800 pub mesajına dönüşür. Redis trafik artışı kabul edilebilir (her değer 1-20 kayıt, ortalama ~4 KB).
+Çıkan sonuç: 6.900 araç fetch'i → ~800-1.000 aktif hat key'ine ve pub mesajına dönüşür (metrobüs + normal otobüs, günlük aktif set). Sürekli görünür raylı/vapur kategorileri (metro/tram/fun/marmaray/vapur = ~121 unique short_name) bu pipeline'a dahil değil — onlar canlı veri taşımıyor, Faz 5 tarife simülasyonuyla ayrı işleniyor. Redis trafik artışı kabul edilebilir (her değer 1-20 kayıt, ortalama ~4 KB).
 
 #### Mapping cache formatı
 
@@ -584,7 +618,7 @@ Günlük refresh task (`refresh_iett_mapping`) `GetIettArsivGorev_json(yesterday
     ],
     "A-232": [...]
   },
-  "active_routes": ["29B", "34BZ", "15B", "M2", ...],
+  "active_routes": ["29B", "34BZ", "15B", ...],
   "routes_by_mode": {
     "metrobus": ["34", "34A", "34AS", "34B", "34BZ", "34C", "34G", "34T", "34Z", "34U"],
     "bus":      ["29B", "15B", "36T", ...]
@@ -592,25 +626,30 @@ Günlük refresh task (`refresh_iett_mapping`) `GetIettArsivGorev_json(yesterday
 }
 ```
 
+`hat` ve `active_routes` değerleri `SHATKODU`'dan gelir ve `short_name` namespace'iyle eşleştirilir. `routes_by_mode` kategorileri §3.3'teki tespit mekanizmasına göre hesaplanır (metrobüs whitelist match'i, kalan İETT hatları "bus"). Raylı sistem ve vapur kategorileri İETT feed'inde olmadığından bu mapping'de görünmez — onların routes listesi GTFS DB'den doğrudan okunur (`/api/routes/active/` endpoint'i iki kaynağı birleştirir).
+
 Tek key (~2-3 MB JSON), her fetch task'ında bir `GET` + bir parse, ~10-30ms overhead. Tüm fetch worker'ları aynı cache'i okur, `refresh_iett_mapping` task günde bir kez güncelleyip atomik `SET` yapar (tutarlılık sorunu yok).
 
 **Lookup algoritması** (`route_id` enrichment): araç için `by_kapi[KapiNo]` listesini al, araç timestamp'ini her interval'in `[start_ms, end_ms]` aralığıyla karşılaştır. Liste zaman-sıralı olduğu için binary search (`bisect`) kullanılır, O(log n). Eşleşme bulunamazsa (görev arası boşluk, veya mapping eksik) araç `route_id=None` ile geçer, fetch task UI göstermez ama sayacı ("unmapped vehicles") admin panele yansır.
 
+**Mapping ↔ DB hizalaması.** `SHATKODU` değerlerinin DB'deki Route `short_name`'lerle %100 hizalı olduğu **doğrulanmadı**. Faz 2 Adım 5b'de (mapping refresh task'ı yazılırken) şu sorgu koşulacak: "mapping'deki unique SHATKODU set'i ∩ DB Route.short_name set'i" — aradaki fark unmapped/orphan oranını belirler. Hizasızlık %5'ten büyükse admin panelde "mapping drift" uyarısı görünür; pattern gelişirse `short_name` normalization (büyük/küçük harf, whitespace) katmanı eklenebilir.
+
 #### Pub/sub kanal modeli
 
-Her hat bağımsız bir Redis channel: `vehicles:route:{route_id}`. Frontend bir hatta abone olduğunda Django Channels consumer o Redis channel'ına subscribe olur ve gelen mesajları client'a push eder.
+Her hat bağımsız bir Redis channel: `vehicles:route:{short_name}`. Frontend bir hatta abone olduğunda Django Channels consumer o Redis channel'ına subscribe olur ve gelen mesajları client'a push eder.
 
 **Neden hat bazlı kanallar?**
-- **Performans:** Frontend 5 hat izliyorsa, 5 hat mesajı alır — 800 hat değil
+- **Performans:** Frontend 5 hat izliyorsa 5 hat mesajı alır — 1.000 hat değil
 - **Bandwidth:** Her hat update'i 1-20 araçlık küçük payload (<10 KB), büyük toplu snapshot değil
 - **UX:** Metrobüs hareketi akıcı kalır otobüs paneli kullanılmazken; frontend hat başına bağımsız interpolation state yönetir
-- **Backend basitliği:** Consumer "hangi group'a mesaj göndereceğini" hat ID'siyle seçer, bbox veya mode filtresi yapmak zorunda değil
+- **Backend basitliği:** Consumer "hangi group'a mesaj göndereceğini" short_name ile seçer, bbox veya mode filtresi yapmak zorunda değil
 
 #### Fetch task'ı hata modunda ne olur?
 
 1. **Rate limit BLOCKED/COOLDOWN:** Adapter boş liste döner. Fetch task Redis'te var olan snapshot'lara dokunmaz — TTL 120sn geçtiyse kaybolurlar, geçmediyse frontend stale cache'ten okur. Admin panelde "son başarılı fetch 180sn önce" sarı→kırmızı uyarı göstergesi.
 2. **Parser hatası:** Kayıt bazlı skip (summary log'da sayılır), başarılı kayıtlar yine pub edilir.
 3. **Mapping cache eksik:** `route_id=None` ile geçen araç fetch task'ta gruplama dışında kalır (hangi hat'a ait olduğu bilinmiyor). Admin panelde "unmapped" sayacı. Ertesi gün 04:00'da mapping yenilenir, sorun sıfırlanır.
+
 
 Detaylı implementasyon Faz 2 Adım 5'te (Celery wiring).
 
@@ -934,18 +973,18 @@ Her faz **çalışır bir uygulama** çıkarır. Antigravity agent her faz sonun
 - [x] Cassette-based test suite (43 test, 0.64s, canlı API'ye gitmiyor)
 
 **Adım 5 (sırada) — Celery wiring + hat-merkezli pipeline:**
-- [ ] **Discovery query** (ilk iş): DB'deki 9.773 Route kaydının §3.3'teki kategorilere dağılımını ölç. Her regex/whitelist kaç hat eşliyor? Beklenmedik kategoriler var mı? Sonuç spec §3.3 tablosuna yazılır.
+- [x] **5a. Discovery query** ✅ (2026-04-24): DB'deki 9.773 Route kaydının §3.3'teki kategorilere dağılımı ölçüldü. Unique short_name bazında: Metro 12, Tram 4, Fun 3, Marmaray 3, Metrobüs 10 (whitelist %100 match), Vapur ~99, Normal otobüs 1.080. Route_type 9 (minibus, 317 row) ve route_type 10 (taksi dolmuş, 58 row) GTFS extended — MVP kapsam dışı, v1.3'e ertelendi. T5 ve F4 İstanbul'da servis veriyor ama İBB feed'inde yok. Detaylar §3.3 tablosunda.
 - [ ] **Mapping cache** (`refresh_iett_mapping` Celery task, günde 1 kez 04:00):
   - `fetch_arsiv_gorev(yesterday)` → Pydantic filtreleme
   - §5.7'deki JSON formatında Redis'e yaz (`iett:mapping:current` tek key, TTL 28 saat)
   - `by_kapi` + `active_routes` + `routes_by_mode` hesapla
 - [ ] **Enrichment helper** (`apps/realtime/enrich.py`):
-  - `enrich_with_route_id(vehicles, mapping)` — araç listesine `route_id` set et
+  - `enrich_with_route_id(vehicles, mapping)` — araç listesine `route_id` set et (değer = `SHATKODU` = `short_name`)
   - Binary search (bisect) ile O(log n) lookup per araç
   - Mapping eksik olan araç → `route_id=None`, sayacı artır
 - [ ] **Fetch task** (`fetch_iett_positions` Celery task, 60sn beat):
-  - `adapter.fetch()` → enrichment → `defaultdict(list)` groupby(route_id)
-  - Her hat için `SET vehicles:route:{id}` (TTL 120sn) + `PUBLISH`
+  - `adapter.fetch()` → enrichment → `defaultdict(list)` groupby(route_id)  # route_id = short_name
+  - Her hat için `SET vehicles:route:{short_name}` (TTL 120sn) + `PUBLISH vehicles:route:{short_name}`
   - Unmapped araç sayısı Redis sayacı (`stats:unmapped_count`)
   - Stale cache fallback: fetch fail olsa bile önceki snapshot TTL süresince kalır
 - [ ] **Celery beat schedule** config'te:
@@ -973,9 +1012,9 @@ Her faz **çalışır bir uygulama** çıkarır. Antigravity agent her faz sonun
 - [ ] `apps/realtime/consumers.py` — `VehiclePositionConsumer`
   - Connect: anonim, aynı IP'den max 5 eşzamanlı bağlantı
   - `subscribe` action: `route_ids` listesi REPLACE semantiğiyle, opsiyonel bbox
-  - Her `route_id` için Redis channel `vehicles:route:{id}`'a subscribe
+  - Her `short_name` için Redis channel `vehicles:route:{short_name}`'a subscribe
   - Redis pub/sub → WebSocket group broadcast bridge
-  - İlk abone olunca ilgili hatların son snapshot'ını (Redis `GET vehicles:route:{id}`) hemen gönder
+  - İlk abone olunca ilgili hatların son snapshot'ını (Redis `GET vehicles:route:{short_name}`) hemen gönder
   - `subscription_ack` mesajıyla aktif hat listesini doğrula (aktif olmayan ID'ler `rejected`'a düşer)
 - [ ] `apps/realtime/routing.py` — `ws/vehicles/` URL path
 - [ ] Fallback REST: `GET /api/vehicles/live/` (WebSocket kurulmazsa tüm sistem snapshot fallback)
@@ -1472,3 +1511,4 @@ iett:mapping:{KapiNo} → [
 | 0.6 | 2026-04-23 | Ek A.12 eklendi: GetFiloAracKonum_json response'unda hat identifier olmadığı doğrulandı. KapiNo → HatKodu eşleme için API seçeneği kalmadı. Faz 2 öncesi İBB PDF incelenecek + GTFS heuristic değerlendirilecek. |
 | 0.6.1 | 2026-04-23 | Ek A.11 düzeltildi (endpoint yanlış varsayımıydı — metot `ibb360.asmx`'te mevcut ve çalışıyor, dünün tarihi için 55.682 kayıt test edildi). A.13 (refresh pattern: intra-day boş, günlük batch), A.14 (zaman-bağımlı mapping, SGUZERGAHKODU granülerliği) eklendi. |
 | 0.7 | 2026-04-24 | **UI modeli değişimi: araç-merkezli → hat-merkezli.** Kullanıcı bireysel araç değil, hat izler. Sürekli görünür kategoriler (metro/tramvay/füniküler/Marmaray/metrobüs/vapur) açılışta haritada; otobüs hatları opt-in. Yeni bölümler: §3.3 (mod sınıflandırması, metrobüs whitelist), §5.7 (hat-merkezli pipeline, cache stratejisi, pub/sub kanal modeli). Güncellenmiş: §5.3 (WebSocket mesaj formatı per-route), §6.3 (yeni endpoint'ler `/api/routes/active/` ve `/api/routes/{id}/live/`), §6.4 (subscribe `route_ids` odaklı), §7 Faz 2/3/4 (hat filtreleme UI MVP'ye taşındı). Yeni US-9 (hat izleme). Pipeline çekirdeği (adapter, rate limiter, lock, parser'lar — Faz 2 Adım 4'te tamamlandı) değişmedi. |
+| 0.7.1 | 2026-04-24 | **§3.3 tablosu ampirik verilerle dolduruldu** (Faz 2 Adım 5a discovery query, 9.773 Route snapshot). Unique short_name sayıları: Metro 12, Tram 4, Fun 3, Marmaray 3, Metrobüs 10, Vapur ~99, Normal otobüs 1.080. Toplam sürekli görünür 131 unique hat. T5 ve F4 feed'de yok (İstanbul'da servis veriyor ama İBB yayınlamıyor) — belgelendi. Marmaray tespit filter'ı `agency_id=2 AND route_type=2` olarak netleşti (long_name match yanlış pozitif veriyordu). Route_type 9 (Minibus, 317 row) ve route_type 10 (Taksi Dolmus, 58 row) MVP kapsam dışı — v1.3'e ertelendi. **Kanal granülerliği `short_name` olarak sabitlendi** (`route_id` değil): Redis channel `vehicles:route:{short_name}`, `VehiclePosition.route_id` field'ı şema olarak korundu ama değeri artık `SHATKODU=short_name`. §5.7 mapping ↔ DB hizalama riski (SHATKODU set ∩ Route.short_name set) 5b'de doğrulanacak. |
