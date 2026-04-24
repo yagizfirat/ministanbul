@@ -15,12 +15,19 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import fakeredis
 import pytest
+import requests
 
 from apps.realtime.adapters.iett_soap import (
+    ARSIV_URL,
+    FLEET_URL,
+    IettRateLimitViolation,
+    IettSoapAdapter,
     _parse_arsiv_response,
     _parse_fleet_response,
 )
+from apps.realtime.rate_limit import SlidingWindowLimiter
 
 CASSETTES = Path(__file__).parent / "cassettes"
 LOGGER_NAME = "apps.realtime.adapters.iett_soap"
@@ -401,3 +408,132 @@ def test_parse_fleet_summary_log_shape(filo_fetch_body, fleet_at, caplog):
         "total", "ok", "skipped",
         "invalid_coord", "invalid_speed", "invalid_time", "malformed",
     }
+
+
+# --------------------------- adapter tests ---------------------------
+
+
+@pytest.fixture
+def redis_client():
+    return fakeredis.FakeStrictRedis()
+
+
+@pytest.fixture
+def fleet_limiter(redis_client):
+    # Small values: test-time timing trivial, hard=10 cap is exercised by
+    # hand in the BLOCKED test.
+    return SlidingWindowLimiter(
+        redis_client=redis_client,
+        name="iett:ratelimit:fleet",
+        window_seconds=60,
+        soft_limit=5,
+        hard_limit=10,
+        cooldown_seconds=30,
+    )
+
+
+@pytest.fixture
+def arsiv_limiter(redis_client):
+    return SlidingWindowLimiter(
+        redis_client=redis_client,
+        name="iett:ratelimit:arsiv",
+        window_seconds=60,
+        soft_limit=5,
+        hard_limit=10,
+        cooldown_seconds=30,
+    )
+
+
+@pytest.fixture
+def adapter(redis_client, fleet_limiter, arsiv_limiter):
+    return IettSoapAdapter(
+        redis_client=redis_client,
+        fleet_limiter=fleet_limiter,
+        arsiv_limiter=arsiv_limiter,
+        session=requests.Session(),
+    )
+
+
+def test_adapter_fetch_happy_path(
+    adapter, filo_fetch_body, fleet_limiter, requests_mock
+):
+    requests_mock.post(FLEET_URL, text=filo_fetch_body, status_code=200)
+
+    result = adapter.fetch()
+
+    assert len(result) == 12
+    assert all(v.source == "iett-soap" and v.mode == "bus" for v in result)
+    # One upstream hit → one recorded call, no cooldown.
+    assert fleet_limiter.current_count() == 1
+    assert not fleet_limiter.in_cooldown()
+    # SOAPAction header was sent with the expected value.
+    assert requests_mock.last_request.headers["SOAPAction"] == (
+        '"http://tempuri.org/GetFiloAracKonum_json"'
+    )
+
+
+def test_adapter_fetch_rate_limit_blocked(
+    adapter, fleet_limiter, requests_mock, caplog
+):
+    # Saturate the limiter to BLOCKED before any fetch.
+    for _ in range(10):
+        fleet_limiter.record_call()
+    requests_mock.post(FLEET_URL, text="should-not-be-called", status_code=200)
+
+    with caplog.at_level(logging.WARNING, logger="apps.realtime.adapters.iett_soap"):
+        result = adapter.fetch()
+
+    assert result == []
+    assert requests_mock.call_count == 0  # upstream never touched
+    assert any(
+        "rate limit BLOCKED" in r.getMessage() and "iett_fetch_fleet" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_adapter_fetch_policy_falsified_records_violation(
+    adapter, fleet_limiter, requests_mock
+):
+    fault_body = (CASSETTES / "policy_falsified_fault.xml").read_text(encoding="utf-8")
+    requests_mock.post(FLEET_URL, text=fault_body, status_code=500)
+
+    with pytest.raises(IettRateLimitViolation):
+        adapter.fetch()
+
+    # Cooldown armed; count unchanged (record_call not fired on violation).
+    assert fleet_limiter.in_cooldown()
+    assert fleet_limiter.current_count() == 0
+
+
+def test_adapter_fetch_normal_500_no_violation(
+    adapter, fleet_limiter, requests_mock
+):
+    # Plain server error without the Policy Falsified marker — must
+    # propagate as HTTPError and must NOT arm the cooldown.
+    requests_mock.post(
+        FLEET_URL, text="Internal Server Error", status_code=500
+    )
+
+    with pytest.raises(requests.HTTPError):
+        adapter.fetch()
+
+    assert not fleet_limiter.in_cooldown()
+    assert fleet_limiter.current_count() == 0  # no record_call on failure
+
+
+def test_adapter_fetch_arsiv_gorev_happy(
+    adapter, arsiv_ok_body, arsiv_limiter, requests_mock
+):
+    requests_mock.post(ARSIV_URL, text=arsiv_ok_body, status_code=200)
+
+    result = adapter.fetch_arsiv_gorev(date(2026, 4, 22))
+
+    # From the parser summary: 550 input → 502 ok.
+    assert len(result) == 502
+    assert arsiv_limiter.current_count() == 1
+    assert not arsiv_limiter.in_cooldown()
+    # Tarih parameter is baked into the envelope YYYYMMDD.
+    assert "<Tarih>20260422</Tarih>" in requests_mock.last_request.text
+    assert requests_mock.last_request.headers["SOAPAction"] == (
+        '"http://tempuri.org/GetIettArsivGorev_json"'
+    )

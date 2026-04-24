@@ -5,10 +5,12 @@ pytest-django==4.9.0
 pytest-cov==6.0.0
 factory-boy==3.3.1
 
-# Faz 2 Step 4a/4b — realtime adapter + rate limiter + lock tests.
+# Faz 2 Step 4 — realtime adapter + rate limiter + lock + HTTP tests.
 # [lua] extra pulls lupa so fakeredis can EVAL the lock-release script.
+# requests-mock stubs the IETT SOAP endpoint for IettSoapAdapter tests.
 fakeredis[lua]>=2.23,<3
 freezegun>=1.5,<2
+requests-mock>=1.12,<2
 
 ruff==0.8.4
 
