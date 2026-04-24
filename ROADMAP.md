@@ -314,17 +314,25 @@ Kapsam dışı (MVP'ye dahil edilmeyecek, v1.3'e ertelendi):
 Detaylar spec §3.3 tablosunda.
 
 **5b. Mapping cache** (`refresh_iett_mapping` Celery task, günlük 04:00):
-- `adapter.fetch_arsiv_gorev(yesterday)` → 55k kayıt, `SGOREVDURUM=T` filtreli
-- §5.7'deki JSON formatına build et: `by_kapi` + `active_routes` + `routes_by_mode`
-- Redis'e tek key: `iett:mapping:current` (TTL 28 saat)
-- Atomik `SET` — worker'lar eski cache okumasın
-- **Alignment check:** mapping'den gelen unique `SHATKODU` set'i ile DB `Route.short_name` set'i karşılaştırılır, fark loglanır (spec §5.7 mapping drift riski)
+
+- [x] **5b-i. build_mapping helper ✅ (tamamlandı 2026-04-24)** — pure function, parsed `IettArsivGorev` list'inden spec §5.7'deki Redis cache JSON yapısını üretir. Commit: `a148239`. 8/8 unit test yeşil (empty, single task, multiple kapi, interval sort, metrobus classification, null kapi skip, inverted interval skip, isoformat). Toplam realtime suite 51/51.
+
+- [x] **5b-ii. Alignment check ✅ (tamamlandı 2026-04-24)** — yesterday dump (55.682 kayıt, 2026-04-22) üstünde SHATKODU ↔ Route.short_name hizalaması ölçüldü. Sonuç: intersection %95.6, orphan 35 hat (tümü Türkçe karakterli sub-variants, normalization %0 kurtarma), DB-only 833 hat (raylı/vapur+opt-in+2 metrobüs). Karar: **mapping formatı sabit**, normalization katmanına gerek yok. Detaylar spec §5.7. Script `_research/alignment_check.py` silindi (one-shot analiz, sonuç kalıcılaştı).
+
+- [ ] **5b-iii. `refresh_iett_mapping` Celery task:**
+  - `adapter.fetch_arsiv_gorev(yesterday)` → Pydantic validate → SGOREVDURUM=T filter → null-start/end skip
+  - `build_mapping(records, date)` çağır
+  - Redis'e atomik write: `SET iett:mapping:current` (TTL 28 saat), JSON encoded
+  - Log metrics: kept/dropped counts, orphan count, metrobus coverage (10 whitelist'ten kaçı mapping'de), timing
+  - Unit testler: adapter mock + fakeredis + `test_refresh_task.py`
+  - Integration smoke test: cassette-backed end-to-end flow (read cassette → build → fakeredis → assert key content)
 
 **5c. Enrichment helper** (`apps/realtime/enrich.py`):
 - `enrich_with_route_id(vehicles: list[VehiclePosition], mapping: dict) -> list[VehiclePosition]`
 - Binary search (bisect) ile O(log n) lookup per araç
 - Mapping eksik araç → `route_id=None`, sayaç artır
-- Unit testler: tam match, interval boşluğu, eksik KapiNo, eski/yeni timestamp
+- **Overlapping interval davranışı:** `bisect_right(start_ms) - 1` "en geç başlayan" seçer, end kontrolü sonra yapılır. İki overlap varsa geç başlayan seçilir (ilki de aktif olabilir). Spec §5.7'de bu davranış dokümante, veri kalitesi pattern'i çoksa revize edilir
+- Unit testler: tam match, interval boşluğu, eksik KapiNo, eski/yeni timestamp, overlap edge case
 
 **5d. Fetch task** (`fetch_iett_positions` Celery task, 60sn beat):
 - `adapter.fetch()` → enrichment → `defaultdict(list)` groupby
@@ -354,7 +362,9 @@ CELERY_BEAT_SCHEDULE = {
 - API health (green/yellow/red)
 - Rate limit durumu ("44/72 — 28 hak kaldı")
 - Unmapped vehicle sayısı + yüzdesi
-- Mapping drift durumu (SHATKODU ↔ Route.short_name hizalama raporu)
+- Mapping drift durumu (SHATKODU ↔ Route.short_name hizalama raporu — refresh sonrası)
+- **Metrobüs coverage alert** — 10 whitelist'ten mapping'de olmayanlar gösterilir. İlk alignment check'te `34T` ve `34U` dün servise girmemişti; pattern takibi gerek (veri eksikliği mi, servis durumu mu ayırımı için)
+- **Orphan SHATKODU listesi** — mapping'de var DB'de yok (ilk check: 35 Türkçe-karakter sub-variant). Yeni orphan'lar eklenirse alert
 
 **5g. Entegrasyon testleri:**
 - `test_enrichment.py` — mapping lookup edge case'leri
