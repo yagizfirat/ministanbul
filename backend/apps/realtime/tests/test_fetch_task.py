@@ -92,20 +92,26 @@ def _make_vehicle(
     )
 
 
-def _interval(start_ms: int, end_ms: int, hat: str, guzergah: str | None = None) -> dict:
+def _interval(start_sec: int, end_sec: int, hat: str, guzergah: str | None = None) -> dict:
     return {
-        "start_ms": start_ms,
-        "end_ms": end_ms,
+        "start_sec": start_sec,
+        "end_sec": end_sec,
         "hat": hat,
         "guzergah": guzergah or f"{hat}_G_D0",
     }
 
 
 def _seed_mapping(client, by_kapi: dict) -> None:
-    """Write a valid mapping payload to ``iett:mapping:current``."""
+    """Write a valid mapping payload to ``iett:mapping:current``.
+
+    snapshot_date 1970-01-01 deliberately matches the epoch dates produced
+    by ``_make_vehicle(ts_ms=...)`` — these tests don't care about the
+    real calendar day, only that wall-clock seconds line up with the
+    mapping intervals (numeric seconds picked freely in [0, 99999])."""
     active = sorted({iv["hat"] for ivs in by_kapi.values() for iv in ivs})
     payload = {
-        "date": "2026-04-22",
+        "snapshot_date": "1970-01-01",
+        "snapshot_day_type": "weekday",  # 1970-01-01 was a Thursday
         "by_kapi": by_kapi,
         "active_routes": active,
         "routes_by_mode": {"metrobus": [], "bus": active},

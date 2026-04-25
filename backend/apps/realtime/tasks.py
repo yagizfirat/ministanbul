@@ -18,7 +18,7 @@ import json
 import logging
 import time
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 
 import redis
@@ -35,6 +35,7 @@ from apps.core.constants import (
     METROBUS_ROUTES,
 )
 from apps.realtime.adapters.iett_soap import IettRateLimitViolation, IettSoapAdapter
+from apps.realtime.calendar import _naive_day_type
 from apps.realtime.enrich import enrich_with_route_id
 from apps.realtime.mapping import build_mapping
 from apps.realtime.rate_limit import SlidingWindowLimiter
@@ -48,22 +49,6 @@ VEHICLES_CACHE_KEY_PREFIX = "vehicles:route:"
 VEHICLES_CACHE_TTL_SECONDS = 120  # spec §5.7
 UNMAPPED_COUNT_KEY = "stats:unmapped_count"
 LAST_FETCH_TS_KEY = "stats:last_fetch_ts"
-
-
-def _naive_day_type(d: date) -> str:
-    """Stdlib-only weekday→day_type mapping (5i-i temporary).
-
-    Will be moved to ``apps/realtime/calendar.py`` in 5i-iii and replaced
-    by a holidays-aware variant that maps Turkish public holidays to
-    ``"sunday"``. For now: Mon-Fri → ``weekday``, Sat → ``saturday``,
-    Sun → ``sunday``. Holidays land on whatever weekday they fall on.
-    """
-    weekday = d.weekday()
-    if weekday == 5:
-        return "saturday"
-    if weekday == 6:
-        return "sunday"
-    return "weekday"
 
 
 def _make_adapter(redis_client) -> IettSoapAdapter:

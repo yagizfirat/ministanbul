@@ -20,16 +20,12 @@ from __future__ import annotations
 import datetime
 import logging
 from collections import defaultdict
-from zoneinfo import ZoneInfo
 
 from apps.core.constants import METROBUS_ROUTES
+from apps.realtime.calendar import ISTANBUL_TZ
 from apps.realtime.schemas import IettArsivGorev
 
 logger = logging.getLogger(__name__)
-
-# 5i-iii will move this to apps/realtime/calendar.py alongside
-# get_day_type / pick_target_date helpers.
-ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
 
 
 def _seconds_of_day(dt_local: datetime.datetime) -> int:

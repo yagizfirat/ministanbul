@@ -36,7 +36,7 @@ from apps.realtime.tasks import (
 )
 
 CASSETTE_DIR = Path(__file__).parent / "cassettes"
-BIG_END_MS = 10**13  # year ~2286 — covers any realistic vehicle timestamp
+BIG_END_SEC = 86399  # 23:59:59 — covers any same-day wall-clock vehicle timestamp
 
 
 # --- fixtures --------------------------------------------------------------
@@ -77,10 +77,10 @@ def _patch_adapter_raising(monkeypatch, exc: Exception) -> None:
     )
 
 
-def _interval(start_ms: int, end_ms: int, hat: str) -> dict:
+def _interval(start_sec: int, end_sec: int, hat: str) -> dict:
     return {
-        "start_ms": start_ms,
-        "end_ms": end_ms,
+        "start_sec": start_sec,
+        "end_sec": end_sec,
         "hat": hat,
         "guzergah": f"{hat}_G_D0",
     }
@@ -88,15 +88,22 @@ def _interval(start_ms: int, end_ms: int, hat: str) -> dict:
 
 def _seed_mapping(redis_client, by_kapi: dict[str, list[dict]]) -> None:
     """Write mapping payload to ``iett:mapping:current`` (same shape as
-    ``build_mapping`` produces)."""
+    ``build_mapping`` produces post-5i-i: snapshot_date + snapshot_day_type
+    + start_sec/end_sec)."""
     active = sorted({iv["hat"] for ivs in by_kapi.values() for iv in ivs})
     payload = {
-        "date": "2026-04-25",
+        "snapshot_date": "2026-04-25",   # Saturday (matches cassette ts day-type)
+        "snapshot_day_type": "saturday",  # cassette vehicles fall in 15:50-20:29 IST
         "by_kapi": by_kapi,
         "active_routes": active,
         "routes_by_mode": {"metrobus": [], "bus": active},
     }
     redis_client.set(MAPPING_CACHE_KEY, json.dumps(payload).encode("utf-8"))
+
+
+def _sec(h: int, m: int = 0, s: int = 0) -> int:
+    """Wall-clock seconds since midnight."""
+    return h * 3600 + m * 60 + s
 
 
 def _subscribe(client, *channels) -> object:
@@ -162,10 +169,10 @@ def test_end_to_end_chain_with_real_fleet_cassette(fake_redis, monkeypatch):
     # 4 → 29B, 3 → 34BZ, 1 → M2, last 4 → unmapped (no mapping entry).
     by_kapi: dict[str, list[dict]] = {}
     for kapi in kapis[0:4]:
-        by_kapi[kapi] = [_interval(0, BIG_END_MS, "29B")]
+        by_kapi[kapi] = [_interval(0, BIG_END_SEC, "29B")]
     for kapi in kapis[4:7]:
-        by_kapi[kapi] = [_interval(0, BIG_END_MS, "34BZ")]
-    by_kapi[kapis[7]] = [_interval(0, BIG_END_MS, "M2")]
+        by_kapi[kapi] = [_interval(0, BIG_END_SEC, "34BZ")]
+    by_kapi[kapis[7]] = [_interval(0, BIG_END_SEC, "M2")]
 
     _seed_mapping(fake_redis, by_kapi)
     _patch_adapter_returning(monkeypatch, vehicles)
@@ -211,7 +218,7 @@ def test_end_to_end_chain_with_real_fleet_cassette(fake_redis, monkeypatch):
 
 
 def test_stale_cache_survives_adapter_failure(fake_redis, monkeypatch):
-    by_kapi = {"A-231": [_interval(0, BIG_END_MS, "29B")]}
+    by_kapi = {"A-231": [_interval(0, BIG_END_SEC, "29B")]}
     _seed_mapping(fake_redis, by_kapi)
 
     with freeze_time("2026-04-25 12:00:00") as frozen:
@@ -271,9 +278,9 @@ def test_mapping_miss_then_present_recovery(fake_redis, monkeypatch):
 
     # --- Mapping seeded between ticks (synthetic, not via refresh task) ---
     _seed_mapping(fake_redis, {
-        "A-231": [_interval(0, BIG_END_MS, "29B")],
-        "B-100": [_interval(0, BIG_END_MS, "29B")],
-        "C-50":  [_interval(0, BIG_END_MS, "34BZ")],
+        "A-231": [_interval(0, BIG_END_SEC, "29B")],
+        "B-100": [_interval(0, BIG_END_SEC, "29B")],
+        "C-50":  [_interval(0, BIG_END_SEC, "34BZ")],
     })
 
     # --- Tick 2: same adapter snapshot, mapping now present → pub fires ---
@@ -297,16 +304,20 @@ def test_mapping_miss_then_present_recovery(fake_redis, monkeypatch):
 
 
 def test_same_kapi_different_routes_across_ticks(fake_redis, monkeypatch):
-    morning_ms = _ms_from_iso("2026-04-25T08:00:00Z")
-    afternoon_ms = _ms_from_iso("2026-04-25T16:00:00Z")
+    # IST wall-clock: morning 08:00, afternoon 16:00. Use +03:00 ISO so the
+    # resulting epoch ms, after astimezone(IST) inside enrich, lands at the
+    # right wall-clock seconds (8*3600 / 16*3600).
+    morning_ms = _ms_from_iso("2026-04-25T08:00:00+03:00")
+    afternoon_ms = _ms_from_iso("2026-04-25T16:00:00+03:00")
 
+    # Mapping intervals in IST wall-clock seconds:
+    #   06:00-14:00 (21600-50400) → 29B (sabah)
+    #   14:00-22:00 (50400-79200) → 15B (öğleden sonra)
     _seed_mapping(fake_redis, {
         "A-231": [
-            {"start_ms": _ms_from_iso("2026-04-25T06:00:00Z"),
-             "end_ms":   _ms_from_iso("2026-04-25T14:00:00Z"),
+            {"start_sec": _sec(6),  "end_sec": _sec(14),
              "hat": "29B", "guzergah": "29B_G_D0"},
-            {"start_ms": _ms_from_iso("2026-04-25T14:00:00Z"),
-             "end_ms":   _ms_from_iso("2026-04-25T22:00:00Z"),
+            {"start_sec": _sec(14), "end_sec": _sec(22),
              "hat": "15B", "guzergah": "15B_G_D0"},
         ]
     })
