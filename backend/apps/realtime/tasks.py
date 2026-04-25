@@ -35,7 +35,7 @@ from apps.core.constants import (
     METROBUS_ROUTES,
 )
 from apps.realtime.adapters.iett_soap import IettRateLimitViolation, IettSoapAdapter
-from apps.realtime.calendar import _naive_day_type
+from apps.realtime.calendar import pick_target_date
 from apps.realtime.enrich import enrich_with_route_id
 from apps.realtime.mapping import build_mapping
 from apps.realtime.rate_limit import SlidingWindowLimiter
@@ -84,9 +84,15 @@ def _make_adapter(redis_client) -> IettSoapAdapter:
 
 @shared_task(name="apps.realtime.refresh_iett_mapping", bind=True)
 def refresh_iett_mapping(self) -> dict:
-    """Fetch yesterday's İETT archive, build mapping, write to Redis.
+    """Fetch the appropriate İETT archive, build mapping, write to Redis.
 
     Runs once daily at 04:00 TR time (beat schedule in Step 5e).
+
+    Target-date selection (5i-iii): instead of "yesterday", uses
+    :func:`apps.realtime.calendar.pick_target_date` which returns the
+    last same-weekday archive (Mon→last Mon etc.), with holiday-aware
+    fallbacks (today=holiday → last Sunday; 7-day-back=holiday → 14-day;
+    14 also holiday → alarm + last Sunday).
 
     On failure we return an error dict — **no Celery retry**. Retrying
     into a live incident would just burn the shared rate-limit budget;
@@ -97,17 +103,19 @@ def refresh_iett_mapping(self) -> dict:
     The returned dict also feeds the "Live Vehicles" admin page (Step 5f).
     """
     started = time.monotonic()
-    yesterday = (timezone.localtime() - timedelta(days=1)).date()
+    today = timezone.localtime().date()
+    target_date, day_type = pick_target_date(today)
 
     logger.info(
-        "refresh_iett_mapping: starting for date=%s", yesterday.isoformat()
+        "refresh_iett_mapping: starting (today=%s target=%s day_type=%s)",
+        today.isoformat(), target_date.isoformat(), day_type,
     )
 
     redis_client = redis.from_url(settings.REDIS_URL, decode_responses=False)
     adapter = _make_adapter(redis_client)
 
     try:
-        records = adapter.fetch_arsiv_gorev(yesterday)
+        records = adapter.fetch_arsiv_gorev(target_date)
     except IettRateLimitViolation as exc:
         logger.error(
             "refresh_iett_mapping: rate-limit violation, cooldown armed: %s", exc,
@@ -116,7 +124,9 @@ def refresh_iett_mapping(self) -> dict:
             "status": "error",
             "error_type": "rate_limit_violation",
             "error": str(exc),
-            "date": yesterday.isoformat(),
+            "today": today.isoformat(),
+            "target_date": target_date.isoformat(),
+            "day_type": day_type,
             "elapsed_seconds": round(time.monotonic() - started, 2),
         }
     except requests.HTTPError as exc:
@@ -125,7 +135,9 @@ def refresh_iett_mapping(self) -> dict:
             "status": "error",
             "error_type": "http_error",
             "error": str(exc),
-            "date": yesterday.isoformat(),
+            "today": today.isoformat(),
+            "target_date": target_date.isoformat(),
+            "day_type": day_type,
             "elapsed_seconds": round(time.monotonic() - started, 2),
         }
     except Exception as exc:
@@ -134,12 +146,13 @@ def refresh_iett_mapping(self) -> dict:
             "status": "error",
             "error_type": exc.__class__.__name__,
             "error": str(exc),
-            "date": yesterday.isoformat(),
+            "today": today.isoformat(),
+            "target_date": target_date.isoformat(),
+            "day_type": day_type,
             "elapsed_seconds": round(time.monotonic() - started, 2),
         }
 
-    day_type = _naive_day_type(yesterday)
-    mapping = build_mapping(records, yesterday, day_type)
+    mapping = build_mapping(records, target_date, day_type)
 
     active = set(mapping["active_routes"])
     metrobus_missing = sorted(METROBUS_ROUTES - active)
@@ -155,7 +168,9 @@ def refresh_iett_mapping(self) -> dict:
     elapsed = round(time.monotonic() - started, 2)
     result = {
         "status": "ok",
-        "date": yesterday.isoformat(),
+        "today": today.isoformat(),
+        "target_date": target_date.isoformat(),
+        "day_type": day_type,
         "records_received": len(records),
         "active_routes_count": len(active),
         "metrobus_coverage": f"{metrobus_present_count}/{len(METROBUS_ROUTES)}",

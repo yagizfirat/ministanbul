@@ -68,11 +68,29 @@ def _wrap_arsiv(body_json: str) -> str:
     )
 
 
-# 2026-04-23 09:00 UTC = 2026-04-23 12:00 Europe/Istanbul → yesterday=2026-04-22
-FROZEN_NOW_UTC = "2026-04-23 09:00:00"
+# 2026-04-29 09:00 UTC = 2026-04-29 12:00 Europe/Istanbul → today=2026-04-29
+# (Wednesday, normal weekday — no holiday). pick_target_date returns
+# 2026-04-22 (last Wednesday) which matches the cassette/synthetic record
+# DTBASLAMAZAMANI dates, so build_mapping's outside_snapshot skip rule
+# does not throw the records away.
+#
+# The holiday-fallback branch (today=holiday → last Sunday) is covered
+# by sentinel unit tests in test_calendar.py
+# (test_pick_target_date_today_is_holiday_uses_last_sunday and
+# test_pick_target_date_day_type_describes_target_not_today). The
+# refresh-task end-to-end test stays on a normal weekday so that the
+# fixed cassette dates remain semantically aligned.
+FROZEN_NOW_UTC = "2026-04-29 09:00:00"
+EXPECTED_TODAY = "2026-04-29"
+EXPECTED_TARGET_DATE = "2026-04-22"
+EXPECTED_DAY_TYPE = "weekday"
 
 
 def test_refresh_success_end_to_end(fake_redis, arsiv_ok_body, requests_mock):
+    """End-to-end refresh test on a normal weekday (FROZEN=2026-04-29 Wed).
+    pick_target_date returns 2026-04-22 (last Wed) which matches the cassette
+    timestamps. Holiday-fallback branch coverage lives in test_calendar.py
+    (test_pick_target_date_today_is_holiday_uses_last_sunday)."""
     # freeze_time freezes time.monotonic too, so elapsed_seconds will be
     # exactly 0.0. All assertions that depend on TTL / Redis presence have
     # to stay inside the with-block: outside it, real wall clock is past
@@ -83,7 +101,9 @@ def test_refresh_success_end_to_end(fake_redis, arsiv_ok_body, requests_mock):
         result = refresh_iett_mapping()
 
         assert result["status"] == "ok"
-        assert result["date"] == "2026-04-22"
+        assert result["today"] == EXPECTED_TODAY
+        assert result["target_date"] == EXPECTED_TARGET_DATE
+        assert result["day_type"] == EXPECTED_DAY_TYPE
         # Cassette carries 502 parser-passed records (T + non-null start/end).
         assert result["records_received"] == 502
         assert result["active_routes_count"] > 0
@@ -94,8 +114,8 @@ def test_refresh_success_end_to_end(fake_redis, arsiv_ok_body, requests_mock):
         raw = fake_redis.get(MAPPING_CACHE_KEY)
         assert raw is not None
         payload = json.loads(raw)
-        assert payload["snapshot_date"] == "2026-04-22"
-        assert payload["snapshot_day_type"] in {"weekday", "saturday", "sunday"}
+        assert payload["snapshot_date"] == EXPECTED_TARGET_DATE
+        assert payload["snapshot_day_type"] == EXPECTED_DAY_TYPE
         assert set(payload) == {
             "snapshot_date", "snapshot_day_type",
             "by_kapi", "active_routes", "routes_by_mode",
@@ -107,7 +127,7 @@ def test_refresh_success_end_to_end(fake_redis, arsiv_ok_body, requests_mock):
         ttl = fake_redis.ttl(MAPPING_CACHE_KEY)
         assert 28 * 3600 - 120 <= ttl <= 28 * 3600
 
-    # The <Tarih> element in the posted envelope reflects yesterday.
+    # The <Tarih> element in the posted envelope reflects target_date.
     assert "<Tarih>20260422</Tarih>" in requests_mock.last_request.text
 
 
@@ -129,7 +149,8 @@ def test_refresh_rate_limit_blocked(
 
         assert result["status"] == "error"
         assert result["error_type"] == "rate_limit_violation"
-        assert result["date"] == "2026-04-22"
+        assert result["target_date"] == EXPECTED_TARGET_DATE
+        assert result["day_type"] == EXPECTED_DAY_TYPE
 
         # Stale cache must survive: task aborted before any write.
         assert fake_redis.get(MAPPING_CACHE_KEY) == stale
