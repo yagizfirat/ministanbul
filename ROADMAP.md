@@ -341,6 +341,22 @@ Detaylar spec §3.3 tablosunda.
 
 **5h. Canlı smoke test** (Adım 5'in en sonu, Yağız onayıyla, kontrollü, tek çağrı)
 
+**5h sonucu (2026-04-25, Yağız onayıyla):**
+
+Canlı smoke test 2 API çağrısı kullanılarak yapıldı (rate budget %2.8, ihlal yok):
+
+- **Faz 1 (refresh):** ✅ Başarılı. `iett:mapping:current` Redis'e yazıldı. records=50.600, by_kapi=6.044, active_routes=789, metrobus_coverage=8/10 (34T/34U eksik — pattern), date=2026-04-24 (Cuma), payload=4.2MB, TTL=28h. 16 inverted interval skip edildi (build_mapping warn+skip doğru çalıştı). Ek A.13 H1 (intra-day yazım) lehine güçlü kanıt: Cumartesi sabah Cuma arşivi 50k+ kayıtla dolu döndü.
+
+- **Faz 2 (fetch):** ❌ Mimari bulgu. `fetch_iett_positions` 6911 araç parse etti, status=ok, parse temiz. Ancak enrichment %100 unmapped: 6911/6911 araç `route_id=None`. `vehicles:route:*` Redis key sayısı 0, hiç pub mesajı atılmadı.
+
+**Kök neden:** `build_mapping` interval'leri mutlak epoch ms olarak yazıyor (Cuma 06:00 → 1776686400000 gibi). `enrich_with_route_id` araç timestamp'ini (Cumartesi 13:55 → 1776863726000+) bu interval'lerle bisect ediyor. Cumartesi timestamp'i tüm Cuma interval'lerinin geç sonrası → eşleşme yok.
+
+Bu sadece hafta sonu sorunu değil — her gün geçerli, çünkü mapping hep "dünün absolute epoch ms"i. Ek olarak hafta içi/Cumartesi/Pazar farklı tarifeler olduğundan dün-bugün gün-tipi de tutmuyor (Pazartesi bugün → Pazar mapping = en kötü senaryo).
+
+**Karar:** 5h "design iteration needed" durumunda. Yol 1 (gün-tipi düzeltmesi + HH:MM bazlı mapping + last_same_weekday) yeni sohbette implementation iterasyonu olarak başlayacak. Konum-bazlı doğrulama Faz 4'e ertelendi.
+
+**Smoke test'in değeri:** Tasarım hatasını canlıda yakaladı. Unit testler sentetik epoch'larla geçtiği için bug ancak gerçek dün-arşiv + bugün-fleet karşılaşmasında ortaya çıktı.
+
 #### Bitiş kriteri
 
 `celery -A config worker` + `celery -A config beat` çalışıyorken:
