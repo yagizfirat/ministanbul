@@ -1,0 +1,78 @@
+{% extends "admin/base_site.html" %}
+{% load i18n l10n %}
+
+{% block title %}{{ title }}{% endblock %}
+{% block branding %}<h1 id="site-name">Live Vehicles — Mini Istanbul 3D</h1>{% endblock %}
+
+{% block content %}
+<div style="font-family: monospace; padding: 20px;">
+
+  <h2>Pipeline Health</h2>
+
+  <table style="border-collapse: collapse; margin-bottom: 30px;">
+    <tr><td><strong>Total active vehicles:</strong></td><td>{{ total_vehicles }}</td></tr>
+    <tr><td><strong>Active routes:</strong></td><td>{{ active_routes }}</td></tr>
+    <tr><td><strong>Unmapped:</strong></td><td>{{ unmapped_count }} ({{ unmapped_percent|unlocalize }}%)</td></tr>
+    <tr><td><strong>Last successful fetch:</strong></td>
+        <td>{% if last_fetch_ts %}{{ last_fetch_ts }}{% else %}<em>never</em>{% endif %}</td></tr>
+    <tr><td><strong>Mapping cache:</strong></td>
+        <td>
+          {% if mapping_present %}
+            present{% if mapping_ttl_hours %} ({{ mapping_ttl_hours|unlocalize }} h remaining){% endif %}
+          {% else %}
+            <strong style="color: red;">MISSING</strong>
+          {% endif %}
+        </td></tr>
+  </table>
+
+  <h2>Rate Limit — Fleet endpoint (60s tick)</h2>
+  {% if fleet_limiter %}
+    <table style="border-collapse: collapse; margin-bottom: 30px;">
+      <tr><td><strong>Status:</strong></td><td>{{ fleet_limiter.status }}</td></tr>
+      <tr><td><strong>Used:</strong></td>
+          <td>{{ fleet_limiter.count }} / {{ fleet_limiter.hard }}
+              ({{ fleet_limiter.remaining }} remaining)</td></tr>
+      <tr><td><strong>Soft limit:</strong></td><td>{{ fleet_limiter.soft }}</td></tr>
+      <tr><td><strong>Window:</strong></td><td>{{ fleet_limiter.window_seconds }}s</td></tr>
+      <tr><td><strong>Cooldown:</strong></td>
+          <td>{% if fleet_limiter.cooldown_active %}
+                ACTIVE until {{ fleet_limiter.cooldown_expires_at }}
+              {% else %}inactive{% endif %}</td></tr>
+    </table>
+  {% else %}
+    <p><em>Limiter status unavailable.</em></p>
+  {% endif %}
+
+  <h2>Rate Limit — Arsiv endpoint (daily 04:00 UTC)</h2>
+  {% if arsiv_limiter %}
+    <table style="border-collapse: collapse; margin-bottom: 30px;">
+      <tr><td><strong>Status:</strong></td><td>{{ arsiv_limiter.status }}</td></tr>
+      <tr><td><strong>Used:</strong></td>
+          <td>{{ arsiv_limiter.count }} / {{ arsiv_limiter.hard }}
+              ({{ arsiv_limiter.remaining }} remaining)</td></tr>
+      <tr><td><strong>Window:</strong></td><td>{{ arsiv_limiter.window_seconds }}s</td></tr>
+    </table>
+  {% else %}
+    <p><em>Limiter status unavailable.</em></p>
+  {% endif %}
+
+  <h2>Top 20 Active Routes</h2>
+  {% if top_routes %}
+    <table style="border-collapse: collapse;">
+      <tr><th style="text-align: left; padding-right: 20px;">Route</th>
+          <th style="text-align: left;">Vehicle count</th></tr>
+      {% for short_name, count in top_routes %}
+        <tr><td>{{ short_name }}</td><td>{{ count }}</td></tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p><em>No active routes — pipeline may not be running.</em></p>
+  {% endif %}
+
+  <p style="margin-top: 30px; color: #666; font-size: 0.85em;">
+    <em>Manuel refresh: F5 — bu sayfa server-side render, otomatik
+    güncellenmiyor.</em>
+  </p>
+
+</div>
+{% endblock %}

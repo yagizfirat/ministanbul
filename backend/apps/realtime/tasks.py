@@ -47,6 +47,7 @@ MAPPING_CACHE_TTL_SECONDS = 28 * 3600  # 28 hours — spec §5.7
 VEHICLES_CACHE_KEY_PREFIX = "vehicles:route:"
 VEHICLES_CACHE_TTL_SECONDS = 120  # spec §5.7
 UNMAPPED_COUNT_KEY = "stats:unmapped_count"
+LAST_FETCH_TS_KEY = "stats:last_fetch_ts"
 
 
 def _make_adapter(redis_client) -> IettSoapAdapter:
@@ -252,8 +253,13 @@ def fetch_iett_positions() -> dict:
 
     redis_client.set(UNMAPPED_COUNT_KEY, unmapped)
 
+    # Heartbeat: only success paths reach here (any adapter exception
+    # returned early). Cache miss still counts as success — the upstream
+    # was healthy, only the mapping was missing.
+    now_iso = _now_iso_z()
+    redis_client.set(LAST_FETCH_TS_KEY, now_iso)
+
     if grouped:
-        now_iso = _now_iso_z()
         pipe = redis_client.pipeline(transaction=False)
         for short_name, vehicles_list in grouped.items():
             payload = json.dumps(

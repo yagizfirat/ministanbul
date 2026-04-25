@@ -20,6 +20,7 @@ from apps.realtime import tasks as tasks_module
 from apps.realtime.adapters.iett_soap import IettRateLimitViolation
 from apps.realtime.schemas import VehiclePosition
 from apps.realtime.tasks import (
+    LAST_FETCH_TS_KEY,
     MAPPING_CACHE_KEY,
     UNMAPPED_COUNT_KEY,
     VEHICLES_CACHE_KEY_PREFIX,
@@ -157,6 +158,9 @@ def test_happy_path_single_route_single_vehicle(fake_redis, patch_adapter):
     assert json.loads(cached) == payload
 
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 0
+    last_fetch = fake_redis.get(LAST_FETCH_TS_KEY)
+    assert last_fetch is not None
+    assert last_fetch.endswith(b"Z")
     assert result["status"] == "ok"
     assert result["fetched"] == 1
     assert result["unmapped"] == 0
