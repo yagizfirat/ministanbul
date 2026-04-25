@@ -395,6 +395,12 @@ Bu sadece hafta sonu sorunu değil — her gün geçerli, çünkü mapping hep "
 
 **Geri dönüş kriteri:** 5i-v'te unmapped > %35 ise Yol 1 yetersiz, Yol 2 (konum-bazlı) gündeme gelir. Aksi takdirde 5i tamamlanır, Faz 2 Adım 5 kapanır.
 
+### Faz 2 — Polish backlog
+
+**5j-i. Race-free mismatch counter** (5i-iv polish, v1.x'te ele alınabilir)
+
+Mevcut 5i-iv `redis.set(DAY_TYPE_MISMATCH_COUNT_KEY, 0)` refresh success path'te race window (~1-2sn) içinde fetch tick'inin INCR'ını sıfırlayabilir. Worst case 1-2 mismatch info kaybı, operasyonel etki yok. Race-free alternatif: `last_refresh_ts` + `total_count` - `cached_baseline` pattern. v1.x veya production'da gerçek bir mismatch flow gözleminden sonra ele alınır.
+
 #### Bitiş kriteri
 
 `celery -A config worker` + `celery -A config beat` çalışıyorken:
