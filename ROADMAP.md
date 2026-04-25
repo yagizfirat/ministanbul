@@ -357,6 +357,44 @@ Bu sadece hafta sonu sorunu değil — her gün geçerli, çünkü mapping hep "
 
 **Smoke test'in değeri:** Tasarım hatasını canlıda yakaladı. Unit testler sentetik epoch'larla geçtiği için bug ancak gerçek dün-arşiv + bugün-fleet karşılaşmasında ortaya çıktı.
 
+### Faz 2 Adım 5i — Tasarım iterasyonu (Yol 1: gün-tipi düzeltmesi)
+
+5h smoke test'inin yakaladığı mimari hata için patch turu. 5 alt-adım:
+
+**5i-i. `build_mapping` refactor** (`apps/realtime/mapping.py`):
+- epoch_ms → wall-clock saniye (`start_sec`/`end_sec`, integer)
+- Gece geçen görev: `end_sec >= 86400` (extended), aynı kapı aynı liste
+- Yeni metadata: `snapshot_date`, `snapshot_day_type` (`weekday`/`saturday`/`sunday`)
+- Eski `start_ms`/`end_ms`/`date` field'ları kaldırıldı
+- Bitiş: 8 mevcut unit test yeni format'ta yeşil + 1 yeni test (gece geçen interval extended)
+
+**5i-ii. `enrich_with_route_id` refactor** (`apps/realtime/enrich.py`):
+- Wall-clock seconds bisect (timestamp Istanbul TZ'ye çevrilir)
+- **İmza değişmedi** — saf fonksiyon, dönüş `list[VehiclePosition]` (12 mevcut test korunur)
+- Araç-başına overnight detection (`local.hour < 4 + _next_day_type` check)
+- Mismatch detection enrich içinde DEĞİL — `tasks.py` tarafında counter'a yazılır
+- Bitiş: 12 mevcut test yeşil + 4 yeni (gece geçişi happy path, geçen-gün+sabah <4 doğru kanal, snapshot_day_type yok defansif, snapshot_date yok defansif)
+
+**5i-iii. Holidays paketi + calendar helper + refresh refactor** (BİRLEŞİK; `requirements/base.txt`, `apps/realtime/calendar.py` yeni, `apps/realtime/tasks.py`):
+- `holidays>=0.50,<1` paket
+- Yeni modül `apps/realtime/calendar.py`: `ISTANBUL_TZ`, `TURKEY_HOLIDAYS`, `get_day_type(date)`, `_next_day_type(snapshot_date_str)`, `pick_target_date(today)` — tatil-aware (today=tatil → Pazar fallback; 7-gün-geri tatil → 14; 14 de tatil → alarm log + Pazar fallback)
+- `refresh_iett_mapping`: `pick_target_date` çağırır, `build_mapping(records, target_date, day_type)` çağrısı, return dict'e `target_date`/`day_type` eklenir
+- Migration politikası (commit mesajında): yeni format Redis'e overwrite, eski key DEL gerekmez (28h TTL otomatik); deploy günü manuel `refresh_iett_mapping()` + 04:00 beat 24h içinde otomatik geçişi yapar
+- Bitiş: 5 mevcut refresh testi yeşil + 6 yeni calendar test (today=tatil→Pazar, today=Cuma + 7gün=tatil→14gün, today=Cuma + 7+14=tatil→alarm+Pazar, today=Pazartesi normal→7gün, today=Cumartesi normal→7gün, get_day_type matrix)
+
+**5i-iv. Admin metrikler + mismatch counter** (`apps/realtime/admin_views.py` + template + tasks.py):
+- `fetch_iett_positions`: sample-bazlı mismatch detection, `redis.incr("stats:day_type_mismatch_count")`
+- `refresh_iett_mapping`: success path'te `redis.delete("stats:day_type_mismatch_count")` (refresh sonrası reset)
+- Admin yeni satırlar: "Mapping kaynağı: weekday (snapshot_date 2026-04-18, 7 gün eski)", "Day-type mismatch count: 0"
+- Bitiş: 8 mevcut admin testi yeşil + 2 yeni (snapshot_day_type display, mismatch counter display)
+
+**5i-v. Yeniden smoke test** (kontrollü):
+- **Tur 1 (zorunlu, smoke günü):** refresh (geçen aynı gün) + fetch. Beklenti: gün-tipi eşleşmesi, unmapped %15-25. Rate budget +%2.8.
+- **Tur 2 (opsiyonel, Pazartesi sabah):** weekday→weekday geçişi canlı kanıt için. Rate budget +%2.8 (toplam %11.2). Karar implementation günü Yağız'a bırakıldı.
+- Bitiş: ROADMAP'e ampirik kayıt (gerçek unmapped %, route count, gece-geçişi tetiklenirse not, tur 2 yapıldıysa weekday geçişi sonucu)
+
+**Geri dönüş kriteri:** 5i-v'te unmapped > %35 ise Yol 1 yetersiz, Yol 2 (konum-bazlı) gündeme gelir. Aksi takdirde 5i tamamlanır, Faz 2 Adım 5 kapanır.
+
 #### Bitiş kriteri
 
 `celery -A config worker` + `celery -A config beat` çalışıyorken:
