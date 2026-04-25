@@ -327,12 +327,7 @@ Detaylar spec §3.3 tablosunda.
   - Unit testler: adapter mock + fakeredis + `test_refresh_task.py`
   - Integration smoke test: cassette-backed end-to-end flow (read cassette → build → fakeredis → assert key content)
 
-**5c. Enrichment helper** (`apps/realtime/enrich.py`):
-- `enrich_with_route_id(vehicles: list[VehiclePosition], mapping: dict) -> list[VehiclePosition]`
-- Binary search (bisect) ile O(log n) lookup per araç
-- Mapping eksik araç → `route_id=None`, sayaç artır
-- **Overlapping interval davranışı:** `bisect_right(start_ms) - 1` "en geç başlayan" seçer, end kontrolü sonra yapılır. İki overlap varsa geç başlayan seçilir (ilki de aktif olabilir). Spec §5.7'de bu davranış dokümante, veri kalitesi pattern'i çoksa revize edilir
-- Unit testler: tam match, interval boşluğu, eksik KapiNo, eski/yeni timestamp, overlap edge case
+  - [x] **5c. Enrichment helper ✅ (tamamlandı 2026-04-25)** — `apps/realtime/enrich.py`, saf fonksiyon: `enrich_with_route_id(vehicles, mapping) -> list[VehiclePosition]`. `bisect_right(starts, now_ms) - 1` ile O(log n) interval lookup, end inclusive. Mapping eksik (KapiNo yok, boş intervals, ya da `by_kapi` key'i kayıp) veya interval boşluğunda olan araç `route_id=None` ile geçer; sayaç hesaplama 5d fetch task'ın sorumluluğu. `VehiclePosition.frozen=True` olduğu için (schemas.py) input mutate edilemez zaten — helper `model_copy(update={"route_id": ...})` ile yeni objeler döner, çağıran taraf orijinal listeyi temiz tutar. Overlap davranışı: `bisect_right - 1` doğal olarak geç başlayan interval'i seçer (spec §5.7 + bu maddede dokümante; pattern çoksa revize edilir). Commit: `992e272`. 12/12 unit test yeşil (tam match, start/end inclusive, before-first, after-last, interval boşluğu, eksik kapı, boş intervals defansif, overlap, empty vehicles, mutation guard PRESET preserved, corrupt mapping). Toplam realtime suite 68/68, 1.29s.
 
 **5d. Fetch task** (`fetch_iett_positions` Celery task, 60sn beat):
 - `adapter.fetch()` → enrichment → `defaultdict(list)` groupby
