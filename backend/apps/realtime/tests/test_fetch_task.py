@@ -11,6 +11,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import fakeredis
 import pytest
@@ -20,6 +21,7 @@ from apps.realtime import tasks as tasks_module
 from apps.realtime.adapters.iett_soap import IettRateLimitViolation
 from apps.realtime.schemas import VehiclePosition
 from apps.realtime.tasks import (
+    DAY_TYPE_MISMATCH_COUNT_KEY,
     LAST_FETCH_TS_KEY,
     MAPPING_CACHE_KEY,
     UNMAPPED_COUNT_KEY,
@@ -27,6 +29,8 @@ from apps.realtime.tasks import (
     VEHICLES_CACHE_TTL_SECONDS,
     fetch_iett_positions,
 )
+
+ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
 
 LOGGER_NAME = "apps.realtime.tasks"
 
@@ -101,17 +105,28 @@ def _interval(start_sec: int, end_sec: int, hat: str, guzergah: str | None = Non
     }
 
 
-def _seed_mapping(client, by_kapi: dict) -> None:
+def _seed_mapping(
+    client,
+    by_kapi: dict,
+    *,
+    snapshot_date: str = "1970-01-01",
+    snapshot_day_type: str = "sunday",
+) -> None:
     """Write a valid mapping payload to ``iett:mapping:current``.
 
-    snapshot_date 1970-01-01 deliberately matches the epoch dates produced
-    by ``_make_vehicle(ts_ms=...)`` — these tests don't care about the
-    real calendar day, only that wall-clock seconds line up with the
-    mapping intervals (numeric seconds picked freely in [0, 99999])."""
+    Default snapshot_date 1970-01-01 matches the epoch dates produced by
+    ``_make_vehicle(ts_ms=...)``. snapshot_day_type defaults to "sunday"
+    because 1970-01-01 is Yılbaşı (a Turkish public holiday), which the
+    holidays-aware ``get_day_type`` maps to "sunday" — so the vehicle's
+    ts day_type and the mapping snapshot_day_type agree, keeping the
+    5i-iv mismatch detection silent for every default-seeded test.
+    Override snapshot_date/day_type explicitly when a test needs to
+    exercise the mismatch detection branch (see
+    test_day_type_mismatch_increments_counter)."""
     active = sorted({iv["hat"] for ivs in by_kapi.values() for iv in ivs})
     payload = {
-        "snapshot_date": "1970-01-01",
-        "snapshot_day_type": "weekday",  # 1970-01-01 was a Thursday
+        "snapshot_date": snapshot_date,
+        "snapshot_day_type": snapshot_day_type,
         "by_kapi": by_kapi,
         "active_routes": active,
         "routes_by_mode": {"metrobus": [], "bus": active},
@@ -445,3 +460,39 @@ def test_unmapped_count_overwrites_previous_tick(fake_redis, patch_adapter):
     fetch_iett_positions()
 
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 0
+
+
+# --- 11. Day-type mismatch counter (5i-iv) -------------------------------
+
+
+def test_day_type_mismatch_increments_counter(fake_redis, patch_adapter):
+    """Mapping snapshot_day_type='weekday' but vehicle is on a Saturday →
+    sample-based mismatch detection fires INCR on the counter key."""
+    sat_local = datetime(2026, 4, 25, 12, 0, 0, tzinfo=ISTANBUL_TZ)  # Saturday
+    sat_ms = int(sat_local.timestamp() * 1000)
+    vehicle = _make_vehicle("A-231", ts_ms=sat_ms)
+
+    _seed_mapping(
+        fake_redis,
+        {"A-231": [_interval(0, 86399, "29B")]},
+        snapshot_date="2026-04-22",  # Wednesday
+        snapshot_day_type="weekday",
+    )
+    patch_adapter(fetch_return=[vehicle])
+
+    fetch_iett_positions()
+
+    assert int(fake_redis.get(DAY_TYPE_MISMATCH_COUNT_KEY)) == 1
+
+
+def test_no_mismatch_does_not_increment_counter(fake_redis, patch_adapter):
+    """Default _seed_mapping uses snapshot_day_type='weekday' and the
+    1970-01-01-derived vehicle ts is also a Thursday → 'weekday' match
+    → no INCR. Explicit guard against accidental counter writes on
+    matching ticks."""
+    _seed_mapping(fake_redis, {"A-231": [_interval(1000, 99999, "29B")]})
+    patch_adapter(fetch_return=[_make_vehicle("A-231")])
+
+    fetch_iett_positions()
+
+    assert fake_redis.get(DAY_TYPE_MISMATCH_COUNT_KEY) is None

@@ -109,9 +109,21 @@ def _seed_vehicle_payload(redis_client, short_name: str, count: int) -> None:
     redis_client.set(f"vehicles:route:{short_name}", payload)
 
 
-def _seed_mapping(redis_client, ttl_seconds: int = 100000) -> None:
+def _seed_mapping(
+    redis_client,
+    *,
+    ttl_seconds: int = 100000,
+    snapshot_date: str = "2026-04-25",
+    snapshot_day_type: str = "saturday",
+) -> None:
+    """Seed iett:mapping:current with a 5i-i+ format payload.
+
+    snapshot_date defaults to a Saturday (2026-04-25) so the default
+    snapshot_day_type='saturday' is consistent. Override either when a
+    test needs to exercise the 5i-iv snapshot-metadata display branch."""
     payload = json.dumps({
-        "date": "2026-04-25",
+        "snapshot_date": snapshot_date,
+        "snapshot_day_type": snapshot_day_type,
         "by_kapi": {},
         "active_routes": [],
         "routes_by_mode": {"metrobus": [], "bus": []},
@@ -248,3 +260,45 @@ def test_no_active_routes_message(
 
     assert "No active routes" in body
     assert "MISSING" in body
+
+
+# --- 9. Mapping snapshot metadata + mismatch counter (5i-iv) ------------
+
+
+def test_mapping_snapshot_metadata_displayed(
+    client_logged_in, fake_redis, patch_adapter,
+):
+    """5i-iv: admin shows mapping kaynağı (snapshot day_type + date)."""
+    _seed_mapping(
+        fake_redis,
+        snapshot_date="2026-04-22",
+        snapshot_day_type="weekday",
+    )
+    patch_adapter()
+
+    response = client_logged_in.get(LIVE_URL)
+    body = response.content.decode("utf-8")
+
+    assert "Mapping kaynağı" in body
+    assert "weekday" in body
+    assert "2026-04-22" in body
+    # mapping_age_days >= 0 — exact day delta depends on real today, so
+    # just check the "X gün eski" suffix appears once age has been computed.
+    assert "gün eski" in body
+
+
+def test_mismatch_counter_displayed_with_orange_alert(
+    client_logged_in, fake_redis, patch_adapter,
+):
+    """5i-iv: counter > 0 renders orange-bold; counter == 0 plain."""
+    fake_redis.set("stats:day_type_mismatch_count", 7)
+    _seed_mapping(fake_redis)
+    patch_adapter()
+
+    response = client_logged_in.get(LIVE_URL)
+    body = response.content.decode("utf-8")
+
+    assert "Day-type mismatch count" in body
+    # Orange-bold form: <strong style="color: orange;">7</strong>
+    assert 'color: orange' in body
+    assert ">7</strong>" in body

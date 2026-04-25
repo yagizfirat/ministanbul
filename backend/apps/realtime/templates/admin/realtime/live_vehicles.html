@@ -23,6 +23,13 @@
             <strong style="color: red;">MISSING</strong>
           {% endif %}
         </td></tr>
+    {% if mapping_snapshot_date %}
+      <tr><td><strong>Mapping kaynağı:</strong></td>
+          <td>{{ mapping_snapshot_day_type|default:"unknown" }}
+              (snapshot {{ mapping_snapshot_date }}{% if mapping_age_days is not None %}, {{ mapping_age_days }} gün eski{% endif %})</td></tr>
+    {% endif %}
+    <tr><td><strong>Day-type mismatch count:</strong></td>
+        <td>{% if mismatch_count > 0 %}<strong style="color: orange;">{{ mismatch_count }}</strong>{% else %}{{ mismatch_count }}{% endif %}</td></tr>
   </table>
 
   <h2>Rate Limit — Fleet endpoint (60s tick)</h2>

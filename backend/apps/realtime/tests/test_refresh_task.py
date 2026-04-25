@@ -16,7 +16,11 @@ from freezegun import freeze_time
 
 from apps.realtime.adapters.iett_soap import ARSIV_URL
 from apps.realtime import tasks as tasks_module
-from apps.realtime.tasks import MAPPING_CACHE_KEY, refresh_iett_mapping
+from apps.realtime.tasks import (
+    DAY_TYPE_MISMATCH_COUNT_KEY,
+    MAPPING_CACHE_KEY,
+    refresh_iett_mapping,
+)
 
 CASSETTES = Path(__file__).parent / "cassettes"
 
@@ -219,3 +223,18 @@ def test_refresh_timing_included(fake_redis, arsiv_empty_body, requests_mock):
     assert "elapsed_seconds" in result
     assert result["elapsed_seconds"] >= 0
     assert result["elapsed_seconds"] < 5.0
+
+
+def test_refresh_resets_mismatch_counter(
+    fake_redis, arsiv_ok_body, requests_mock,
+):
+    """5i-iv: success path overwrites stats:day_type_mismatch_count to 0,
+    so a fresh day starts with zero recorded mismatches."""
+    requests_mock.post(ARSIV_URL, text=arsiv_ok_body, status_code=200)
+    fake_redis.set(DAY_TYPE_MISMATCH_COUNT_KEY, 42)  # leftover from prior day
+
+    with freeze_time(FROZEN_NOW_UTC):
+        result = refresh_iett_mapping()
+
+        assert result["status"] == "ok"
+        assert int(fake_redis.get(DAY_TYPE_MISMATCH_COUNT_KEY)) == 0

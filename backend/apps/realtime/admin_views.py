@@ -19,12 +19,15 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import date, datetime
 
 import redis
 from django.conf import settings
 from django.shortcuts import render
 
+from apps.realtime.calendar import ISTANBUL_TZ
 from apps.realtime.tasks import (
+    DAY_TYPE_MISMATCH_COUNT_KEY,
     LAST_FETCH_TS_KEY,
     MAPPING_CACHE_KEY,
     UNMAPPED_COUNT_KEY,
@@ -71,14 +74,35 @@ def live_vehicles_view(request):
         round(100 * unmapped_count / total_seen, 1) if total_seen else 0.0
     )
 
-    # 4. Mapping cache presence + remaining TTL (hours).
+    # 4. Mapping cache presence + remaining TTL (hours) + snapshot metadata.
     mapping_ttl = redis_client.ttl(MAPPING_CACHE_KEY)  # -2 absent, -1 no TTL, >=0 ttl
     mapping_present = mapping_ttl >= -1
     mapping_ttl_hours = round(mapping_ttl / 3600, 1) if mapping_ttl > 0 else None
 
+    mapping_snapshot_date = None
+    mapping_snapshot_day_type = None
+    mapping_age_days = None
+    if mapping_present:
+        raw_mapping = redis_client.get(MAPPING_CACHE_KEY)
+        if raw_mapping:
+            try:
+                mapping_payload = json.loads(raw_mapping)
+                mapping_snapshot_date = mapping_payload.get("snapshot_date")
+                mapping_snapshot_day_type = mapping_payload.get("snapshot_day_type")
+                if mapping_snapshot_date:
+                    snap = date.fromisoformat(mapping_snapshot_date)
+                    today = datetime.now(tz=ISTANBUL_TZ).date()
+                    mapping_age_days = (today - snap).days
+            except (json.JSONDecodeError, ValueError):
+                logger.warning("admin: mapping payload parse failed")
+
     # 5a. Last successful fetch heartbeat.
     raw_last_fetch = redis_client.get(LAST_FETCH_TS_KEY)
     last_fetch_ts = raw_last_fetch.decode("utf-8") if raw_last_fetch else None
+
+    # 5c. Day-type mismatch counter (5i-iv).
+    raw_mismatch = redis_client.get(DAY_TYPE_MISMATCH_COUNT_KEY)
+    mismatch_count = int(raw_mismatch) if raw_mismatch else 0
 
     # 5b. Rate-limit snapshots (one for fleet, one for arsiv).
     try:
@@ -100,7 +124,11 @@ def live_vehicles_view(request):
         "unmapped_percent": unmapped_percent,
         "mapping_present": mapping_present,
         "mapping_ttl_hours": mapping_ttl_hours,
+        "mapping_snapshot_date": mapping_snapshot_date,
+        "mapping_snapshot_day_type": mapping_snapshot_day_type,
+        "mapping_age_days": mapping_age_days,
         "last_fetch_ts": last_fetch_ts,
+        "mismatch_count": mismatch_count,
         "fleet_limiter": fleet_limiter,
         "arsiv_limiter": arsiv_limiter,
     }

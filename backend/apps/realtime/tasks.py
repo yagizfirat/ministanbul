@@ -18,7 +18,7 @@ import json
 import logging
 import time
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from datetime import timezone as dt_timezone
 
 import redis
@@ -35,7 +35,7 @@ from apps.core.constants import (
     METROBUS_ROUTES,
 )
 from apps.realtime.adapters.iett_soap import IettRateLimitViolation, IettSoapAdapter
-from apps.realtime.calendar import pick_target_date
+from apps.realtime.calendar import ISTANBUL_TZ, get_day_type, pick_target_date
 from apps.realtime.enrich import enrich_with_route_id
 from apps.realtime.mapping import build_mapping
 from apps.realtime.rate_limit import SlidingWindowLimiter
@@ -49,6 +49,7 @@ VEHICLES_CACHE_KEY_PREFIX = "vehicles:route:"
 VEHICLES_CACHE_TTL_SECONDS = 120  # spec §5.7
 UNMAPPED_COUNT_KEY = "stats:unmapped_count"
 LAST_FETCH_TS_KEY = "stats:last_fetch_ts"
+DAY_TYPE_MISMATCH_COUNT_KEY = "stats:day_type_mismatch_count"  # 5i-iv
 
 
 def _make_adapter(redis_client) -> IettSoapAdapter:
@@ -164,6 +165,10 @@ def refresh_iett_mapping(self) -> dict:
         payload_bytes,
         ex=MAPPING_CACHE_TTL_SECONDS,
     )
+    # 5i-iv: reset mismatch counter on every successful refresh.
+    # Race window with fetch incr is ~1-2 s; worst case we lose one
+    # mismatch tick. Polish (race-free pattern) tracked in ROADMAP 5j.
+    redis_client.set(DAY_TYPE_MISMATCH_COUNT_KEY, 0)
 
     elapsed = round(time.monotonic() - started, 2)
     result = {
@@ -257,6 +262,40 @@ def fetch_iett_positions() -> dict:
         mapping = {}
     else:
         mapping = json.loads(raw_mapping)
+
+    # 5i-iv: sample-based day_type mismatch detection. enrich.py stays a
+    # pure best-effort lookup; the counter is bookkeeping for the admin
+    # alarm. Overnight continuation is detected the same way as in enrich
+    # (vehicle on snapshot+1 day before 04:00) and does NOT count as a
+    # mismatch — it's an expected window.
+    if vehicles and mapping:
+        sample_local = vehicles[0].timestamp.astimezone(ISTANBUL_TZ)
+        today_dt = get_day_type(sample_local.date())
+        snapshot_dt = mapping.get("snapshot_day_type")
+        snapshot_date_str = mapping.get("snapshot_date")
+
+        is_overnight = False
+        if snapshot_date_str:
+            try:
+                snap_date = date.fromisoformat(snapshot_date_str)
+                is_overnight = (
+                    sample_local.date() == snap_date + timedelta(days=1)
+                    and sample_local.hour < 4
+                )
+            except ValueError:
+                pass  # corrupt snapshot_date → treat as not overnight
+
+        if (
+            snapshot_dt is not None
+            and today_dt != snapshot_dt
+            and not is_overnight
+        ):
+            logger.warning(
+                "fetch_iett_positions: day_type mismatch — degraded mode "
+                "(today=%s mapping=%s snapshot_date=%s)",
+                today_dt, snapshot_dt, snapshot_date_str,
+            )
+            redis_client.incr(DAY_TYPE_MISMATCH_COUNT_KEY)
 
     enriched = enrich_with_route_id(vehicles, mapping)
 
