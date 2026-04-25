@@ -94,8 +94,12 @@ def test_refresh_success_end_to_end(fake_redis, arsiv_ok_body, requests_mock):
         raw = fake_redis.get(MAPPING_CACHE_KEY)
         assert raw is not None
         payload = json.loads(raw)
-        assert payload["date"] == "2026-04-22"
-        assert set(payload) == {"date", "by_kapi", "active_routes", "routes_by_mode"}
+        assert payload["snapshot_date"] == "2026-04-22"
+        assert payload["snapshot_day_type"] in {"weekday", "saturday", "sunday"}
+        assert set(payload) == {
+            "snapshot_date", "snapshot_day_type",
+            "by_kapi", "active_routes", "routes_by_mode",
+        }
         assert set(payload["routes_by_mode"]) == {"metrobus", "bus"}
         assert len(payload["active_routes"]) == result["active_routes_count"]
 
