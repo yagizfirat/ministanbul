@@ -331,19 +331,7 @@ Detaylar spec §3.3 tablosunda.
 
   - [x] **5d. Fetch task ✅ (tamamlandı 2026-04-25)** — `apps/realtime/tasks.py::fetch_iett_positions`, 60sn beat task. Akış: `IettSoapAdapter.fetch()` → `iett:mapping:current` GET + `json.loads` → `enrich_with_route_id` → `defaultdict(list)` groupby (None bucket düşürülür) → her hat için Redis pipeline (`transaction=False`, single-writer pattern) `SET vehicles:route:{short_name}` (TTL 120sn) + `PUBLISH vehicles:route:{short_name}`. Payload spec §5.3 formatında (`type=route_vehicles_update`, ISO 8601 + Z timestamp, `bearing` pass-through `None` — Faz 4 client interpolator hesaplayacak). Sabitler: `VEHICLES_CACHE_KEY_PREFIX="vehicles:route:"`, `VEHICLES_CACHE_TTL_SECONDS=120`, `UNMAPPED_COUNT_KEY="stats:unmapped_count"` (her tick'te koşulsuz overwrite — heartbeat semantiği). Hata yolları üç ayrı branch: `IettRateLimitViolation` (`error_type=rate_limit_violation`, log.error), `requests.HTTPError` (`error_type=http_error`, log.error), generic `Exception` (`error_type=<class>`, log.exception). Hiçbirinde Celery retry yok — bir sonraki tick 60sn sonra zaten gelecek. Mapping cache miss → boş `{}` mapping ile devam, tüm araçlar unmapped, warning log; admin panel `stats:unmapped_count` üzerinden alarm görür. Stale cache testi (t₀ başarılı SET → t₁ adapter fail → t₂ eski snapshot hâlâ TTL içinde) 5g entegrasyon turunda. Commit: `0551915`. 12/12 unit test yeşil (happy path, multi-route group, unmapped skip, cache miss, adapter failure × 3 branch, empty list, payload format Z+null bearing, SET+PUBLISH dual, multi-route pipeline smoke, unmapped count overwrite). Realtime suite 80/80, 1.18s.
 
-**5e. Celery beat schedule** (`config/settings/base.py`):
-```python
-CELERY_BEAT_SCHEDULE = {
-    "fetch-iett-positions": {
-        "task": "apps.realtime.tasks.fetch_iett_positions",
-        "schedule": 60.0,
-    },
-    "refresh-iett-mapping": {
-        "task": "apps.realtime.tasks.refresh_iett_mapping",
-        "schedule": crontab(hour=4, minute=0),
-    },
-}
-```
+  - [x] **5e. Celery beat schedule ✅ (tamamlandı 2026-04-25)** — `config/settings/base.py`'a iki schedule entry eklendi: `fetch-iett-positions` (60.0sn float interval) ve `refresh-iett-mapping` (`crontab(hour=4, minute=0)` UTC). `CELERY_TIMEZONE="UTC"` korundu — UTC 04:00 = İstanbul 07:00, dünün arşivi çoktan yazılmış olur (Ek A.13 batch). `CELERY_BEAT_SCHEDULER="django_celery_beat.schedulers:DatabaseScheduler"` da korundu (migration'lar applied); dict bootstrap pattern: ilk startup'ta DB'ye sync, sonraki restart'larda overwrite — Faz 2 (tek-developer, tek-environment) için kabul edilebilir, runtime admin değişikliği gerekirse v1.x'te data migration'a geçilir. Commit: `ab1633a`. 4/4 settings smoke test yeşil (iki entry varlığı, fetch task path + 60.0 interval, refresh task path + `schedule.hour=={4}` `schedule.minute=={0}` sıkı set karşılaştırması — crontab(hour=14) veya crontab(minute=30) regression'larını yakalar, CELERY_TIMEZONE regression guard). Realtime suite 84/84, 1.12s.
 
 **5f. Admin panel "Live Vehicles" sayfası:**
 - Son 60 saniyedeki toplam araç sayısı + hat bazlı breakdown (en aktif 20 hat)
