@@ -5,15 +5,21 @@ pulls yesterday's completed İETT tasks, reshapes them via
 ``build_mapping``, and writes the payload to Redis under
 ``iett:mapping:current`` (spec §5.7 + Ek A.13).
 
-The per-minute ``fetch_iett_positions`` task (Step 5d) will land in a
-later commit; beat schedule (Step 5e) binds both to cron-like intervals.
+Phase 2 Step 5d owns ``fetch_iett_positions`` — the per-tick job that
+pulls live vehicle positions, enriches them with the cached mapping,
+and publishes route-grouped snapshots to Redis pub/sub channels
+(``vehicles:route:{short_name}``) plus a SET for last-known-state.
+
+Beat schedule (Step 5e) binds both to cron-like intervals.
 """
 from __future__ import annotations
 
 import json
 import logging
 import time
-from datetime import timedelta
+from collections import defaultdict
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
 
 import redis
 import requests
@@ -29,6 +35,7 @@ from apps.core.constants import (
     METROBUS_ROUTES,
 )
 from apps.realtime.adapters.iett_soap import IettRateLimitViolation, IettSoapAdapter
+from apps.realtime.enrich import enrich_with_route_id
 from apps.realtime.mapping import build_mapping
 from apps.realtime.rate_limit import SlidingWindowLimiter
 
@@ -36,6 +43,10 @@ logger = logging.getLogger(__name__)
 
 MAPPING_CACHE_KEY = "iett:mapping:current"
 MAPPING_CACHE_TTL_SECONDS = 28 * 3600  # 28 hours — spec §5.7
+
+VEHICLES_CACHE_KEY_PREFIX = "vehicles:route:"
+VEHICLES_CACHE_TTL_SECONDS = 120  # spec §5.7
+UNMAPPED_COUNT_KEY = "stats:unmapped_count"
 
 
 def _make_adapter(redis_client) -> IettSoapAdapter:
@@ -150,4 +161,131 @@ def refresh_iett_mapping(self) -> dict:
         "elapsed_seconds": elapsed,
     }
     logger.info("refresh_iett_mapping: SUCCESS %s", result)
+    return result
+
+
+def _now_iso_z() -> str:
+    """UTC now as ``YYYY-MM-DDTHH:MM:SSZ`` (spec §5.3 example format)."""
+    return (
+        datetime.now(tz=dt_timezone.utc)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
+    )
+
+
+@shared_task(name="apps.realtime.tasks.fetch_iett_positions")
+def fetch_iett_positions() -> dict:
+    """Tick the live-positions pipeline (spec §5.7, ROADMAP 5d).
+
+    One pass per tick (60 s, scheduled in Step 5e):
+      1. ``adapter.fetch()`` → ``list[VehiclePosition]``
+      2. Read ``iett:mapping:current``; ``json.loads`` if present.
+         Cache miss → empty mapping (every vehicle ends up unmapped),
+         WARNING log; the loop still runs so the unmapped counter
+         tracks the gap.
+      3. ``enrich_with_route_id`` stamps ``route_id``.
+      4. Group by ``route_id`` (None bucket = unmapped, dropped).
+      5. Overwrite ``stats:unmapped_count`` (always written, even when
+         zero — observability-wise we want a heartbeat).
+      6. Per-route Redis pipeline (``transaction=False`` — single
+         producer, no atomicity needed; pipelining is just for round
+         trips): ``SET vehicles:route:{short_name} payload EX 120`` +
+         ``PUBLISH vehicles:route:{short_name} payload``.
+
+    Adapter exceptions are caught and returned as an error dict — no
+    Celery retry. The next tick is 60 s away anyway, and retrying into
+    a live incident burns the shared rate-limit budget.
+    """
+    started = time.monotonic()
+    redis_client = redis.from_url(settings.REDIS_URL, decode_responses=False)
+    adapter = _make_adapter(redis_client)
+
+    try:
+        vehicles = adapter.fetch()
+    except IettRateLimitViolation as exc:
+        logger.error(
+            "fetch_iett_positions: rate-limit violation, cooldown armed: %s", exc,
+        )
+        return {
+            "status": "error",
+            "error_type": "rate_limit_violation",
+            "error": str(exc),
+            "elapsed_seconds": round(time.monotonic() - started, 2),
+        }
+    except requests.HTTPError as exc:
+        logger.error("fetch_iett_positions: upstream HTTP error: %s", exc)
+        return {
+            "status": "error",
+            "error_type": "http_error",
+            "error": str(exc),
+            "elapsed_seconds": round(time.monotonic() - started, 2),
+        }
+    except Exception as exc:
+        logger.exception("fetch_iett_positions: unexpected adapter failure")
+        return {
+            "status": "error",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc),
+            "elapsed_seconds": round(time.monotonic() - started, 2),
+        }
+
+    raw_mapping = redis_client.get(MAPPING_CACHE_KEY)
+    if raw_mapping is None:
+        logger.warning(
+            "fetch_iett_positions: mapping cache miss (key=%s) — "
+            "all %d vehicles will be unmapped",
+            MAPPING_CACHE_KEY, len(vehicles),
+        )
+        mapping = {}
+    else:
+        mapping = json.loads(raw_mapping)
+
+    enriched = enrich_with_route_id(vehicles, mapping)
+
+    grouped: dict[str, list] = defaultdict(list)
+    unmapped = 0
+    for v in enriched:
+        if v.route_id is None:
+            unmapped += 1
+        else:
+            grouped[v.route_id].append(v)
+
+    redis_client.set(UNMAPPED_COUNT_KEY, unmapped)
+
+    if grouped:
+        now_iso = _now_iso_z()
+        pipe = redis_client.pipeline(transaction=False)
+        for short_name, vehicles_list in grouped.items():
+            payload = json.dumps(
+                {
+                    "type": "route_vehicles_update",
+                    "route_id": short_name,
+                    "timestamp": now_iso,
+                    "vehicles": [
+                        {
+                            "id": v.vehicle_id,
+                            "lat": v.latitude,
+                            "lon": v.longitude,
+                            "bearing": v.bearing,
+                            "speed": v.speed,
+                        }
+                        for v in vehicles_list
+                    ],
+                },
+                separators=(",", ":"),
+            )
+            key = f"{VEHICLES_CACHE_KEY_PREFIX}{short_name}"
+            pipe.set(key, payload, ex=VEHICLES_CACHE_TTL_SECONDS)
+            pipe.publish(key, payload)
+        pipe.execute()
+
+    elapsed = round(time.monotonic() - started, 2)
+    result = {
+        "status": "ok",
+        "fetched": len(vehicles),
+        "unmapped": unmapped,
+        "routes": len(grouped),
+        "elapsed_seconds": elapsed,
+    }
+    logger.info("fetch_iett_positions: SUCCESS %s", result)
     return result
