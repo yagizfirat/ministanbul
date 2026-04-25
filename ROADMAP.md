@@ -388,12 +388,58 @@ Bu sadece hafta sonu sorunu değil — her gün geçerli, çünkü mapping hep "
 - Admin yeni satırlar: "Mapping kaynağı: weekday (snapshot_date 2026-04-18, 7 gün eski)", "Day-type mismatch count: 0"
 - Bitiş: 8 mevcut admin testi yeşil + 2 yeni (snapshot_day_type display, mismatch counter display)
 
-**5i-v. Yeniden smoke test** (kontrollü):
-- **Tur 1 (zorunlu, smoke günü):** refresh (geçen aynı gün) + fetch. Beklenti: gün-tipi eşleşmesi, unmapped %15-25. Rate budget +%2.8.
-- **Tur 2 (opsiyonel, Pazartesi sabah):** weekday→weekday geçişi canlı kanıt için. Rate budget +%2.8 (toplam %11.2). Karar implementation günü Yağız'a bırakıldı.
-- Bitiş: ROADMAP'e ampirik kayıt (gerçek unmapped %, route count, gece-geçişi tetiklenirse not, tur 2 yapıldıysa weekday geçişi sonucu)
+### 5i-v. Yeniden smoke test (2026-04-25 Cumartesi)
 
-**Geri dönüş kriteri:** 5i-v'te unmapped > %35 ise Yol 1 yetersiz, Yol 2 (konum-bazlı) gündeme gelir. Aksi takdirde 5i tamamlanır, Faz 2 Adım 5 kapanır.
+**Yapılan canlı çağrılar:** 1 refresh + 1 fetch (rate budget +%2.8, kümülatif %5.6)
+
+**Faz 1 (refresh, target_date=2026-04-18 Cumartesi):**
+- status=ok, records_received=41.568, active_routes=680, metrobus_coverage=8/10
+- payload_bytes=2.9 MB (eski 5h format 4.4 MB'tan %32 küçük — int seconds avantajı)
+- Migration sorunsuz (eski 5h start_ms format → 5i+ start_sec format overwrite)
+- snapshot_date=2026-04-18, snapshot_day_type=saturday, TTL ~28h
+- Inverted interval skip: 1 kayıt (TM18, build_mapping invariant doğru)
+- Overnight intervals: ilk 1000 kapıda 193 (extended end_sec >= 86400 doğru üretildi)
+- Mismatch counter refresh sonrası 0 (5i-iv reset doğru çalışıyor)
+
+**Faz 2 (fetch, 2026-04-25 18:22 UTC = 21:22 TRT Cumartesi gece):**
+- status=ok, fetched=6.911, unmapped=4.735 (**%68.5**), routes=532
+- mismatch_count=0 (saturday=saturday match, sample-based detection sessiz)
+- M2 subscriber'da mesaj yok (beklenen: M2 metro, fleet endpoint sadece otobüs)
+
+**B analizi (Redis state, canlı API yok):**
+- Mapping unique kapı: 4.842
+- Mapping'de 21:22 anında aktif kapı: 3.296
+- Bugün fleet: 6.911
+- **Yapısal alt sınır:** fleet_only ≥ 6.911 - 3.296 = 3.615 (en az %52)
+- mapped_kapis ölçümü artefaktlı (vehicles:route:* TTL=120sn ile düşmüş, B-tekrar gerek yok çünkü UX kararı verildi)
+- Histogram: mapping yoğunluğu 06:00-22:00 platosu, saat-bağlı edge case değil
+
+**Hipotez X (test edilmedi, atlandı):**
+Fleet endpoint sadece "aktif sefer" değil, "konum gönderen tüm araçlar" döndürüyor olabilir (parking/idle/garaj dönüşü dahil). Eğer doğruysa %52 yapısal alt sınır aslında ölçüm artefaktı (aktif sefer/aktif sefer karşılaştırılırsa unmapped %20-30). Test için yarın sabah peak fetch + hız histogramı analizi gerekirdi, ama UX kararı sebebiyle test gereksiz.
+
+**UX yön değişikliği — 5i kapanış kararı:**
+
+Yağız'ın sezgisel sorusuyla mimari kayma:
+- **Eski model (Spec §3.3 hat-merkezli):** Mapping zorunlu, %52 unmapped görsel olarak eksik araçlar
+- **Yeni model (ham fleet + opsiyonel hat eşleşmesi):** 6.911 araç haritada ham nokta olarak görünür, tıklamada popup açılır
+
+Popup içeriği:
+- Kapı no, hız, yön, son güncelleme zamanı (fleet endpoint, her zaman mevcut)
+- Hat bilgisi (mapping'de varsa "29B", yoksa "hat bilinmiyor")
+- Hat rotası polyline (GTFS shapes'ten, mapping'den bağımsız)
+
+Yan menüde opsiyonel "hat filtreleme" modu: kullanıcı hat seçerse mapped 2.176 araç renklenir, gerisi dim.
+
+Bu UX'te %52 unmapped artık görsel sürekliliği bozmaz — popup'ta sessiz "hat bilinmiyor" notu olarak yansır. Yol 2 (konum-bazlı doğrulama) gerekli değil. E (14-gün toplu mapping) gerekli değil.
+
+**Faz 4 frontend implementation eklenecek özellikler:**
+- Ham fleet rendering (6.911 nokta render)
+- Tıklama popup etkileşim katmanı (kapı no, hız, hat info, son güncelleme)
+- GET /api/routes/{short_name}/shape endpoint (GTFS shape GeoJSON döner)
+- MapLibre polyline layer tıklamada açılır/kapanır
+- Yan menü hat-filtreleme modu (opsiyonel, mapped vehicles renklendirilir)
+
+**5i KAPANIŞ — Faz 2 Adım 5 KAPANIŞ.**
 
 ### Faz 2 — Polish backlog
 
