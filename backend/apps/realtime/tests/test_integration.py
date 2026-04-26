@@ -26,6 +26,7 @@ from types import SimpleNamespace
 
 import fakeredis
 import fakeredis.aioredis
+import numpy as np
 import pytest
 from asgiref.sync import sync_to_async
 from channels.testing import WebsocketCommunicator
@@ -77,6 +78,33 @@ def captured_group_sends(monkeypatch):
         tasks_module, "get_channel_layer", lambda: layer,
     )
     return sent
+
+
+class _PermissiveCache(dict):
+    """Cache.get her key için non-None dummy ndarray döndürür —
+    tasks.py'daki ``shape_arr is None`` defansif dalı tetiklenmez,
+    böylece spatial filter sırf is_vehicle_near_route sözleşmesine
+    bağlı kalır."""
+
+    _DUMMY = np.array([[0.0, 0.0]])
+
+    def get(self, key, default=None):
+        return self._DUMMY
+
+
+@pytest.fixture(autouse=True)
+def _permissive_spatial_cache(monkeypatch):
+    """Mevcut testler spatial check'e karşı duyarsız — her vehicle
+    her route'a "yakın" sayılır. Spatial-specific testler bu fixture'ı
+    override eder. DB hit (build_route_shape_cache) hiç tetiklenmez."""
+    monkeypatch.setattr(
+        tasks_module, "is_vehicle_near_route",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        tasks_module, "get_route_shape_cache",
+        lambda: _PermissiveCache(),
+    )
 
 
 # --- helpers ---------------------------------------------------------------

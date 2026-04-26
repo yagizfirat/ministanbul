@@ -43,6 +43,7 @@ from apps.realtime.calendar import ISTANBUL_TZ, get_day_type, pick_target_date
 from apps.realtime.enrich import enrich_with_route_id
 from apps.realtime.mapping import build_mapping
 from apps.realtime.rate_limit import SlidingWindowLimiter
+from apps.realtime.spatial import get_route_shape_cache, is_vehicle_near_route
 
 logger = logging.getLogger(__name__)
 
@@ -306,6 +307,34 @@ def fetch_iett_positions() -> dict:
             redis_client.incr(DAY_TYPE_MISMATCH_COUNT_KEY)
 
     enriched = enrich_with_route_id(vehicles, mapping)
+
+    # Spatial sanity check (6h-i): mapping kapı→hat zaman bazlıdır,
+    # gerçek konum bilgisi içermez. Sefer bitiminde garaja dönen ya
+    # da molada olan araçlar mapping'de "hat üzerindeymiş gibi"
+    # etiketlenir. Burada her mapped vehicle'ı route shape pool'una
+    # karşı kontrol eder, threshold ihlali varsa route_id null'larız.
+    spatial_input = sum(1 for v in enriched if v.route_id is not None)
+    spatial_nullified = 0
+    if spatial_input:
+        cache = get_route_shape_cache()
+        for v in enriched:
+            if v.route_id is None:
+                continue
+            shape_arr = cache.get(v.route_id)
+            if shape_arr is None:
+                # Route GTFS'te yok ya da shape'siz — defansif null.
+                v.route_id = None
+                spatial_nullified += 1
+                continue
+            if not is_vehicle_near_route(v.latitude, v.longitude, shape_arr):
+                v.route_id = None
+                spatial_nullified += 1
+        logger.info(
+            "spatial_check: input=%d output=%d nullified=%d",
+            spatial_input,
+            spatial_input - spatial_nullified,
+            spatial_nullified,
+        )
 
     mapped_count = sum(1 for v in enriched if v.route_id is not None)
     unmapped = len(enriched) - mapped_count
