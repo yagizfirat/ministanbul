@@ -503,13 +503,8 @@ Faz 5'e ertelendi.
 - Spec §5.7'ye pivot notu, §6.4 protokol revizyonu
 - Spec versiyon v0.7 → v0.8
 
-**Adım 6b — Pipeline `vehicles:all` modeline indirgeme**
-- `fetch_iett_positions` task'ında hat-bazlı SET+PUBLISH loop'u silinir
-- Yerine tek `SET vehicles:all` (TTL 120s) + tek `group_send`
-- Payload formatı: `{type, timestamp, vehicle_count, mapped_count, vehicles[]}`, her vehicle'da `route_id` (null olabilir)
-- `test_fetch_task.py` revize, eski hat-bazlı assertion'lar silinir
-
-**Adım 6c — Channels + Daphne kurulumu**
+**Adım 6b — Channels + Daphne kurulumu**
+*Bu adım önce gelir çünkü 6c (pipeline değişikliği) `channel_layer.group_send` çağrısı yapacak — önce Channels kurulu olmalı.*
 - `channels[daphne]` + `channels-redis` requirements'a
 - `config/asgi.py` ProtocolTypeRouter
 - `CHANNEL_LAYERS` Memurai `db=1` (Celery `db=0`'la ayrı)
@@ -517,13 +512,20 @@ Faz 5'e ertelendi.
 - Native Windows Daphne çalıştırma scripti
 - Echo consumer + ws-smoke sayfası bağlantı doğrulaması
 
+**Adım 6c — Pipeline `vehicles:all` modeline indirgeme**
+*Önkoşul: 6b (Channels altyapısı) tamamlanmış olmalı.*
+- `fetch_iett_positions` task'ında hat-bazlı SET+PUBLISH loop'u silinir
+- Yerine tek `SET vehicles:all` (TTL 120s) + tek `group_send`
+- Payload formatı: `{type, timestamp, vehicle_count, mapped_count, vehicles[]}`, her vehicle'da `route_id` (null olabilir)
+- `test_fetch_task.py` revize, eski hat-bazlı assertion'lar silinir
+
 **Adım 6d — `VehicleAllConsumer`**
 - `AsyncJsonWebsocketConsumer`, group `"vehicles_all"`
 - `connect`: IP cap (max 5/IP), accept, ilk snapshot anında gönder
 - `disconnect`: `group_discard`, IP counter decrement
 - `receive_json`: `ping`/`pong` sadece, başka komut yok
 - `vehicles_all_message` handler: group broadcast → client forward
-- Pipeline 6b'deki publish çağrısı `channel_layer.group_send`'e dönüşür
+- Pipeline 6c'deki publish çağrısı `channel_layer.group_send`'e dönüşür
 
 **Adım 6e — REST fallback endpoint'leri**
 - `GET /api/vehicles/live/`: `vehicles:all` key'inden snapshot, stale header
