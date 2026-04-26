@@ -25,7 +25,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import fakeredis
+import fakeredis.aioredis
 import pytest
+from asgiref.sync import sync_to_async
+from channels.testing import WebsocketCommunicator
 from freezegun import freeze_time
 
 from apps.realtime import tasks as tasks_module
@@ -59,10 +62,11 @@ def fake_redis(monkeypatch):
     return client
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def captured_group_sends(monkeypatch):
     """Capture ``channel_layer.group_send`` into a list. Same pattern as
-    test_fetch_task — autouse so the real RedisChannelLayer never wakes."""
+    test_fetch_task. Opt-in (NOT autouse): the broadcast-reaches-consumer
+    test wants the real InMemoryChannelLayer wired up, not this stub."""
     sent: list[tuple[str, dict]] = []
 
     async def fake_group_send(group, message):
@@ -375,3 +379,92 @@ def test_same_kapi_different_routes_across_ticks(
     assert len(captured_group_sends) == 2
     assert captured_group_sends[0][1]["data"]["vehicles"][0]["route_id"] == "29B"
     assert captured_group_sends[1][1]["data"]["vehicles"][0]["route_id"] == "15B"
+
+
+# --- 5. fetch task → consumer end-to-end (real InMemoryChannelLayer) ------
+#
+# Bu test captured_group_sends fixture'ını ALMAZ — gerçek
+# channel_layer.group_send → InMemoryChannelLayer → consumer akışını
+# doğrular. Pipeline-to-consumer kontratı uçtan-uca.
+
+
+@pytest.fixture
+def in_memory_channel_layer(settings):
+    """Override RedisChannelLayer with InMemory for in-process group
+    dispatch. test_consumer_vehicles ile simetrik."""
+    settings.CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        },
+    }
+
+
+@pytest.fixture
+def fake_async_redis(monkeypatch):
+    """Mock the consumer's aioredis.from_url. Separate physical instance
+    from the sync fake_redis used by the fetch task — the test exercises
+    the broadcast path, not initial-snapshot delivery (vehicles:all
+    snapshot landed on the sync fake; consumer GET on the async fake
+    returns None, which is exactly the L4.B silent-wait we want here)."""
+    client = fakeredis.aioredis.FakeRedis()
+    monkeypatch.setattr(
+        "apps.realtime.consumers.aioredis.from_url",
+        lambda *a, **kw: client,
+    )
+    return client
+
+
+@pytest.mark.asyncio
+async def test_fetch_task_broadcast_reaches_websocket_consumer(
+    fake_redis, monkeypatch, in_memory_channel_layer, fake_async_redis,
+):
+    cassette = (CASSETTE_DIR / "filo_fetch_ok.xml").read_text(encoding="utf-8")
+    parsed_at = datetime(2026, 4, 25, 12, 0, 0, tzinfo=timezone.utc)
+    vehicles = _parse_fleet_response(cassette, at=parsed_at)
+    assert len(vehicles) >= 8
+
+    sorted_vehicles = sorted(vehicles, key=lambda v: v.vehicle_id)
+    kapis = [v.vehicle_id for v in sorted_vehicles]
+
+    by_kapi: dict[str, list[dict]] = {}
+    for kapi in kapis[0:4]:
+        by_kapi[kapi] = [_interval(0, BIG_END_SEC, "29B")]
+    for kapi in kapis[4:7]:
+        by_kapi[kapi] = [_interval(0, BIG_END_SEC, "34BZ")]
+    by_kapi[kapis[7]] = [_interval(0, BIG_END_SEC, "M2")]
+
+    _seed_mapping(fake_redis, by_kapi)
+    _patch_adapter_returning(monkeypatch, vehicles)
+
+    # Connect first — vehicles:all not seeded on the async fake, so the
+    # consumer's initial snapshot read returns None (L4.B silent wait).
+    # The first message the client gets WILL be the broadcast from the
+    # fetch task call below.
+    from config.asgi import application
+    communicator = WebsocketCommunicator(application, "/ws/vehicles/")
+    communicator.scope["client"] = ("127.0.0.1", 12345)
+    connected, _ = await communicator.connect()
+    assert connected is True
+
+    # fetch_iett_positions is sync (Celery task) — run it in a worker
+    # thread so the asyncio loop driving the consumer keeps spinning.
+    # Inside the task, async_to_sync(group_send) dispatches back into
+    # the same in-memory channel layer the consumer joined.
+    result = await sync_to_async(fetch_iett_positions)()
+    assert result["status"] == "ok"
+
+    msg = await communicator.receive_json_from()
+    assert msg["type"] == "vehicles_all_update"
+    assert msg["vehicle_count"] == len(vehicles)
+    assert msg["mapped_count"] == 8
+
+    by_route: dict = {}
+    for v in msg["vehicles"]:
+        by_route.setdefault(v["route_id"], []).append(v["id"])
+    assert {r for r in by_route if r is not None} == {"29B", "34BZ", "M2"}
+    assert len(by_route["29B"]) == 4
+    assert len(by_route["34BZ"]) == 3
+    assert len(by_route["M2"]) == 1
+    assert len(by_route.get(None, [])) == len(vehicles) - 8
+
+    await communicator.disconnect()
