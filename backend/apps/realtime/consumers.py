@@ -57,11 +57,15 @@ class VehicleAllConsumer(AsyncJsonWebsocketConsumer):
         finally:
             await client.aclose()
 
-        # Order: group_add → accept → snapshot. group_add before accept
-        # guarantees no broadcast lost in the window between accept and
-        # join. Frontend dedups on timestamp (Faz 4 design).
-        await self.channel_layer.group_add(VEHICLES_ALL_GROUP, self.channel_name)
+        # accept first, then group_add. Pre-accept group_add ile
+        # RedisChannelLayer Daphne handshake'i bloklar (ROADMAP 6d-iv
+        # bisect: V2 incr+expire+aclose OK, V3 + group_add → handshake
+        # timeout). Race window: accept ile group_add arası microsecond
+        # mertebesinde, fetch task 60sn tick disiplini ile bu pencerede
+        # broadcast düşme ihtimali ihmal edilebilir. Frontend timestamp-
+        # based dedup ek savunma (Faz 4 design).
         await self.accept()
+        await self.channel_layer.group_add(VEHICLES_ALL_GROUP, self.channel_name)
         await self._send_initial_snapshot()
 
     async def disconnect(self, code):
