@@ -543,9 +543,8 @@ Faz 5'e ertelendi.
 - `vehicles_all_message` handler: group broadcast → client forward
 - Pipeline 6c'deki publish çağrısı `channel_layer.group_send`'e dönüşür
 
-**Adım 6e — REST fallback endpoint'leri**
+**Adım 6e — REST fallback endpoint'leri ✅ (tamamlandı 2026-04-26)**
 - `GET /api/vehicles/live/`: `vehicles:all` key'inden snapshot, stale header
-- `GET /api/routes/active/`: mapping cache + GTFS DB merge (raylı/vapur dahil)
 
 **Adım 6f — Leaflet smoke sayfası**
 - `/preview/realtime/`, WebSocket bağlan, 6900 araç nokta olarak çiz
@@ -561,7 +560,7 @@ Faz 5'e ertelendi.
 - Tüm process'ler ayakta, tek canlı fetch, 3 tick gözlem
 - Rate limit %3 altında kalmalı
 
-#### Adım 6a–6d kapanış kayıtları
+#### Adım 6a–6e kapanış kayıtları
 
 **Sub-step commit chain (Faz 3 başlangıcı):**
 
@@ -580,6 +579,9 @@ Faz 5'e ertelendi.
 | 6d-ii | `eaedf7e` | test(realtime): VehicleAllConsumer test suite |
 | 6d-iii | `95cb010` | test(realtime): integration test fetch task → vehicles consumer |
 | 6d-iv | `fbfad28` | fix(realtime): VehicleAllConsumer accept-then-group_add order |
+| 6e-i | `b15125e` | feat(realtime): vehicles:all REST fallback endpoint |
+| 6e-ii | `37e10d7` | test(realtime): vehicles_live REST endpoint test suite |
+| 6e-iii | `e684514` | docs(spec): document REST fallback endpoint |
 
 **Otomasyon smoke (6b-vi, 2026-04-26):**
 
@@ -594,7 +596,9 @@ Faz 5'e ertelendi.
 
 **Adım 6d özeti (2026-04-26):** VehicleAllConsumer canlı, /ws/vehicles/ endpoint client'lara fetch task broadcast'lerini forward ediyor. Implementation 6d-i'de (IP cap + group_add + snapshot delivery + ping/pong + invalid action drop), 9 unit test 6d-ii'de, fetch task → consumer end-to-end integration test 6d-iii'te. 6d-iv'te otomatik smoke script bisect'i Daphne+channels-redis+Memurai+Windows TCP frame transport sorunuyla karşılaştı; root cause bulunamadı, smoke automation Faz 6 polish backlog'a ertelendi. Bisect sırasında keşfedilen consumer order bug'ı (pre-accept group_add handshake bloku) 6d-iv kapsamında fix edildi. Production-equivalent broadcast doğrulaması 6h canlı smoke'da yapılacak.
 
-**Realtime suite final:** 141/141 yeşil. Tüm warning'ler temiz (pytest-asyncio deprecation 6b-iv'te kapatıldı).
+**Adım 6e özeti (2026-04-26):** REST fallback endpoint canlı, `GET /api/vehicles/live/` son `vehicles:all` snapshot'ını WebSocket payload'ıyla birebir aynı formatta sunar. Cache-Control max-age=60 (tick uyumu), 503 + no-store snapshot yoksa veya bozuksa. WebSocket'a bağlanamayan client'lar için fallback path (eski tarayıcı, captive portal). Spec §6.4'te dokümante edildi.
+
+**Realtime suite final:** 145/145 yeşil. Tüm warning'ler temiz (pytest-asyncio deprecation 6b-iv'te kapatıldı).
 
 #### Bitiş kriteri
 
