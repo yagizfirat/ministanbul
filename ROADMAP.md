@@ -7,8 +7,8 @@ Bu doküman projenin **nihai yol haritasıdır**: ne yapıldı, ne yapılacak,
 her fazda hangi kararlar alındı. Her yeni geliştirme oturumunda ilk
 okunacak doküman budur.
 
-**Durum:** Faz 1 tamamlandı. Faz 2 Adım 4 tamamlandı (SOAP adapter + rate limiter + lock + parser'lar, 43/43 test yeşil). Adım 5 (Celery wiring + hat-merkezli pipeline) başlıyor.
-**Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md) (v0.7 — hat-merkezli UI modeli)
+**Durum:** Faz 1 ve Faz 2 tamamlandı. Faz 3 Adım 6a başlıyor (WebSocket katmanı, `vehicles:all` model).
+**Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md) (v0.8 — `vehicles:all` pivot)
 
 ---
 
@@ -19,8 +19,8 @@ okunacak doküman budur.
 3. [Proje yapısı](#3-proje-yapısı)
 4. [Fazlar](#4-fazlar)
    - [Faz 1 — Veri altyapısı ✅](#faz-1--veri-altyapısı-)
-   - [Faz 2 — Canlı veri adaptörü 🟡](#faz-2--canlı-veri-adaptörü-)
-   - [Faz 3 — WebSocket katmanı ⚪](#faz-3--websocket-katmanı-)
+   - [Faz 2 — Canlı veri adaptörü ✅](#faz-2--canlı-veri-adaptörü-)
+   - [Faz 3 — WebSocket katmanı 🟡](#faz-3--websocket-katmanı-)
    - [Faz 4 — 3D frontend ⚪](#faz-4--3d-frontend-)
    - [Faz 5 — Raylı sistem ve vapur simülasyonu ⚪](#faz-5--raylı-sistem-ve-vapur-simülasyonu-)
    - [Faz 6 — Cilalama ⚪](#faz-6--cilalama-)
@@ -226,10 +226,9 @@ Reimport sonrası 498 bozuk satır temizlendi (DB'de `#NAN` residue = 0).
 
 ---
 
-### Faz 2 — Canlı veri adaptörü 🟡
+### Faz 2 — Canlı veri adaptörü ✅
 
-**Durum:** Adım 4 tamamlandı (2026-04-24). Adım 5 (Celery wiring + hat-merkezli pipeline) başlıyor.
-**Tahmini süre (Adım 5):** 1-2 hafta.
+**Durum:** Tamamlandı (2026-04-26), `d52024a` commit'iyle. Realtime suite 121/121 yeşil.
 
 #### Hedef
 
@@ -319,17 +318,13 @@ Detaylar spec §3.3 tablosunda.
 
 - [x] **5b-ii. Alignment check ✅ (tamamlandı 2026-04-24)** — yesterday dump (55.682 kayıt, 2026-04-22) üstünde SHATKODU ↔ Route.short_name hizalaması ölçüldü. Sonuç: intersection %95.6, orphan 35 hat (tümü Türkçe karakterli sub-variants, normalization %0 kurtarma), DB-only 833 hat (raylı/vapur+opt-in+2 metrobüs). Karar: **mapping formatı sabit**, normalization katmanına gerek yok. Detaylar spec §5.7. Script `_research/alignment_check.py` silindi (one-shot analiz, sonuç kalıcılaştı).
 
-- [ ] **5b-iii. `refresh_iett_mapping` Celery task:**
-  - `adapter.fetch_arsiv_gorev(yesterday)` → Pydantic validate → SGOREVDURUM=T filter → null-start/end skip
-  - `build_mapping(records, date)` çağır
-  - Redis'e atomik write: `SET iett:mapping:current` (TTL 28 saat), JSON encoded
-  - Log metrics: kept/dropped counts, orphan count, metrobus coverage (10 whitelist'ten kaçı mapping'de), timing
-  - Unit testler: adapter mock + fakeredis + `test_refresh_task.py`
-  - Integration smoke test: cassette-backed end-to-end flow (read cassette → build → fakeredis → assert key content)
+- [x] **5b-iii. `refresh_iett_mapping` Celery task ✅ (tamamlandı 2026-04-25)** — 5h canlı smoke test'te doğrulandı (records=50.600, by_kapi=6.044, active_routes=789, payload 4.2 MB, TTL 28h, atomic SET `iett:mapping:current`). 5i-iii'te `pick_target_date` (holidays-aware) + `target_date`/`day_type` parametreleriyle refactor edildi. Unit testler: adapter mock + fakeredis + `test_refresh_task.py` (5 test), 5i-iii'te 6 calendar test ile birlikte yeşil.
 
   - [x] **5c. Enrichment helper ✅ (tamamlandı 2026-04-25)** — `apps/realtime/enrich.py`, saf fonksiyon: `enrich_with_route_id(vehicles, mapping) -> list[VehiclePosition]`. `bisect_right(starts, now_ms) - 1` ile O(log n) interval lookup, end inclusive. Mapping eksik (KapiNo yok, boş intervals, ya da `by_kapi` key'i kayıp) veya interval boşluğunda olan araç `route_id=None` ile geçer; sayaç hesaplama 5d fetch task'ın sorumluluğu. `VehiclePosition.frozen=True` olduğu için (schemas.py) input mutate edilemez zaten — helper `model_copy(update={"route_id": ...})` ile yeni objeler döner, çağıran taraf orijinal listeyi temiz tutar. Overlap davranışı: `bisect_right - 1` doğal olarak geç başlayan interval'i seçer (spec §5.7 + bu maddede dokümante; pattern çoksa revize edilir). Commit: `992e272`. 12/12 unit test yeşil (tam match, start/end inclusive, before-first, after-last, interval boşluğu, eksik kapı, boş intervals defansif, overlap, empty vehicles, mutation guard PRESET preserved, corrupt mapping). Toplam realtime suite 68/68, 1.29s.
 
   - [x] **5d. Fetch task ✅ (tamamlandı 2026-04-25)** — `apps/realtime/tasks.py::fetch_iett_positions`, 60sn beat task. Akış: `IettSoapAdapter.fetch()` → `iett:mapping:current` GET + `json.loads` → `enrich_with_route_id` → `defaultdict(list)` groupby (None bucket düşürülür) → her hat için Redis pipeline (`transaction=False`, single-writer pattern) `SET vehicles:route:{short_name}` (TTL 120sn) + `PUBLISH vehicles:route:{short_name}`. Payload spec §5.3 formatında (`type=route_vehicles_update`, ISO 8601 + Z timestamp, `bearing` pass-through `None` — Faz 4 client interpolator hesaplayacak). Sabitler: `VEHICLES_CACHE_KEY_PREFIX="vehicles:route:"`, `VEHICLES_CACHE_TTL_SECONDS=120`, `UNMAPPED_COUNT_KEY="stats:unmapped_count"` (her tick'te koşulsuz overwrite — heartbeat semantiği). Hata yolları üç ayrı branch: `IettRateLimitViolation` (`error_type=rate_limit_violation`, log.error), `requests.HTTPError` (`error_type=http_error`, log.error), generic `Exception` (`error_type=<class>`, log.exception). Hiçbirinde Celery retry yok — bir sonraki tick 60sn sonra zaten gelecek. Mapping cache miss → boş `{}` mapping ile devam, tüm araçlar unmapped, warning log; admin panel `stats:unmapped_count` üzerinden alarm görür. Stale cache testi (t₀ başarılı SET → t₁ adapter fail → t₂ eski snapshot hâlâ TTL içinde) 5g entegrasyon turunda. Commit: `0551915`. 12/12 unit test yeşil (happy path, multi-route group, unmapped skip, cache miss, adapter failure × 3 branch, empty list, payload format Z+null bearing, SET+PUBLISH dual, multi-route pipeline smoke, unmapped count overwrite). Realtime suite 80/80, 1.18s.
+
+    **Pivot notu (2026-04-26):** Faz 3 Adım 6b'de hat-bazlı `SET vehicles:route:{short_name}` + `PUBLISH` pipeline'ı kaldırılıp tek `SET vehicles:all` + `channel_layer.group_send("vehicles_all", ...)` modeline indirgenecek. Hat-bazlı publish silinmiyor — Faz 5'te metro/marmaray/vapur simülasyonu için geri dönecek.
 
   - [x] **5e. Celery beat schedule ✅ (tamamlandı 2026-04-25)** — `config/settings/base.py`'a iki schedule entry eklendi: `fetch-iett-positions` (60.0sn float interval) ve `refresh-iett-mapping` (`crontab(hour=4, minute=0)` UTC). `CELERY_TIMEZONE="UTC"` korundu — UTC 04:00 = İstanbul 07:00, dünün arşivi çoktan yazılmış olur (Ek A.13 batch). `CELERY_BEAT_SCHEDULER="django_celery_beat.schedulers:DatabaseScheduler"` da korundu (migration'lar applied); dict bootstrap pattern: ilk startup'ta DB'ye sync, sonraki restart'larda overwrite — Faz 2 (tek-developer, tek-environment) için kabul edilebilir, runtime admin değişikliği gerekirse v1.x'te data migration'a geçilir. Commit: `ab1633a`. 4/4 settings smoke test yeşil (iki entry varlığı, fetch task path + 60.0 interval, refresh task path + `schedule.hour=={4}` `schedule.minute=={0}` sıkı set karşılaştırması — crontab(hour=14) veya crontab(minute=30) regression'larını yakalar, CELERY_TIMEZONE regression guard). Realtime suite 84/84, 1.12s.
 
@@ -339,7 +334,7 @@ Detaylar spec §3.3 tablosunda.
 
   - [x] **5g. Entegrasyon testleri ✅ (tamamlandı 2026-04-25)** — `apps/realtime/tests/test_integration.py`, 4 senaryoluk end-to-end zincir testleri. Yaklaşım: gerçek modüller (adapter parser + enrich + fetch task) tek `fakeredis` instance'ı üzerinden konuşur; mapping `iett:mapping:current` key'ine doğrudan synthetic JSON olarak yazılır (refresh task çağrılmaz çünkü mapping payload format'ı 5b-i'de cassette ile test edildi). Fleet adapter `_parse_fleet_response()` ile gerçek SOAP envelope üzerinden çalıştırılır (`filo_fetch_ok.xml` cassette, 4. adımdan reuse), `adapter.fetch` SimpleNamespace stub ile HTTP/lock/rate-limit bypass'lanır. Senaryolar: (1) **End-to-end chain** — cassette → parser → enrichment → pub/sub, dinamik route assignment (`len(vehicles) >= 8` esneklik, ilk 4+3+1 KapiNo'ya 29B/34BZ/M2 ataması, kalan unmapped); cassette regen edilse de matematik `len(vehicles)`'tan türevsel. (2) **Stale cache** — `freeze_time` + `frozen.tick(seconds=30)`, tick 1 SET (TTL 118-120sn tolerans), tick 2 `RuntimeError`, eski snapshot byte-byte aynı kalır, TTL ~90sn. (3) **Mapping miss → recovery** — tick 1 mapping yok (tüm unmapped, hiç pub, hiç `vehicles:route:*` key), mapping seed, tick 2 aynı adapter snapshot'ı enrichment alır. (4) **Same KapiNo across ticks** — bir araç morning 08:00 → 29B interval, afternoon 16:00 → 15B interval; bisect temporal correctness (geç başlayan kazanır), önceki tick'in 29B snapshot'ı TTL içinde kalır ama yeni tick doğru kanala (15B) yazar. Commit: `83fbc51`. 4/4 yeşil, ilk denemede; tüm realtime suite 96/96, 7.42s.
 
-**5h. Canlı smoke test** (Adım 5'in en sonu, Yağız onayıyla, kontrollü, tek çağrı)
+**5h. Canlı smoke test ✅** (Adım 5'in en sonu, Yağız onayıyla, kontrollü, tek çağrı)
 
 **5h sonucu (2026-04-25, Yağız onayıyla):**
 
@@ -357,7 +352,7 @@ Bu sadece hafta sonu sorunu değil — her gün geçerli, çünkü mapping hep "
 
 **Smoke test'in değeri:** Tasarım hatasını canlıda yakaladı. Unit testler sentetik epoch'larla geçtiği için bug ancak gerçek dün-arşiv + bugün-fleet karşılaşmasında ortaya çıktı.
 
-### Faz 2 Adım 5i — Tasarım iterasyonu (Yol 1: gün-tipi düzeltmesi)
+### Faz 2 Adım 5i — Tasarım iterasyonu (Yol 1: gün-tipi düzeltmesi) ✅
 
 5h smoke test'inin yakaladığı mimari hata için patch turu. 5 alt-adım:
 
@@ -439,11 +434,11 @@ Bu UX'te %52 unmapped artık görsel sürekliliği bozmaz — popup'ta sessiz "h
 - MapLibre polyline layer tıklamada açılır/kapanır
 - Yan menü hat-filtreleme modu (opsiyonel, mapped vehicles renklendirilir)
 
-**5i KAPANIŞ — Faz 2 Adım 5 KAPANIŞ.**
+**5i KAPANIŞ — Faz 2 Adım 5 KAPANIŞ.** Kod chain commits: `d2c1748` → `cd94110` → `32dfbb1` → `3a2555c`, kapanış `d52024a`. Realtime suite 121/121 yeşil.
 
 ### Faz 2 — Polish backlog
 
-**5j-i. Race-free mismatch counter** (5i-iv polish, v1.x'te ele alınabilir)
+**5j-i. Race-free mismatch counter** ⏭️ v1.x'e ertelendi (5i-iv polish backlog)
 
 Mevcut 5i-iv `redis.set(DAY_TYPE_MISMATCH_COUNT_KEY, 0)` refresh success path'te race window (~1-2sn) içinde fetch tick'inin INCR'ını sıfırlayabilir. Worst case 1-2 mismatch info kaybı, operasyonel etki yok. Race-free alternatif: `last_refresh_ts` + `total_count` - `cached_baseline` pattern. v1.x veya production'da gerçek bir mismatch flow gözleminden sonra ele alınır.
 
@@ -456,6 +451,8 @@ Mevcut 5i-iv `redis.set(DAY_TYPE_MISMATCH_COUNT_KEY, 0)` refresh success path'te
 - Unmapped vehicle oranı %5'in altında
 - Network kesilirse veya API 500 dönerse Celery worker çökmüyor, rate limit ihlal edilmiyor
 
+*Bu kriterler Adım 5h'de doğrulandı (rate limit %1.4 kullanım, mapping payload 4.2 MB, fetch task 3 tick boyunca stabil). Adım 5i'deki gün-tipi düzeltmesi sonrası "PSUBSCRIBE vehicles:route:\*" gözlem komutu Faz 3 Adım 6b'de değişecek (`PSUBSCRIBE vehicles:all` veya `MONITOR` ile).*
+
 #### Riskler (güncel)
 
 - **Çözüldü:** ~~KapiNo→HatKodu eşleme kaynağı belirsiz~~ — `ibb360.asmx::GetIettArsivGorev_json` doğrulandı, 55k kayıt test edildi
@@ -467,14 +464,18 @@ Mevcut 5i-iv `redis.set(DAY_TYPE_MISMATCH_COUNT_KEY, 0)` refresh success path'te
 
 ---
 
-### Faz 3 — WebSocket katmanı ⚪
+### Faz 3 — WebSocket katmanı 🟡
 
-**Durum:** Planlı, Faz 2 bitiminde başlar.
-**Tahmini süre:** 1-2 hafta.
+**Durum:** Adım 6a başlıyor (2026-04-26).
 
 #### Hedef
 
-Redis'teki hat bazlı canlı araç snapshot'larını ve pub mesajlarını WebSocket üzerinden tarayıcıya push eden bir katman. Abonelik modeli **hat-merkezli** (spec §6.4): client `route_ids` listesi gönderir, server sadece o hatların mesajlarını iletir.
+Redis'teki `vehicles:all` snapshot'ını ve fetch task'ının her tick'te
+gönderdiği güncellemeyi WebSocket üzerinden tarayıcıya push eden bir
+katman. UX pivot sonrası abonelik modeli sadeleştirildi: client
+bağlanır, sunucu tüm filoyu (~6900 araç) tek kanaldan iter. Hat
+filtresi frontend'de görsel olarak yapılır, server-side hat-bazlı
+kanal yok (Faz 5'te metro/marmaray simülasyonu için geri gelecek).
 
 #### Ön koşullar
 
@@ -486,51 +487,78 @@ Redis'teki hat bazlı canlı araç snapshot'larını ve pub mesajlarını WebSoc
 
 **Transport:** WebSocket (HTTP long-polling fallback yok — modern tarayıcılar yeter). Port 8011'de Daphne, port 8010'daki Django HTTP'den ayrı process.
 
-**Abonelik modeli (hat-merkezli, REPLACE semantiği):** Tarayıcı `route_ids` listesi (değerler short_name, ör. `["29B", "M2"]`) göndererek abone olur; her `subscribe` mesajı mevcut listeyi tamamen değiştirir (delta değil). Server her short_name için Redis channel `vehicles:route:{short_name}`'a abone olur, gelen mesajları client'a forward eder. Bbox desteği opsiyonel (tight filter olarak).
+**Abonelik modeli (`vehicles:all`, B seçeneği):** Client `ws/vehicles/`
+endpoint'ine bağlanır, otomatik olarak `vehicles:all` Channels
+group'una eklenir. Bağlantı kurulduğunda ilk render için Redis'teki
+son snapshot (`GET vehicles:all`) anında gönderilir. Sonraki her
+60sn'lik tick'te fetch task `channel_layer.group_send` ile tüm grup
+üyelerine push eder. Client'tan server'a `subscribe`/`unsubscribe`
+mesajı YOK — `ping`/`pong` sadece liveness için. Hat-bazlı kanallar
+Faz 5'e ertelendi.
 
 #### Yapılacak iş
 
-1. **Channels kurulumu** (`config/asgi.py`, `settings/base.py` `CHANNEL_LAYERS`)
+**Adım 6a — Doc güncelleme (bu commit)**
+- ROADMAP'i Faz 2 ✅, Faz 3 🟡 ile günceller
+- Spec §5.7'ye pivot notu, §6.4 protokol revizyonu
+- Spec versiyon v0.7 → v0.8
 
-2. **`VehiclePositionConsumer`** (`apps/realtime/consumers.py`):
-   - `connect` — anonim bağlantı kabul, cap: aynı IP'den max 5 eşzamanlı
-   - `disconnect` — tüm hat gruplarından çıkar
-   - `receive_json` — `subscribe` / `unsubscribe_all` mesajları
-   - `subscribe` handler:
-     - `route_ids` listesini doğrula (mapping cache'inden active set)
-     - Mevcut aboneliklerden çık (REPLACE semantiği)
-     - Yeni her `route_id` için Channels group'a join
-     - Her hat için Redis `GET vehicles:route:{short_name}` → ilk snapshot'ı hemen gönder
-     - `subscription_ack` mesajıyla rejected listesi (inaktif ID'ler)
-   - Redis pub/sub → Channels group broadcast bridge (spec §6.4 mesaj formatı)
+**Adım 6b — Pipeline `vehicles:all` modeline indirgeme**
+- `fetch_iett_positions` task'ında hat-bazlı SET+PUBLISH loop'u silinir
+- Yerine tek `SET vehicles:all` (TTL 120s) + tek `group_send`
+- Payload formatı: `{type, timestamp, vehicle_count, mapped_count, vehicles[]}`, her vehicle'da `route_id` (null olabilir)
+- `test_fetch_task.py` revize, eski hat-bazlı assertion'lar silinir
 
-3. **Routing** (`apps/realtime/routing.py`):
-   - `ws/vehicles/` URL path
+**Adım 6c — Channels + Daphne kurulumu**
+- `channels[daphne]` + `channels-redis` requirements'a
+- `config/asgi.py` ProtocolTypeRouter
+- `CHANNEL_LAYERS` Memurai `db=1` (Celery `db=0`'la ayrı)
+- `DAPHNE_PORT=8011` `.env`'den override
+- Native Windows Daphne çalıştırma scripti
+- Echo consumer + ws-smoke sayfası bağlantı doğrulaması
 
-4. **REST API endpoint'leri** (Faz 3 kapsamında, frontend için hazır olsun):
-   - `GET /api/routes/active/` — bugün aktif hatlar + kategoriler (mapping cache'ten)
-   - `GET /api/routes/{route_id}/live/` — tek hat son snapshot (ilk render için)
-   - `GET /api/vehicles/live/` — fallback tüm sistem snapshot
+**Adım 6d — `VehicleAllConsumer`**
+- `AsyncJsonWebsocketConsumer`, group `"vehicles_all"`
+- `connect`: IP cap (max 5/IP), accept, ilk snapshot anında gönder
+- `disconnect`: `group_discard`, IP counter decrement
+- `receive_json`: `ping`/`pong` sadece, başka komut yok
+- `vehicles_all_message` handler: group broadcast → client forward
+- Pipeline 6b'deki publish çağrısı `channel_layer.group_send`'e dönüşür
 
-5. **Rate limit per IP:** aşırı `subscribe` döngüsü atan client throttle (Channels middleware)
+**Adım 6e — REST fallback endpoint'leri**
+- `GET /api/vehicles/live/`: `vehicles:all` key'inden snapshot, stale header
+- `GET /api/routes/active/`: mapping cache + GTFS DB merge (raylı/vapur dahil)
 
-6. **Smoke test sayfası:** Basit HTML + WebSocket client, 3-4 hat seç → araçlar akıyor
+**Adım 6f — Leaflet smoke sayfası**
+- `/preview/realtime/`, WebSocket bağlan, 6900 araç nokta olarak çiz
+- HUD: bağlantı, son timestamp, mapped/unmapped breakdown
+- Reconnect (basit exponential backoff)
+
+**Adım 6g — Integration test**
+- Cassette fixture → fetch task → `group_send` → `WebsocketCommunicator`
+- End-to-end mesaj akışı doğrulaması
+- Stale REST senaryosu
+
+**Adım 6h — Canlı smoke test (Yağız onayıyla)**
+- Tüm process'ler ayakta, tek canlı fetch, 3 tick gözlem
+- Rate limit %3 altında kalmalı
 
 #### Bitiş kriteri
 
-- Django HTTP + Daphne + Celery worker + Celery beat aynı anda çalışıyor
+- Django HTTP (8010) + Daphne (8011) + Celery worker + beat aynı anda çalışıyor
 - Browser DevTools → Network → WS: `ws://localhost:8011/ws/vehicles/` bağlantısı 101 Switching Protocols
-- `subscribe ["M2", "34BZ"]` → sadece bu iki hat için `route_vehicles_update` mesajları
-- `subscribe ["M2"]` (yenile) → 34BZ akışı kesildi, M2 devam
-- `subscribe []` (boş liste) → hiç mesaj gelmiyor, connection live kalıyor
-- Test sayfasında Leaflet haritada seçilen hatların araçları hareket ediyor
+- Bağlantıdan hemen sonra ~6900 araçlık ilk snapshot mesajı gelir
+- Sonraki her 60sn'de yeni snapshot mesajı gelir
+- `/api/vehicles/live/` REST fallback aynı snapshot'ı döner (stale değil)
+- Realtime suite hedef: ~140-150/140-150 yeşil (Faz 2'deki 121'in üstüne 6b-6d-6e-6g testleri eklenir, eski hat-bazlı testler silinir)
 
 #### Riskler
 
-- **Port 8011 çakışması.** Diğer projeler 8001'i alıyor; 8011 planda ama kullanımda olabilir. `.env`'den override edilebilir olsun
-- **Channel layer (Redis) ile Celery Redis aynı instance.** Memory basıncı artabilir, özellikle çok client'lı test senaryosunda. DB 0 Celery, DB 1 Channels öneriliyor
-- **Group join patlaması.** Bir client 100 hat subscribe ederse 100 group join olur. Üst sınır koy (örn. max 20 hat/client), aşarsa error mesaj
-- **Redis pub/sub connection limiti.** Channels her grupa abonelik için Redis connection açar. Prod'da connection pool ayarı kritik olabilir
+- **Tek payload boyutu.** 6911 araçlık snapshot ~1MB JSON, sıkıştırma sonrası ~200KB. Daphne default frame buffer (1MB) sınırında — `permessage-deflate` açık olmalı
+- **Memurai db ayrılığı.** `db=0` (Celery) ve `db=1` (Channels) ayrı tutulmalı; `FLUSHDB` ile test ederken yanlış db'ye gitme riski
+- **Native Windows Daphne auto-reload.** Davranış belirsiz — manuel restart fallback
+- **IP cap yarış koşulu.** Aynı anda 5'i aşan eşzamanlı bağlantı için atomic `INCR` + early reject
+- **`scope["client"]` localhost'ta `127.0.0.1`** — tüm dev bağlantıları aynı IP'den, cap'i development için override edilebilir tut (Faz 6 prod `X-Forwarded-For` desteği ayrı iş)
 
 ---
 

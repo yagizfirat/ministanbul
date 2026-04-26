@@ -3,10 +3,16 @@
 > İstanbul'un toplu taşıma ağının gerçek zamanlı 3D dijital haritası.
 > [Mini Tokyo 3D](https://github.com/nagix/mini-tokyo-3d)'den ilham alınmıştır.
 
-**Versiyon:** 0.7 (Faz 2 devam ediyor — hat-merkezli UI modeli benimsendi)
+**Versiyon:** 0.8 (Faz 2 tamamlandı, Faz 3 Adım 6a başlıyor — `vehicles:all` pivot)
 **Hedef:** Antigravity agent ile geliştirilecek, Python Django tabanlı bir web uygulaması
 **Lisans:** MIT (planlanıyor)
-**Statü:** Faz 1 tamamlandı. Faz 2 Adım 4 (IETT SOAP adaptörü + rate limiter + lock + parser'lar) tamamlandı; Adım 5 (Celery wiring) başlıyor.
+**Statü:** Faz 1 ve Faz 2 tamamlandı. Faz 3 Adım 6a başlıyor (WebSocket katmanı, `vehicles:all` model).
+
+> **v0.8 değişiklikleri (2026-04-26):** Faz 2 (canlı veri adaptörü) `d52024a` commit'iyle tamamlandı (realtime suite 121/121 yeşil). Faz 2 Adım 5i smoke test'i sırasında UX yön değişikliği yapıldı: tüm 6911 araç haritada ham nokta olarak gösterilecek, hat filtresi frontend'de görsel katman olarak işlenecek. Bu pivot WebSocket modelini de sadeleştirdi: tek `vehicles:all` Channels group'u, hat-bazlı kanallar Faz 5'e (metro/marmaray/vapur simülasyonu) ertelendi. Değişen bölümler:
+> - §5.7 sonu — yeni alt-bölüm "v0.8 pivot" (rationale, hat-bazlı yapının Faz 5'te geri dönüşü, bandwidth karşılaştırması)
+> - §6.4 başı — Faz 3 sadeleştirilmiş protokol prelude (orijinal hat-merkezli `subscribe`/`subscription_ack` modeli Faz 5 için altta korundu)
+>
+> Pipeline çekirdeği (adapter, rate limiter, lock, mapping cache, enrichment, fetch task) değişmedi — Adım 6b'de fetch task'ın son adımı tek `SET vehicles:all` + `group_send` modeline indirgenir.
 
 > **v0.7 değişiklikleri (2026-04-24):** UI modeli **araç-merkezli**den **hat-merkezli**ye taşındı. Kullanıcı artık bireysel araç değil, hat izler ("29B hattı ne yapıyor"). Bazı kategoriler sürekli görünür (metro, tramvay, füniküler, Marmaray, metrobüs, vapur), otobüs hatları opt-in (kullanıcı seçerse görünür). Değişen bölümler:
 > - Yeni §3.3 "Mod Sınıflandırması ve Görünürlük Politikası"
@@ -660,6 +666,25 @@ Her hat bağımsız bir Redis channel: `vehicles:route:{short_name}`. Frontend b
 
 Detaylı implementasyon Faz 2 Adım 5'te (Celery wiring).
 
+#### v0.8 pivot (2026-04-26)
+
+UX pivot sonrası (tüm 6911 araç haritada ham nokta, hat filtresi
+görsel) pipeline'ın son adımı sadeleştirildi. Hat-bazlı `SET
+vehicles:route:{short_name}` + `PUBLISH` kombinasyonu yerine tek `SET
+vehicles:all` + `channel_layer.group_send("vehicles_all", ...)` model
+kullanılıyor.
+
+Hat-bazlı kanallar silinmedi — Faz 5'te metro/marmaray/vapur
+simülasyonu eklendiğinde geri gelecek. O zaman her mod için ayrı
+schedule kanalı (`trips:active:M2` gibi) ile birlikte hat-bazlı yapı
+yeniden devreye girer ve §6.4'teki orijinal subscribe modeli o ihtiyaç
+için revize edilir.
+
+Şimdiki sade modelin gerekçesi: UX pivot sonrası kullanıcı zaten tüm
+filoyu görüyor, server-side hat filtresi yapmaya değen bir ihtiyaç
+yok. 800 fanout × 60sn yerine 1 fanout × 60sn — bandwidth sıkıştırma
+sonrası sınırda ama yönetilebilir (~200KB/60sn/client).
+
 ---
 
 ## 6. Django Uygulama Yapısı
@@ -864,6 +889,30 @@ WS   /ws/vehicles/                     Canlı araç konumları (WebSocket)
 ```
 
 ### 6.4. WebSocket Protokolü
+
+**v0.8 pivot (2026-04-26):** UX pivotu sonrası protokol sadeleştirildi.
+Aşağıdaki orijinal hat-merkezli `subscribe`/`subscription_ack` modeli
+Faz 5'e ertelendi (hat-bazlı simülasyon kanalları için kullanılacak).
+Faz 3'te kullanılan sadeleştirilmiş model:
+
+- Client `ws/vehicles/`'a bağlanır
+- Sunucu hemen `{type: "vehicles_all_snapshot", timestamp, vehicle_count, mapped_count, vehicles: [...]}` mesajı gönderir (ilk render)
+- Sonraki her 60sn'de aynı format mesaj gelir (`type: "vehicles_all_update"`)
+- Client'tan server'a anlamlı mesaj sadece `{action: "ping"}` (server `{type: "pong"}` cevap verir)
+- `subscribe`/`unsubscribe`/`subscription_ack` mesajları YOK
+- Aynı IP'den max 5 eşzamanlı bağlantı (cap aşımı: close code 4008)
+
+Aşağıdaki orijinal protokol Faz 5'te metro/marmaray/vapur için
+geri gelir.
+
+---
+
+#### Orijinal hat-merkezli protokol (Faz 5 için korundu, şu an inaktif)
+
+> Aşağıdaki içerik Faz 3'te **kullanılmıyor**. Faz 5'te
+> metro/marmaray/vapur simülasyonu eklendiğinde hat-bazlı kanal
+> modeli geri gelecek; o zaman bu örnekler güncel kontrata revize
+> edilir.
 
 **Bağlantı:** `ws://localhost:8001/ws/vehicles/`
 
