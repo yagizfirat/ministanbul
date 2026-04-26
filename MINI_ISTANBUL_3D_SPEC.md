@@ -674,6 +674,29 @@ vehicles:route:{short_name}` + `PUBLISH` kombinasyonu yerine tek `SET
 vehicles:all` + `channel_layer.group_send("vehicles_all", ...)` model
 kullanılıyor.
 
+Payload formatı (6c-i implementation, `apps.realtime.tasks.fetch_iett_positions`):
+
+```json
+{
+  "type": "vehicles_all_update",
+  "timestamp": "2026-04-26T08:30:00Z",
+  "vehicle_count": 6911,
+  "mapped_count": 3320,
+  "vehicles": [
+    {"id": "C-231", "lat": 41.04, "lon": 29.10, "bearing": 87.5,
+     "speed": 24.0, "route_id": "29B"},
+    {"id": "C-232", "lat": 41.05, "lon": 29.11, "bearing": null,
+     "speed": null, "route_id": null}
+  ]
+}
+```
+
+`route_id null` = hat bilinmiyor (mapping eksik). UX pivot gereği bu
+araçlar payload'da tutulur, frontend ham nokta olarak çizer, popup'ta
+"hat bilinmiyor" notu gösterir. `mapped_count` payload'daki `route_id
+!= null` vehicle sayısı, `vehicle_count` ise toplam — frontend HUD bu
+iki değerle "mapped/total" oranını gösterir.
+
 Hat-bazlı kanallar silinmedi — Faz 5'te metro/marmaray/vapur
 simülasyonu eklendiğinde geri gelecek. O zaman her mod için ayrı
 schedule kanalı (`trips:active:M2` gibi) ile birlikte hat-bazlı yapı
@@ -896,8 +919,9 @@ Faz 5'e ertelendi (hat-bazlı simülasyon kanalları için kullanılacak).
 Faz 3'te kullanılan sadeleştirilmiş model:
 
 - Client `ws/vehicles/`'a bağlanır
-- Sunucu hemen `{type: "vehicles_all_snapshot", timestamp, vehicle_count, mapped_count, vehicles: [...]}` mesajı gönderir (ilk render)
-- Sonraki her 60sn'de aynı format mesaj gelir (`type: "vehicles_all_update"`)
+- Sunucu hemen mevcut `vehicles:all` snapshot'ını gönderir (`type: "vehicles_all_update"`)
+- Sonraki her 60sn'de yeni snapshot mesajı gelir (aynı type)
+- "İlk render" ve "update" arasında semantik ayrım yok — tek tip, frontend mesajı geldikçe state'ini overwrite eder
 - Client'tan server'a anlamlı mesaj sadece `{action: "ping"}` (server `{type: "pong"}` cevap verir)
 - `subscribe`/`unsubscribe`/`subscription_ack` mesajları YOK
 - Aynı IP'den max 5 eşzamanlı bağlantı (cap aşımı: close code 4008)
