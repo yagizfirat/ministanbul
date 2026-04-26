@@ -528,7 +528,7 @@ Faz 5'e ertelendi.
 - Native Windows Daphne çalıştırma scripti
 - Echo consumer + ws-smoke sayfası bağlantı doğrulaması
 
-**Adım 6c — Pipeline `vehicles:all` modeline indirgeme**
+**Adım 6c — Pipeline `vehicles:all` modeline indirgeme ✅ (tamamlandı 2026-04-26)**
 *Önkoşul: 6b (Channels altyapısı) tamamlanmış olmalı.*
 - `fetch_iett_positions` task'ında hat-bazlı SET+PUBLISH loop'u silinir
 - Yerine tek `SET vehicles:all` (TTL 120s) + tek `group_send`
@@ -561,7 +561,7 @@ Faz 5'e ertelendi.
 - Tüm process'ler ayakta, tek canlı fetch, 3 tick gözlem
 - Rate limit %3 altında kalmalı
 
-#### Adım 6a–6b kapanış kayıtları
+#### Adım 6a–6c kapanış kayıtları
 
 **Sub-step commit chain (Faz 3 başlangıcı):**
 
@@ -573,6 +573,9 @@ Faz 5'e ertelendi.
 | 6b-iii | `8ef66e8` | feat(realtime): wire CHANNEL_LAYERS to memurai db=1 |
 | 6b-iv | `9e2065d` | feat(realtime): echo consumer and ws-smoke preview page |
 | 6b-v | `bd40316` | chore(realtime): daphne run scripts and log gitignore |
+| 6b-vi | `6d536a8` | chore(realtime): close adım 6b, channels infra ready |
+| 6c-i | `7654d0b` | refactor(realtime): collapse fetch task to vehicles:all + group_send |
+| 6c-ii | `a6d275a` | docs(spec): document vehicles:all payload format |
 
 **Otomasyon smoke (6b-vi, 2026-04-26):**
 
@@ -583,7 +586,9 @@ Faz 5'e ertelendi.
 
 **Reload bulgusu (6b-v):** Daphne 4.2.1 CLI `--reload` desteklemiyor → kod değişikliklerinde manuel restart. ROADMAP risk listesi + `run_daphne.{sh,bat}` yorumlarında dokümante.
 
-**Realtime suite final:** 131/131 yeşil, 4.42s. Tüm warning'ler temiz (pytest-asyncio deprecation 6b-iv'te kapatıldı).
+**Adım 6c özeti (2026-04-26):** Pipeline pivot tamamlandı — `fetch_iett_positions` artık tek `vehicles:all` snapshot + `channel_layer.group_send` modelinde çalışıyor. Tüketici uyumu (`admin_views.py` + integration testleri) aynı commit'te yapıldı. Spec §5.7 + §6.4 implementation ile hizalandı.
+
+**Realtime suite final:** 131/131 yeşil, 4.23s. Tüm warning'ler temiz (pytest-asyncio deprecation 6b-iv'te kapatıldı).
 
 #### Bitiş kriteri
 
