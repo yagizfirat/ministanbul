@@ -37,6 +37,11 @@ DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 
 INSTALLED_APPS = [
+    # daphne MUST be first: Channels 4'te `runserver` komutunu Daphne'nin
+    # ASGI versiyonuyla değiştirir. Sıralama bozulursa Django'nun WSGI
+    # runserver'ı devreye girer ve WebSocket route'ları sessizce 404'e
+    # düşer.
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -127,6 +132,20 @@ REST_FRAMEWORK = {
 # Redis — shared across Celery (broker/result), rate limiter, distributed
 # lock, mapping cache, and pub/sub. Single URL, single source of truth.
 REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+
+# Channels (Faz 3+) — WebSocket layer Redis. Memurai db=1, Celery db=0
+# ile fiziksel olarak ayrı tut: FLUSHDB yanlış db'ye gitmesin diye
+# explicit env var, REDIS_URL'den türetme YOK.
+CHANNELS_REDIS_URL = env("CHANNELS_REDIS_URL", default="redis://localhost:6379/1")
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [CHANNELS_REDIS_URL],
+        },
+    },
+}
 
 # Celery — worker/beat config. Tasks populated in Phase 2 Step 2+.
 CELERY_BROKER_URL = REDIS_URL
