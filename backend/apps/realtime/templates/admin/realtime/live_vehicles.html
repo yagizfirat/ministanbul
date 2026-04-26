@@ -69,7 +69,10 @@
       <tr><th style="text-align: left; padding-right: 20px;">Route</th>
           <th style="text-align: left;">Vehicle count</th></tr>
       {% for short_name, count in top_routes %}
-        <tr><td>{{ short_name }}</td><td>{{ count }}</td></tr>
+        <tr>
+          <td>{% if short_name %}{{ short_name }}{% else %}<em style="color: #c33;">(unmapped)</em>{% endif %}</td>
+          <td>{{ count }}</td>
+        </tr>
       {% endfor %}
     </table>
   {% else %}

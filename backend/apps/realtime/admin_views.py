@@ -3,12 +3,18 @@
 Aggregates five pipeline-health metrics from Redis for the operator's
 admin page:
 
-  1. Total active vehicles (sum across ``vehicles:route:*`` payloads)
-  2. Top 20 routes by vehicle count
+  1. Total active vehicles (from ``vehicles:all`` payload)
+  2. Top 20 routes by vehicle count — unmapped vehicles appear as a
+     ``(unmapped)`` bucket so mapping issues are visible, not hidden
   3. Unmapped count + percent (``stats:unmapped_count`` / total seen)
   4. Mapping cache presence + remaining TTL
   5. Last successful fetch timestamp + per-endpoint rate-limit snapshot
      (``IettSoapAdapter.health()`` via :func:`apps.realtime.tasks._make_adapter`)
+
+Faz 3 6c: per-route ``vehicles:route:*`` keys gone — single
+``vehicles:all`` snapshot is the source of truth. Counter aggregation
+over ``vehicles[*].route_id`` reproduces the same per-route view, with
+None bucket exposed as "(unmapped)" in the template.
 
 Server-side render, manual F5 refresh — no auto-refresh, no polling.
 The auth wrapper is applied where the URL is wired up (admin.py uses
@@ -19,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
 from datetime import date, datetime
 
 import redis
@@ -31,7 +38,7 @@ from apps.realtime.tasks import (
     LAST_FETCH_TS_KEY,
     MAPPING_CACHE_KEY,
     UNMAPPED_COUNT_KEY,
-    VEHICLES_CACHE_KEY_PREFIX,
+    VEHICLES_ALL_KEY,
     _make_adapter,
 )
 
@@ -44,27 +51,22 @@ def live_vehicles_view(request):
     500."""
     redis_client = redis.from_url(settings.REDIS_URL, decode_responses=False)
 
-    # 1 + 2. Per-route vehicle counts → total + top-20 breakdown.
-    vehicle_keys = redis_client.keys(f"{VEHICLES_CACHE_KEY_PREFIX}*")
-    route_breakdown: list[tuple[str, int]] = []
-    total_vehicles = 0
-
-    for key in vehicle_keys:
-        raw = redis_client.get(key)
-        if raw is None:
-            continue
+    # 1 + 2. vehicles:all snapshot → Counter over route_id (None included
+    # as "(unmapped)" bucket so operators see mapping issues directly).
+    raw_snapshot = redis_client.get(VEHICLES_ALL_KEY)
+    counter: Counter = Counter()
+    if raw_snapshot:
         try:
-            payload = json.loads(raw)
+            snapshot = json.loads(raw_snapshot)
+            counter = Counter(
+                v.get("route_id") for v in snapshot.get("vehicles", [])
+            )
         except json.JSONDecodeError:
-            logger.warning("admin: corrupt payload in %s", key)
-            continue
-        short_name = payload.get("route_id", "?")
-        count = len(payload.get("vehicles", []))
-        total_vehicles += count
-        route_breakdown.append((short_name, count))
+            logger.warning("admin: corrupt vehicles:all payload")
 
-    route_breakdown.sort(key=lambda t: t[1], reverse=True)
-    top_routes = route_breakdown[:20]
+    total_vehicles = sum(counter.values())
+    active_routes = len(counter) - (1 if None in counter else 0)
+    top_routes = sorted(counter.items(), key=lambda kv: kv[1], reverse=True)[:20]
 
     # 3. Unmapped count + percentage.
     raw_unmapped = redis_client.get(UNMAPPED_COUNT_KEY)
@@ -118,7 +120,7 @@ def live_vehicles_view(request):
     context = {
         "title": "Live Vehicles",
         "total_vehicles": total_vehicles,
-        "active_routes": len(route_breakdown),
+        "active_routes": active_routes,
         "top_routes": top_routes,
         "unmapped_count": unmapped_count,
         "unmapped_percent": unmapped_percent,

@@ -96,17 +96,35 @@ def _make_health(fleet_count: int = 10, fleet_status: str = "OK") -> dict:
     }
 
 
-def _seed_vehicle_payload(redis_client, short_name: str, count: int) -> None:
+def _seed_vehicles_all(redis_client, route_counts: dict) -> None:
+    """Seed vehicles:all with a synthetic snapshot (Faz 3 6c+ format).
+
+    ``route_counts`` maps route_id (str or None) → vehicle count.
+    None key produces unmapped vehicles (route_id null in payload) so
+    tests can exercise the "(unmapped)" bucket invariant directly.
+    """
+    vehicles: list[dict] = []
+    seq = 0
+    for route_id, count in route_counts.items():
+        for _ in range(count):
+            vehicles.append({
+                "id": f"K-{seq}",
+                "lat": 41.0,
+                "lon": 29.0,
+                "bearing": None,
+                "speed": None,
+                "route_id": route_id,
+            })
+            seq += 1
+    mapped = sum(c for r, c in route_counts.items() if r is not None)
     payload = json.dumps({
-        "type": "route_vehicles_update",
-        "route_id": short_name,
+        "type": "vehicles_all_update",
         "timestamp": "2026-04-25T12:00:00Z",
-        "vehicles": [
-            {"id": f"K-{i}", "lat": 41.0, "lon": 29.0, "bearing": None, "speed": None}
-            for i in range(count)
-        ],
+        "vehicle_count": len(vehicles),
+        "mapped_count": mapped,
+        "vehicles": vehicles,
     })
-    redis_client.set(f"vehicles:route:{short_name}", payload)
+    redis_client.set("vehicles:all", payload)
 
 
 def _seed_mapping(
@@ -147,7 +165,7 @@ def test_unauthenticated_redirects(db, fake_redis, patch_adapter):
 
 def test_authenticated_renders_200(client_logged_in, fake_redis, patch_adapter):
     _seed_mapping(fake_redis)
-    _seed_vehicle_payload(fake_redis, "29B", 1)
+    _seed_vehicles_all(fake_redis, {"29B": 1})
     patch_adapter()
 
     response = client_logged_in.get(LIVE_URL)
@@ -165,9 +183,7 @@ def test_authenticated_renders_200(client_logged_in, fake_redis, patch_adapter):
 def test_total_vehicle_count_aggregates(
     client_logged_in, fake_redis, patch_adapter,
 ):
-    _seed_vehicle_payload(fake_redis, "29B", 5)
-    _seed_vehicle_payload(fake_redis, "34BZ", 3)
-    _seed_vehicle_payload(fake_redis, "M2", 2)
+    _seed_vehicles_all(fake_redis, {"29B": 5, "34BZ": 3, "M2": 2})
     patch_adapter()
 
     response = client_logged_in.get(LIVE_URL)
@@ -183,13 +199,39 @@ def test_total_vehicle_count_aggregates(
     assert 0 < pos_29b < pos_34bz < pos_m2
 
 
+# --- 3b. UX pivot invariant: unmapped vehicles visible in top_routes ------
+
+
+def test_top_routes_includes_unmapped_bucket(
+    client_logged_in, fake_redis, patch_adapter,
+):
+    """UX pivot invariant: unmapped vehicles MUST appear in top_routes
+    as a distinct '(unmapped)' bucket — operators see mapping issues
+    instead of silent missing vehicles. Pre-pivot the per-route fanout
+    dropped them from per-route keys; vehicles:all + Counter exposes
+    them as a None bucket rendered '(unmapped)' in the template."""
+    _seed_vehicles_all(fake_redis, {"29B": 5, None: 3})
+    patch_adapter()
+
+    response = client_logged_in.get(LIVE_URL)
+    body = response.content.decode("utf-8")
+
+    assert ">29B<" in body
+    assert "(unmapped)" in body
+    # 29B (5) ranks above unmapped (3); ordering preserved by Counter
+    # most_common semantics in admin_views.
+    pos_29b = body.find(">29B<")
+    pos_unmapped = body.find("(unmapped)")
+    assert 0 < pos_29b < pos_unmapped
+
+
 # --- 4. unmapped count + percent ------------------------------------------
 
 
 def test_unmapped_count_and_percent(
     client_logged_in, fake_redis, patch_adapter,
 ):
-    _seed_vehicle_payload(fake_redis, "29B", 10)
+    _seed_vehicles_all(fake_redis, {"29B": 10})
     fake_redis.set(UNMAPPED_COUNT_KEY, 5)
     patch_adapter()
 

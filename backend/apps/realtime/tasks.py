@@ -5,10 +5,13 @@ pulls yesterday's completed İETT tasks, reshapes them via
 ``build_mapping``, and writes the payload to Redis under
 ``iett:mapping:current`` (spec §5.7 + Ek A.13).
 
-Phase 2 Step 5d owns ``fetch_iett_positions`` — the per-tick job that
+Phase 3 Step 6c owns ``fetch_iett_positions`` — the per-tick job that
 pulls live vehicle positions, enriches them with the cached mapping,
-and publishes route-grouped snapshots to Redis pub/sub channels
-(``vehicles:route:{short_name}``) plus a SET for last-known-state.
+and publishes a single fleet-wide snapshot via Channels group_send
+(group ``vehicles_all``) plus a SET ``vehicles:all`` for last-known
+state. Per-route fanout was retired with the v0.8 UX pivot — every
+vehicle (mapped or not) now lands in the same payload, frontend draws
+ham points and reads ``route_id`` for popup labels.
 
 Beat schedule (Step 5e) binds both to cron-like intervals.
 """
@@ -17,13 +20,14 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections import defaultdict
 from datetime import date, datetime, timedelta
 from datetime import timezone as dt_timezone
 
 import redis
 import requests
+from asgiref.sync import async_to_sync
 from celery import shared_task
+from channels.layers import get_channel_layer
 from django.conf import settings
 from django.utils import timezone
 
@@ -45,8 +49,9 @@ logger = logging.getLogger(__name__)
 MAPPING_CACHE_KEY = "iett:mapping:current"
 MAPPING_CACHE_TTL_SECONDS = 28 * 3600  # 28 hours — spec §5.7
 
-VEHICLES_CACHE_KEY_PREFIX = "vehicles:route:"
-VEHICLES_CACHE_TTL_SECONDS = 120  # spec §5.7
+VEHICLES_ALL_KEY = "vehicles:all"            # fleet-wide snapshot (REST fallback in 6e)
+VEHICLES_ALL_GROUP = "vehicles_all"          # Channels group consumers join in 6d
+VEHICLES_CACHE_TTL_SECONDS = 120             # spec §5.7
 UNMAPPED_COUNT_KEY = "stats:unmapped_count"
 LAST_FETCH_TS_KEY = "stats:last_fetch_ts"
 DAY_TYPE_MISMATCH_COUNT_KEY = "stats:day_type_mismatch_count"  # 5i-iv
@@ -198,22 +203,25 @@ def _now_iso_z() -> str:
 
 @shared_task(name="apps.realtime.tasks.fetch_iett_positions")
 def fetch_iett_positions() -> dict:
-    """Tick the live-positions pipeline (spec §5.7, ROADMAP 5d).
+    """Tick the live-positions pipeline (spec §5.7, ROADMAP 6c).
 
     One pass per tick (60 s, scheduled in Step 5e):
       1. ``adapter.fetch()`` → ``list[VehiclePosition]``
       2. Read ``iett:mapping:current``; ``json.loads`` if present.
          Cache miss → empty mapping (every vehicle ends up unmapped),
-         WARNING log; the loop still runs so the unmapped counter
-         tracks the gap.
-      3. ``enrich_with_route_id`` stamps ``route_id``.
-      4. Group by ``route_id`` (None bucket = unmapped, dropped).
+         WARNING log; broadcast still happens so the frontend keeps
+         drawing ham points.
+      3. ``enrich_with_route_id`` stamps ``route_id`` (None for
+         unmapped vehicles — kept in payload per UX pivot).
+      4. Single-pass mapped/unmapped count (no groupby needed in
+         vehicles:all model).
       5. Overwrite ``stats:unmapped_count`` (always written, even when
-         zero — observability-wise we want a heartbeat).
-      6. Per-route Redis pipeline (``transaction=False`` — single
-         producer, no atomicity needed; pipelining is just for round
-         trips): ``SET vehicles:route:{short_name} payload EX 120`` +
-         ``PUBLISH vehicles:route:{short_name} payload``.
+         zero — observability heartbeat).
+      6. Build the fleet-wide payload, ``SET vehicles:all`` (TTL 120 s)
+         for REST fallback (6e), ``async_to_sync(channel_layer
+         .group_send)`` to ``vehicles_all`` for live consumers (6d).
+         The empty-fleet case still broadcasts a zero-payload — the
+         frontend MUST get a heartbeat or it can't tell stale from idle.
 
     Adapter exceptions are caught and returned as an error dict — no
     Celery retry. The next tick is 60 s away anyway, and retrying into
@@ -299,13 +307,8 @@ def fetch_iett_positions() -> dict:
 
     enriched = enrich_with_route_id(vehicles, mapping)
 
-    grouped: dict[str, list] = defaultdict(list)
-    unmapped = 0
-    for v in enriched:
-        if v.route_id is None:
-            unmapped += 1
-        else:
-            grouped[v.route_id].append(v)
+    mapped_count = sum(1 for v in enriched if v.route_id is not None)
+    unmapped = len(enriched) - mapped_count
 
     redis_client.set(UNMAPPED_COUNT_KEY, unmapped)
 
@@ -315,38 +318,38 @@ def fetch_iett_positions() -> dict:
     now_iso = _now_iso_z()
     redis_client.set(LAST_FETCH_TS_KEY, now_iso)
 
-    if grouped:
-        pipe = redis_client.pipeline(transaction=False)
-        for short_name, vehicles_list in grouped.items():
-            payload = json.dumps(
-                {
-                    "type": "route_vehicles_update",
-                    "route_id": short_name,
-                    "timestamp": now_iso,
-                    "vehicles": [
-                        {
-                            "id": v.vehicle_id,
-                            "lat": v.latitude,
-                            "lon": v.longitude,
-                            "bearing": v.bearing,
-                            "speed": v.speed,
-                        }
-                        for v in vehicles_list
-                    ],
-                },
-                separators=(",", ":"),
-            )
-            key = f"{VEHICLES_CACHE_KEY_PREFIX}{short_name}"
-            pipe.set(key, payload, ex=VEHICLES_CACHE_TTL_SECONDS)
-            pipe.publish(key, payload)
-        pipe.execute()
+    payload = {
+        "type": "vehicles_all_update",
+        "timestamp": now_iso,
+        "vehicle_count": len(enriched),
+        "mapped_count": mapped_count,
+        "vehicles": [
+            {
+                "id": v.vehicle_id,
+                "lat": v.latitude,
+                "lon": v.longitude,
+                "bearing": v.bearing,
+                "speed": v.speed,
+                "route_id": v.route_id,
+            }
+            for v in enriched
+        ],
+    }
+    payload_json = json.dumps(payload, separators=(",", ":"))
+    redis_client.set(VEHICLES_ALL_KEY, payload_json, ex=VEHICLES_CACHE_TTL_SECONDS)
+
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        VEHICLES_ALL_GROUP,
+        {"type": "vehicles.broadcast", "data": payload},
+    )
 
     elapsed = round(time.monotonic() - started, 2)
     result = {
         "status": "ok",
         "fetched": len(vehicles),
+        "mapped_count": mapped_count,
         "unmapped": unmapped,
-        "routes": len(grouped),
         "elapsed_seconds": elapsed,
     }
     logger.info("fetch_iett_positions: SUCCESS %s", result)

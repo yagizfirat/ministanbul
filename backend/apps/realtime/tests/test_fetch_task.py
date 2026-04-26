@@ -1,9 +1,14 @@
-"""Tests for ``apps.realtime.tasks.fetch_iett_positions``.
+"""Tests for ``apps.realtime.tasks.fetch_iett_positions`` (vehicles:all model).
 
-Celery is not started — the task is called as a plain function. Redis
-is faked via ``fakeredis`` (shared client so pub/sub state is visible
-to the test subscriber). The IETT adapter is replaced wholesale via
-``_make_adapter`` monkey-patch — no network, no rate-limiter wiring.
+Faz 3 Adım 6c'de pipeline tek ``vehicles:all`` snapshot + ``group_send``
+modeline indirgendi. Per-route fanout gitti — mapping/enrich/mismatch
+katmanları aynen, sadece son adım değişti.
+
+Celery is not started; the task is called as a plain function. Redis
+is faked via ``fakeredis`` (writes hit the same client the task reads).
+The IETT adapter is replaced wholesale via ``_make_adapter``. The
+Channels layer is mocked at the module level so ``async_to_sync(
+channel_layer.group_send)`` calls land in a Python list, not Memurai.
 """
 from __future__ import annotations
 
@@ -25,13 +30,13 @@ from apps.realtime.tasks import (
     LAST_FETCH_TS_KEY,
     MAPPING_CACHE_KEY,
     UNMAPPED_COUNT_KEY,
-    VEHICLES_CACHE_KEY_PREFIX,
+    VEHICLES_ALL_GROUP,
+    VEHICLES_ALL_KEY,
     VEHICLES_CACHE_TTL_SECONDS,
     fetch_iett_positions,
 )
 
 ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
-
 LOGGER_NAME = "apps.realtime.tasks"
 
 
@@ -41,7 +46,7 @@ LOGGER_NAME = "apps.realtime.tasks"
 @pytest.fixture
 def fake_redis(monkeypatch):
     """Shared FakeStrictRedis: same instance for the task client and the
-    test's pub/sub subscriber, so PUBLISH inside the task delivers."""
+    test's reader, so SET inside the task is observable."""
     client = fakeredis.FakeStrictRedis()
     monkeypatch.setattr(
         tasks_module.redis, "from_url",
@@ -66,6 +71,26 @@ def patch_adapter(monkeypatch):
         )
         return adapter
     return _set
+
+
+@pytest.fixture(autouse=True)
+def captured_group_sends(monkeypatch):
+    """Capture ``channel_layer.group_send`` calls into a Python list.
+
+    Autouse: every test gets the mock — even the ones that don't read the
+    list. Without it the real RedisChannelLayer would try to talk to
+    Memurai db=1, leaking pipeline output across tests.
+    """
+    sent: list[tuple[str, dict]] = []
+
+    async def fake_group_send(group, message):
+        sent.append((group, message))
+
+    layer = SimpleNamespace(group_send=fake_group_send)
+    monkeypatch.setattr(
+        tasks_module, "get_channel_layer", lambda: layer,
+    )
+    return sent
 
 
 # --- helpers ---------------------------------------------------------------
@@ -112,17 +137,9 @@ def _seed_mapping(
     snapshot_date: str = "1970-01-01",
     snapshot_day_type: str = "sunday",
 ) -> None:
-    """Write a valid mapping payload to ``iett:mapping:current``.
-
-    Default snapshot_date 1970-01-01 matches the epoch dates produced by
-    ``_make_vehicle(ts_ms=...)``. snapshot_day_type defaults to "sunday"
-    because 1970-01-01 is Yılbaşı (a Turkish public holiday), which the
-    holidays-aware ``get_day_type`` maps to "sunday" — so the vehicle's
-    ts day_type and the mapping snapshot_day_type agree, keeping the
-    5i-iv mismatch detection silent for every default-seeded test.
-    Override snapshot_date/day_type explicitly when a test needs to
-    exercise the mismatch detection branch (see
-    test_day_type_mismatch_increments_counter)."""
+    """See test_fetch_task.py history: snapshot_date 1970-01-01 + day_type
+    'sunday' is the default that keeps the 5i-iv mismatch detection silent
+    against ``_make_vehicle(ts_ms=...)``-derived timestamps."""
     active = sorted({iv["hat"] for ivs in by_kapi.values() for iv in ivs})
     payload = {
         "snapshot_date": snapshot_date,
@@ -134,139 +151,106 @@ def _seed_mapping(
     client.set(MAPPING_CACHE_KEY, json.dumps(payload).encode("utf-8"))
 
 
-def _subscribe(client, *channels) -> object:
-    """Subscribe to channels and drain the subscribe-ack messages."""
-    pubsub = client.pubsub()
-    pubsub.subscribe(*channels)
-    for _ in channels:
-        ack = pubsub.get_message(timeout=1.0)
-        assert ack is not None and ack["type"] == "subscribe"
-    return pubsub
-
-
-def _drain_messages(pubsub, expected_count: int, timeout: float = 1.0) -> list[dict]:
-    """Pull up to ``expected_count`` ``message``-type frames from pubsub."""
-    out: list[dict] = []
-    while len(out) < expected_count:
-        msg = pubsub.get_message(timeout=timeout)
-        if msg is None:
-            break
-        if msg.get("type") == "message":
-            out.append(msg)
-    return out
+def _read_snapshot(client) -> dict:
+    raw = client.get(VEHICLES_ALL_KEY)
+    assert raw is not None, "vehicles:all SET expected but key absent"
+    return json.loads(raw)
 
 
 # --- 1. happy path --------------------------------------------------------
 
 
-def test_happy_path_single_route_single_vehicle(fake_redis, patch_adapter):
+def test_happy_path_single_vehicle(fake_redis, patch_adapter, captured_group_sends):
     _seed_mapping(fake_redis, {"A-231": [_interval(1000, 99999, "29B")]})
     patch_adapter(fetch_return=[_make_vehicle("A-231", ts_ms=5000, speed=24.0)])
 
-    pubsub = _subscribe(fake_redis, "vehicles:route:29B")
     result = fetch_iett_positions()
-    msgs = _drain_messages(pubsub, expected_count=1)
+    snapshot = _read_snapshot(fake_redis)
 
-    assert len(msgs) == 1
-    payload = json.loads(msgs[0]["data"])
-    assert payload["type"] == "route_vehicles_update"
-    assert payload["route_id"] == "29B"
-    assert len(payload["vehicles"]) == 1
-    assert payload["vehicles"][0]["id"] == "A-231"
-
-    cached = fake_redis.get("vehicles:route:29B")
-    assert cached is not None
-    assert json.loads(cached) == payload
+    assert snapshot["type"] == "vehicles_all_update"
+    assert snapshot["vehicle_count"] == 1
+    assert snapshot["mapped_count"] == 1
+    assert len(snapshot["vehicles"]) == 1
+    assert snapshot["vehicles"][0]["id"] == "A-231"
+    assert snapshot["vehicles"][0]["route_id"] == "29B"
 
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 0
-    last_fetch = fake_redis.get(LAST_FETCH_TS_KEY)
-    assert last_fetch is not None
-    assert last_fetch.endswith(b"Z")
+    assert fake_redis.get(LAST_FETCH_TS_KEY).endswith(b"Z")
+
+    assert len(captured_group_sends) == 1
+    group, message = captured_group_sends[0]
+    assert group == VEHICLES_ALL_GROUP
+    assert message["data"] == snapshot
+
     assert result["status"] == "ok"
     assert result["fetched"] == 1
+    assert result["mapped_count"] == 1
     assert result["unmapped"] == 0
-    assert result["routes"] == 1
 
 
-# --- 2. multi-route grouping ----------------------------------------------
+# --- 2. unmapped vehicle stays in payload with route_id=null --------------
 
 
-def test_multiple_routes_grouped_correctly(fake_redis, patch_adapter):
-    _seed_mapping(fake_redis, {
-        "A-231": [_interval(1000, 99999, "29B")],
-        "B-100": [_interval(1000, 99999, "34BZ")],
-        "C-50":  [_interval(1000, 99999, "29B")],
-    })
-    patch_adapter(fetch_return=[
-        _make_vehicle("A-231"),
-        _make_vehicle("B-100"),
-        _make_vehicle("C-50"),
-    ])
-
-    pubsub = _subscribe(
-        fake_redis, "vehicles:route:29B", "vehicles:route:34BZ",
-    )
-    result = fetch_iett_positions()
-    msgs = _drain_messages(pubsub, expected_count=2)
-
-    assert len(msgs) == 2
-    by_route: dict[str, list] = {}
-    for msg in msgs:
-        payload = json.loads(msg["data"])
-        by_route[payload["route_id"]] = payload["vehicles"]
-
-    assert {v["id"] for v in by_route["29B"]} == {"A-231", "C-50"}
-    assert {v["id"] for v in by_route["34BZ"]} == {"B-100"}
-    assert result["routes"] == 2
-
-
-# --- 3. unmapped vehicle skipped from pub ---------------------------------
-
-
-def test_unmapped_vehicle_skipped_from_pub(fake_redis, patch_adapter):
+def test_unmapped_vehicle_included_with_null_route_id(
+    fake_redis, patch_adapter, captured_group_sends
+):
+    """UX pivot invariant: unmapped vehicles MUST appear in the snapshot
+    so the frontend can render them as ham points (popup says 'hat
+    bilinmiyor'). Pre-pivot the per-route fanout dropped them; vehicles:all
+    keeps them with route_id=null."""
     _seed_mapping(fake_redis, {"A-231": [_interval(1000, 9999, "29B")]})
     patch_adapter(fetch_return=[
         _make_vehicle("A-231", ts_ms=5000),
         _make_vehicle("X-999", ts_ms=5000),  # not in mapping
     ])
 
-    pubsub = _subscribe(fake_redis, "vehicles:route:29B")
     result = fetch_iett_positions()
-    msgs = _drain_messages(pubsub, expected_count=1)
+    snapshot = _read_snapshot(fake_redis)
 
-    assert len(msgs) == 1
-    payload = json.loads(msgs[0]["data"])
-    assert {v["id"] for v in payload["vehicles"]} == {"A-231"}
+    by_id = {v["id"]: v for v in snapshot["vehicles"]}
+    assert by_id["A-231"]["route_id"] == "29B"
+    assert by_id["X-999"]["route_id"] is None
+
+    assert snapshot["vehicle_count"] == 2
+    assert snapshot["mapped_count"] == 1
 
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 1
-    assert fake_redis.exists("vehicles:route:None") == 0
     assert result["unmapped"] == 1
-    assert result["routes"] == 1
+    assert result["mapped_count"] == 1
+    assert len(captured_group_sends) == 1
 
 
-# --- 4. cache miss → all unmapped, no pub ---------------------------------
+# --- 3. cache miss → still broadcasts, all unmapped -----------------------
 
 
-def test_mapping_cache_miss_all_unmapped_no_pub(fake_redis, patch_adapter, caplog):
-    # Note: we deliberately do NOT seed the mapping key.
+def test_mapping_cache_miss_all_unmapped_still_broadcasts(
+    fake_redis, patch_adapter, captured_group_sends, caplog
+):
+    """Cache miss no longer suppresses pub: snapshot fans out with every
+    vehicle route_id=null. Frontend gets the raw fleet; admin sees
+    unmapped_count blowing up (5f) and the WARNING log fires."""
+    # Note: deliberately do NOT seed the mapping key.
     patch_adapter(fetch_return=[
         _make_vehicle("A-231"),
         _make_vehicle("B-100"),
         _make_vehicle("C-50"),
     ])
 
-    pubsub = _subscribe(fake_redis, "vehicles:route:29B")
-
     with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
         result = fetch_iett_positions()
 
-    msgs = _drain_messages(pubsub, expected_count=1, timeout=0.2)
-    assert msgs == []
-    assert fake_redis.keys("vehicles:route:*") == []
+    snapshot = _read_snapshot(fake_redis)
+
+    assert snapshot["vehicle_count"] == 3
+    assert snapshot["mapped_count"] == 0
+    assert all(v["route_id"] is None for v in snapshot["vehicles"])
 
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 3
     assert result["unmapped"] == 3
-    assert result["routes"] == 0
+    assert result["mapped_count"] == 0
+
+    assert len(captured_group_sends) == 1
+    assert captured_group_sends[0][0] == VEHICLES_ALL_GROUP
 
     miss_warnings = [
         r.getMessage() for r in caplog.records
@@ -275,10 +259,12 @@ def test_mapping_cache_miss_all_unmapped_no_pub(fake_redis, patch_adapter, caplo
     assert len(miss_warnings) == 1
 
 
-# --- 5. adapter failure branches → graceful return ------------------------
+# --- 4. adapter failure branches → graceful return, no side effects -------
 
 
-def test_adapter_generic_exception_returns_error(fake_redis, patch_adapter, caplog):
+def test_adapter_generic_exception_returns_error(
+    fake_redis, patch_adapter, captured_group_sends, caplog
+):
     _seed_mapping(fake_redis, {"A-231": [_interval(1000, 99999, "29B")]})
     patch_adapter(fetch_raises=RuntimeError("upstream exploded"))
 
@@ -289,15 +275,17 @@ def test_adapter_generic_exception_returns_error(fake_redis, patch_adapter, capl
     assert result["error_type"] == "RuntimeError"
     assert "upstream exploded" in result["error"]
 
-    assert fake_redis.keys("vehicles:route:*") == []
+    assert fake_redis.exists(VEHICLES_ALL_KEY) == 0
     assert fake_redis.get(UNMAPPED_COUNT_KEY) is None
+    assert captured_group_sends == []
 
-    # Generic branch uses logger.exception → exc_info attached.
     exc_records = [r for r in caplog.records if r.exc_info is not None]
     assert len(exc_records) >= 1
 
 
-def test_adapter_rate_limit_violation_returns_error(fake_redis, patch_adapter, caplog):
+def test_adapter_rate_limit_violation_returns_error(
+    fake_redis, patch_adapter, captured_group_sends, caplog
+):
     _seed_mapping(fake_redis, {"A-231": [_interval(1000, 99999, "29B")]})
     patch_adapter(fetch_raises=IettRateLimitViolation("budget exhausted"))
 
@@ -308,10 +296,10 @@ def test_adapter_rate_limit_violation_returns_error(fake_redis, patch_adapter, c
     assert result["error_type"] == "rate_limit_violation"
     assert "budget exhausted" in result["error"]
 
-    assert fake_redis.keys("vehicles:route:*") == []
+    assert fake_redis.exists(VEHICLES_ALL_KEY) == 0
     assert fake_redis.get(UNMAPPED_COUNT_KEY) is None
+    assert captured_group_sends == []
 
-    # Rate-limit branch uses logger.error (no exc_info).
     err_records = [
         r for r in caplog.records
         if r.levelno == logging.ERROR and "rate-limit violation" in r.getMessage()
@@ -319,7 +307,9 @@ def test_adapter_rate_limit_violation_returns_error(fake_redis, patch_adapter, c
     assert len(err_records) == 1
 
 
-def test_adapter_http_error_returns_error(fake_redis, patch_adapter, caplog):
+def test_adapter_http_error_returns_error(
+    fake_redis, patch_adapter, captured_group_sends, caplog
+):
     _seed_mapping(fake_redis, {"A-231": [_interval(1000, 99999, "29B")]})
     patch_adapter(fetch_raises=requests.HTTPError("502 Bad Gateway"))
 
@@ -330,8 +320,9 @@ def test_adapter_http_error_returns_error(fake_redis, patch_adapter, caplog):
     assert result["error_type"] == "http_error"
     assert "502" in result["error"]
 
-    assert fake_redis.keys("vehicles:route:*") == []
+    assert fake_redis.exists(VEHICLES_ALL_KEY) == 0
     assert fake_redis.get(UNMAPPED_COUNT_KEY) is None
+    assert captured_group_sends == []
 
     err_records = [
         r for r in caplog.records
@@ -340,115 +331,121 @@ def test_adapter_http_error_returns_error(fake_redis, patch_adapter, caplog):
     assert len(err_records) == 1
 
 
-# --- 6. empty fleet → no pub ---------------------------------------------
+# --- 5. empty fleet → still broadcasts a zero-payload heartbeat -----------
 
 
-def test_empty_vehicle_list_no_pub(fake_redis, patch_adapter):
+def test_empty_vehicle_list_still_broadcasts_zero_payload(
+    fake_redis, patch_adapter, captured_group_sends
+):
+    """Frontend MUST receive an empty snapshot rather than nothing — else
+    the last cached state on the client looks 'stale-but-recent'."""
     _seed_mapping(fake_redis, {"A-231": [_interval(1000, 99999, "29B")]})
     patch_adapter(fetch_return=[])
 
-    pubsub = _subscribe(fake_redis, "vehicles:route:29B")
     result = fetch_iett_positions()
-    msgs = _drain_messages(pubsub, expected_count=1, timeout=0.2)
+    snapshot = _read_snapshot(fake_redis)
 
-    assert msgs == []
-    assert fake_redis.keys("vehicles:route:*") == []
+    assert snapshot["vehicle_count"] == 0
+    assert snapshot["mapped_count"] == 0
+    assert snapshot["vehicles"] == []
+
+    assert len(captured_group_sends) == 1
+    assert captured_group_sends[0][1]["data"] == snapshot
+
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 0
-
     assert result["fetched"] == 0
     assert result["unmapped"] == 0
-    assert result["routes"] == 0
+    assert result["mapped_count"] == 0
 
 
-# --- 7. payload format matches spec §5.3 ----------------------------------
+# --- 6. payload format matches vehicles:all spec --------------------------
 
 
-def test_payload_format_matches_spec(fake_redis, patch_adapter):
+def test_payload_format_matches_vehicles_all_spec(
+    fake_redis, patch_adapter, captured_group_sends
+):
     _seed_mapping(fake_redis, {"A-231": [_interval(1000, 99999, "29B")]})
     patch_adapter(fetch_return=[
         _make_vehicle("A-231", ts_ms=5000, speed=24.0, bearing=None,
                       latitude=41.04885, longitude=29.10322),
     ])
 
-    pubsub = _subscribe(fake_redis, "vehicles:route:29B")
     fetch_iett_positions()
-    msgs = _drain_messages(pubsub, expected_count=1)
-
-    raw = msgs[0]["data"]
+    raw = fake_redis.get(VEHICLES_ALL_KEY)
     assert b'"bearing":null' in raw  # JSON null literal, not "None"
 
-    payload = json.loads(raw)
-    assert set(payload) == {"type", "route_id", "timestamp", "vehicles"}
-    assert payload["timestamp"].endswith("Z")
-    # Sanity: parses back as ISO 8601 once we restore the +00:00 form.
-    datetime.fromisoformat(payload["timestamp"].replace("Z", "+00:00"))
+    snapshot = json.loads(raw)
+    assert set(snapshot) == {
+        "type", "timestamp", "vehicle_count", "mapped_count", "vehicles",
+    }
+    assert snapshot["type"] == "vehicles_all_update"
+    assert snapshot["timestamp"].endswith("Z")
+    datetime.fromisoformat(snapshot["timestamp"].replace("Z", "+00:00"))
 
-    veh = payload["vehicles"][0]
-    assert set(veh) == {"id", "lat", "lon", "bearing", "speed"}
+    veh = snapshot["vehicles"][0]
+    assert set(veh) == {"id", "lat", "lon", "bearing", "speed", "route_id"}
     assert veh["bearing"] is None
     assert veh["speed"] == 24.0
     assert veh["lat"] == 41.04885
     assert veh["lon"] == 29.10322
+    assert veh["route_id"] == "29B"
 
 
-# --- 8. SET + PUBLISH both happen, TTL ~120s ------------------------------
+# --- 7. SET vehicles:all + group_send both happen (atomic invariant) ------
 
 
-def test_set_and_publish_both_called(fake_redis, patch_adapter):
+def test_set_and_group_send_both_called(
+    fake_redis, patch_adapter, captured_group_sends
+):
     _seed_mapping(fake_redis, {"A-231": [_interval(1000, 99999, "29B")]})
     patch_adapter(fetch_return=[_make_vehicle("A-231")])
 
-    pubsub = _subscribe(fake_redis, "vehicles:route:29B")
     fetch_iett_positions()
-    msgs = _drain_messages(pubsub, expected_count=1)
-    assert len(msgs) == 1  # PUBLISH happened
 
-    cached = fake_redis.get("vehicles:route:29B")
-    assert cached is not None  # SET happened
+    # SET happened
+    cached = fake_redis.get(VEHICLES_ALL_KEY)
+    assert cached is not None
 
-    ttl = fake_redis.ttl("vehicles:route:29B")
+    ttl = fake_redis.ttl(VEHICLES_ALL_KEY)
     assert VEHICLES_CACHE_TTL_SECONDS - 5 <= ttl <= VEHICLES_CACHE_TTL_SECONDS
 
+    # group_send happened, into the right group, with the same payload
+    assert len(captured_group_sends) == 1
+    group, message = captured_group_sends[0]
+    assert group == VEHICLES_ALL_GROUP
+    assert message["data"] == json.loads(cached)
 
-# --- 9. multi-route pipeline smoke (no cross-contamination) --------------
+
+# --- 8. mapped_count excludes unmapped (5 vehicles, 3 mapped) -------------
 
 
-def test_multi_route_pipeline_smoke(fake_redis, patch_adapter):
-    routes = ["29B", "34BZ", "15SK", "500T", "M2"]
-    by_kapi = {}
-    vehicles = []
-    for i, hat in enumerate(routes):
-        for j in range(2):
-            kapi = f"{hat}-{j}"
-            by_kapi[kapi] = [_interval(1000, 99999, hat)]
-            vehicles.append(_make_vehicle(kapi))
-
-    _seed_mapping(fake_redis, by_kapi)
-    patch_adapter(fetch_return=vehicles)
-
-    channels = [f"vehicles:route:{r}" for r in routes]
-    pubsub = _subscribe(fake_redis, *channels)
+def test_mapped_count_excludes_unmapped(
+    fake_redis, patch_adapter, captured_group_sends
+):
+    _seed_mapping(fake_redis, {
+        "A-1": [_interval(1000, 99999, "29B")],
+        "A-2": [_interval(1000, 99999, "29B")],
+        "A-3": [_interval(1000, 99999, "34BZ")],
+    })
+    patch_adapter(fetch_return=[
+        _make_vehicle("A-1"),
+        _make_vehicle("A-2"),
+        _make_vehicle("A-3"),
+        _make_vehicle("X-1"),  # unmapped
+        _make_vehicle("X-2"),  # unmapped
+    ])
 
     result = fetch_iett_positions()
-    msgs = _drain_messages(pubsub, expected_count=5)
+    snapshot = _read_snapshot(fake_redis)
 
-    assert len(msgs) == 5
-    seen: dict[str, set[str]] = {}
-    for msg in msgs:
-        payload = json.loads(msg["data"])
-        seen[payload["route_id"]] = {v["id"] for v in payload["vehicles"]}
-
-    assert set(seen) == set(routes)
-    for hat, ids in seen.items():
-        assert ids == {f"{hat}-0", f"{hat}-1"}, (
-            f"route {hat} got {ids}, expected exactly its own two vehicles"
-        )
-
-    assert result["routes"] == 5
-    assert result["fetched"] == 10
+    assert snapshot["vehicle_count"] == 5
+    assert snapshot["mapped_count"] == 3
+    assert result["mapped_count"] == 3
+    assert result["unmapped"] == 2
+    assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 2
 
 
-# --- 10. unmapped count overwrites previous tick --------------------------
+# --- 9. unmapped count overwrites previous tick (heartbeat semantics) -----
 
 
 def test_unmapped_count_overwrites_previous_tick(fake_redis, patch_adapter):
@@ -462,7 +459,7 @@ def test_unmapped_count_overwrites_previous_tick(fake_redis, patch_adapter):
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 0
 
 
-# --- 11. Day-type mismatch counter (5i-iv) -------------------------------
+# --- 10-11. Day-type mismatch counter (5i-iv, model-agnostic) -------------
 
 
 def test_day_type_mismatch_increments_counter(fake_redis, patch_adapter):
@@ -486,10 +483,9 @@ def test_day_type_mismatch_increments_counter(fake_redis, patch_adapter):
 
 
 def test_no_mismatch_does_not_increment_counter(fake_redis, patch_adapter):
-    """Default _seed_mapping uses snapshot_day_type='weekday' and the
-    1970-01-01-derived vehicle ts is also a Thursday → 'weekday' match
-    → no INCR. Explicit guard against accidental counter writes on
-    matching ticks."""
+    """Default _seed_mapping uses day_type='sunday' and 1970-01-01 maps
+    to 'sunday' (Yılbaşı holiday → Sunday timetable per get_day_type) →
+    no INCR."""
     _seed_mapping(fake_redis, {"A-231": [_interval(1000, 99999, "29B")]})
     patch_adapter(fetch_return=[_make_vehicle("A-231")])
 
