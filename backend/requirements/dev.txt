@@ -20,3 +20,8 @@ django-extensions==3.2.3
 # Faz 3 — Channels async consumer testleri için pytest-asyncio.
 # channels.testing.WebsocketCommunicator bunu zorunlu kılar.
 pytest-asyncio>=0.23,<1
+
+# Faz 3+ smoke ve integration testleri için real-WS client. 6g'de gerçek
+# Daphne üstünden network smoke (WebsocketCommunicator in-process,
+# network katmanını atlar), 6h canlı smoke'da Python client.
+websockets>=14,<16

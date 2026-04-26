@@ -514,12 +514,12 @@ Faz 5'e ertelendi.
 
 #### Yapılacak iş
 
-**Adım 6a — Doc güncelleme (bu commit)**
+**Adım 6a — Doc güncelleme ✅ (tamamlandı 2026-04-26, commit `0969415`)**
 - ROADMAP'i Faz 2 ✅, Faz 3 🟡 ile günceller
 - Spec §5.7'ye pivot notu, §6.4 protokol revizyonu
 - Spec versiyon v0.7 → v0.8
 
-**Adım 6b — Channels + Daphne kurulumu**
+**Adım 6b — Channels + Daphne kurulumu ✅ (tamamlandı 2026-04-26)**
 *Bu adım önce gelir çünkü 6c (pipeline değişikliği) `channel_layer.group_send` çağrısı yapacak — önce Channels kurulu olmalı.*
 - `channels[daphne]` + `channels-redis` requirements'a
 - `config/asgi.py` ProtocolTypeRouter
@@ -560,6 +560,30 @@ Faz 5'e ertelendi.
 **Adım 6h — Canlı smoke test (Yağız onayıyla)**
 - Tüm process'ler ayakta, tek canlı fetch, 3 tick gözlem
 - Rate limit %3 altında kalmalı
+
+#### Adım 6a–6b kapanış kayıtları
+
+**Sub-step commit chain (Faz 3 başlangıcı):**
+
+| Sub-step | Commit | Subject |
+|---|---|---|
+| 6a | `0969415` | docs: close phase 2, scope phase 3 with vehicles:all model |
+| 6b-i | `2cd22cb` | docs(roadmap): swap 6b/6c order to install channels before pipeline rewrite |
+| 6b-ii | `f594cb4` | chore(realtime): add channels + daphne, scaffold ASGI router |
+| 6b-iii | `8ef66e8` | feat(realtime): wire CHANNEL_LAYERS to memurai db=1 |
+| 6b-iv | `9e2065d` | feat(realtime): echo consumer and ws-smoke preview page |
+| 6b-v | `bd40316` | chore(realtime): daphne run scripts and log gitignore |
+
+**Otomasyon smoke (6b-vi, 2026-04-26):**
+
+- `bash backend/scripts/run_daphne.sh` background → ~3 sn'de `Listening on TCP address 127.0.0.1:8011`
+- `python backend/scripts/smoke_ws_echo.py` → `OK: echo round-trip 0.7ms` exit 0
+- `websockets 15.0.1` (asyncio.client) gerçek network handshake — `WebsocketCommunicator` in-process testleri (4 test) ile birlikte iki katmanı doğruluyor
+- Daphne kill: `taskkill /F /PID 2404` (cmd.exe via Bash, MSYS path translation tuzağı için), port 8011 boşaldı
+
+**Reload bulgusu (6b-v):** Daphne 4.2.1 CLI `--reload` desteklemiyor → kod değişikliklerinde manuel restart. ROADMAP risk listesi + `run_daphne.{sh,bat}` yorumlarında dokümante.
+
+**Realtime suite final:** 131/131 yeşil, 4.42s. Tüm warning'ler temiz (pytest-asyncio deprecation 6b-iv'te kapatıldı).
 
 #### Bitiş kriteri
 
