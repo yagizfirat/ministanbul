@@ -535,7 +535,7 @@ Faz 5'e ertelendi.
 - Payload formatı: `{type, timestamp, vehicle_count, mapped_count, vehicles[]}`, her vehicle'da `route_id` (null olabilir)
 - `test_fetch_task.py` revize, eski hat-bazlı assertion'lar silinir
 
-**Adım 6d — `VehicleAllConsumer`**
+**Adım 6d — `VehicleAllConsumer` ✅ (tamamlandı 2026-04-26, smoke automation Faz 6'ya ertelendi)**
 - `AsyncJsonWebsocketConsumer`, group `"vehicles_all"`
 - `connect`: IP cap (max 5/IP), accept, ilk snapshot anında gönder
 - `disconnect`: `group_discard`, IP counter decrement
@@ -561,7 +561,7 @@ Faz 5'e ertelendi.
 - Tüm process'ler ayakta, tek canlı fetch, 3 tick gözlem
 - Rate limit %3 altında kalmalı
 
-#### Adım 6a–6c kapanış kayıtları
+#### Adım 6a–6d kapanış kayıtları
 
 **Sub-step commit chain (Faz 3 başlangıcı):**
 
@@ -576,6 +576,10 @@ Faz 5'e ertelendi.
 | 6b-vi | `6d536a8` | chore(realtime): close adım 6b, channels infra ready |
 | 6c-i | `7654d0b` | refactor(realtime): collapse fetch task to vehicles:all + group_send |
 | 6c-ii | `a6d275a` | docs(spec): document vehicles:all payload format |
+| 6d-i | `5450e90` | feat(realtime): VehicleAllConsumer with snapshot delivery and IP cap |
+| 6d-ii | `eaedf7e` | test(realtime): VehicleAllConsumer test suite |
+| 6d-iii | `95cb010` | test(realtime): integration test fetch task → vehicles consumer |
+| 6d-iv | `fbfad28` | fix(realtime): VehicleAllConsumer accept-then-group_add order |
 
 **Otomasyon smoke (6b-vi, 2026-04-26):**
 
@@ -588,7 +592,9 @@ Faz 5'e ertelendi.
 
 **Adım 6c özeti (2026-04-26):** Pipeline pivot tamamlandı — `fetch_iett_positions` artık tek `vehicles:all` snapshot + `channel_layer.group_send` modelinde çalışıyor. Tüketici uyumu (`admin_views.py` + integration testleri) aynı commit'te yapıldı. Spec §5.7 + §6.4 implementation ile hizalandı.
 
-**Realtime suite final:** 131/131 yeşil, 4.23s. Tüm warning'ler temiz (pytest-asyncio deprecation 6b-iv'te kapatıldı).
+**Adım 6d özeti (2026-04-26):** VehicleAllConsumer canlı, /ws/vehicles/ endpoint client'lara fetch task broadcast'lerini forward ediyor. Implementation 6d-i'de (IP cap + group_add + snapshot delivery + ping/pong + invalid action drop), 9 unit test 6d-ii'de, fetch task → consumer end-to-end integration test 6d-iii'te. 6d-iv'te otomatik smoke script bisect'i Daphne+channels-redis+Memurai+Windows TCP frame transport sorunuyla karşılaştı; root cause bulunamadı, smoke automation Faz 6 polish backlog'a ertelendi. Bisect sırasında keşfedilen consumer order bug'ı (pre-accept group_add handshake bloku) 6d-iv kapsamında fix edildi. Production-equivalent broadcast doğrulaması 6h canlı smoke'da yapılacak.
+
+**Realtime suite final:** 141/141 yeşil. Tüm warning'ler temiz (pytest-asyncio deprecation 6b-iv'te kapatıldı).
 
 #### Bitiş kriteri
 
@@ -605,6 +611,7 @@ Faz 5'e ertelendi.
 - **Memurai db ayrılığı.** `db=0` (Celery) ve `db=1` (Channels) ayrı tutulmalı; `FLUSHDB` ile test ederken yanlış db'ye gitme riski
 - **Daphne auto-reload yok.** 6b-v deneme: Daphne 4.2.1 CLI `--reload` bayrağını desteklemiyor (exit code 2, "unrecognized arguments"). Kod değişikliklerinde Ctrl+C → tekrar başlat. Prod'da doğru davranış (hot reload prod-safe değil), dev'de ergonomik kayıp kabul edilebilir
 - **IP cap yarış koşulu.** Aynı anda 5'i aşan eşzamanlı bağlantı için atomic `INCR` + early reject
+- **Smoke automation eksiği (6d-iv → Faz 6).** /ws/vehicles/ endpoint için otomatik smoke script Daphne+channels-redis stack'inde TCP frame transport bug'ı nedeniyle yazılamadı. 6h canlı smoke bu açığı kapsar ama dev döngüsünde "broadcast forwarding katmanını hızlı doğrula" imkânı yok. Faz 6'da channels-redis/daphne sürüm güncellemesi sonrası yeniden ele alınacak
 - **`scope["client"]` localhost'ta `127.0.0.1`** — tüm dev bağlantıları aynı IP'den, cap'i development için override edilebilir tut (Faz 6 prod `X-Forwarded-For` desteği ayrı iş)
 
 ---
