@@ -16,3 +16,7 @@ ruff==0.8.4
 
 ipython==8.30.0
 django-extensions==3.2.3
+
+# Faz 3 — Channels async consumer testleri için pytest-asyncio.
+# channels.testing.WebsocketCommunicator bunu zorunlu kılar.
+pytest-asyncio>=0.23,<1
