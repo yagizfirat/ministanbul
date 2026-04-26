@@ -522,3 +522,72 @@ def test_no_mismatch_does_not_increment_counter(fake_redis, patch_adapter):
     fetch_iett_positions()
 
     assert fake_redis.get(DAY_TYPE_MISMATCH_COUNT_KEY) is None
+
+
+# --- Spatial sanity check integration (6h-i-4) ----------------------------
+#
+# Bu testler autouse _permissive_spatial_cache fixture'ını fonksiyon
+# scope'unda monkeypatch.setattr ile override eder: gerçek
+# is_vehicle_near_route + özel cache. Permissive lambda True yerine
+# gerçek haversine semantiğini test eder.
+
+
+def test_fetch_task_spatial_check_keeps_near_vehicle(
+    fake_redis, patch_adapter, monkeypatch,
+):
+    """Vehicle pozisyonu shape pool'unda (0m mesafe) → mapping korunur,
+    mapped_count=1."""
+    vehicle = _make_vehicle("A-100", latitude=41.0, longitude=29.0)
+    _seed_mapping(fake_redis, {"A-100": [_interval(1000, 99999, "29B")]})
+    patch_adapter(fetch_return=[vehicle])
+
+    from apps.realtime import spatial as spatial_module
+    monkeypatch.setattr(
+        tasks_module, "is_vehicle_near_route",
+        spatial_module.is_vehicle_near_route,
+    )
+    monkeypatch.setattr(
+        tasks_module, "get_route_shape_cache",
+        lambda: {"29B": np.array([[41.0, 29.0]])},
+    )
+
+    result = fetch_iett_positions()
+
+    assert result["status"] == "ok"
+    assert result["mapped_count"] == 1
+
+    raw = fake_redis.get(VEHICLES_ALL_KEY)
+    payload = json.loads(raw)
+    target = next(v for v in payload["vehicles"] if v["id"] == "A-100")
+    assert target["route_id"] == "29B"
+
+
+def test_fetch_task_spatial_check_nullifies_far_vehicle(
+    fake_redis, patch_adapter, monkeypatch,
+):
+    """Vehicle pozisyonu shape pool'undan ~144km uzakta → mapping
+    null'lanır, mapped_count=0. Vehicle (41.0, 29.0), shape (39.7, 29.0)
+    — lat farkı 1.3° ≈ 144km, threshold 500m'in 287x üstünde."""
+    vehicle = _make_vehicle("A-200", latitude=41.0, longitude=29.0)
+    _seed_mapping(fake_redis, {"A-200": [_interval(1000, 99999, "34BZ")]})
+    patch_adapter(fetch_return=[vehicle])
+
+    from apps.realtime import spatial as spatial_module
+    monkeypatch.setattr(
+        tasks_module, "is_vehicle_near_route",
+        spatial_module.is_vehicle_near_route,
+    )
+    monkeypatch.setattr(
+        tasks_module, "get_route_shape_cache",
+        lambda: {"34BZ": np.array([[39.7, 29.0]])},
+    )
+
+    result = fetch_iett_positions()
+
+    assert result["status"] == "ok"
+    assert result["mapped_count"] == 0
+
+    raw = fake_redis.get(VEHICLES_ALL_KEY)
+    payload = json.loads(raw)
+    target = next(v for v in payload["vehicles"] if v["id"] == "A-200")
+    assert target["route_id"] is None

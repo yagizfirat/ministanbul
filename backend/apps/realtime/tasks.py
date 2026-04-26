@@ -313,22 +313,29 @@ def fetch_iett_positions() -> dict:
     # da molada olan araçlar mapping'de "hat üzerindeymiş gibi"
     # etiketlenir. Burada her mapped vehicle'ı route shape pool'una
     # karşı kontrol eder, threshold ihlali varsa route_id null'larız.
+    # VehiclePosition Pydantic frozen — in-place setattr ValidationError
+    # fırlatır, model_copy(update=...) ile yeni instance üretiyoruz.
     spatial_input = sum(1 for v in enriched if v.route_id is not None)
     spatial_nullified = 0
     if spatial_input:
         cache = get_route_shape_cache()
+        new_enriched = []
         for v in enriched:
             if v.route_id is None:
+                new_enriched.append(v)
                 continue
             shape_arr = cache.get(v.route_id)
             if shape_arr is None:
                 # Route GTFS'te yok ya da shape'siz — defansif null.
-                v.route_id = None
+                new_enriched.append(v.model_copy(update={"route_id": None}))
                 spatial_nullified += 1
                 continue
             if not is_vehicle_near_route(v.latitude, v.longitude, shape_arr):
-                v.route_id = None
+                new_enriched.append(v.model_copy(update={"route_id": None}))
                 spatial_nullified += 1
+                continue
+            new_enriched.append(v)
+        enriched = new_enriched
         logger.info(
             "spatial_check: input=%d output=%d nullified=%d",
             spatial_input,
