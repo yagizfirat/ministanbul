@@ -24,3 +24,7 @@ holidays>=0.50,<1
 # + Daphne (production ASGI server) + Redis-backed channel layer.
 channels[daphne]>=4.1,<5
 channels-redis>=4.2,<5
+
+# Faz 3 6h-i — vehicle-to-route spatial sanity check (vectorized
+# haversine min distance over GTFS shape pool).
+numpy>=2.0,<3
