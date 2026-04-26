@@ -551,7 +551,7 @@ Faz 5'e ertelendi.
 - HUD: bağlantı, son timestamp, mapped/unmapped breakdown
 - Reconnect (basit exponential backoff)
 
-**Adım 6g — Integration test**
+**Adım 6g — Integration test ✅ (tamamlandı 2026-04-26)**
 - Cassette fixture → fetch task → `group_send` → `WebsocketCommunicator`
 - End-to-end mesaj akışı doğrulaması
 - Stale REST senaryosu
@@ -560,7 +560,7 @@ Faz 5'e ertelendi.
 - Tüm process'ler ayakta, tek canlı fetch, 3 tick gözlem
 - Rate limit %3 altında kalmalı
 
-#### Adım 6a–6f kapanış kayıtları
+#### Adım 6a–6g kapanış kayıtları
 
 **Sub-step commit chain (Faz 3 başlangıcı):**
 
@@ -583,6 +583,7 @@ Faz 5'e ertelendi.
 | 6e-ii | `37e10d7` | test(realtime): vehicles_live REST endpoint test suite |
 | 6e-iii | `e684514` | docs(spec): document REST fallback endpoint |
 | 6f-i | `23d12d9` | feat(realtime): Leaflet WebSocket smoke preview page |
+| 6g-i | `77a3759` | test(realtime): integration tests for REST-WS and SET-broadcast simetry |
 
 **Otomasyon smoke (6b-vi, 2026-04-26):**
 
@@ -601,7 +602,9 @@ Faz 5'e ertelendi.
 
 **Adım 6f özeti (2026-04-26):** Leaflet smoke sayfası canlı, /preview/realtime/ browser'dan WebSocket'a bağlanıp 12 cassette aracını haritada gösteriyor (manuel smoke). UX pivot invariant görsel olarak teyit edildi: mapped (mavi, hat görünür) ve unmapped (kırmızı, "hat: bilinmiyor") ayrımı net. Popup spec §5.7 formatına uyuyor. WebSocket+Daphne+browser kombinasyonu production-equivalent çalıştı — 6d-iv'te otomatik smoke script takıldığımız Daphne+websockets-lib uyumsuzluğu manuel browser akışında görünmüyor (ROADMAP risk satırı 6d-iv'te zaten kayıtlı). Disposable smoke — Faz 4'te frontend framework gelince yenilenir.
 
-**Realtime suite final:** 145/145 yeşil. Tüm warning'ler temiz (pytest-asyncio deprecation 6b-iv'te kapatıldı).
+**Adım 6g özeti (2026-04-26):** İki yeni invariant integration test'i eklendi. Test 1 (REST↔WS↔SET üçlü payload simetrisi) iki tüketici path'inin ve Redis kaynağının byte-level identical olduğunu doğrular — frontend Faz 4'te WebSocket primary + REST fallback kullanırken semantic gap riski yok. Test 2 (SET↔broadcast simetrisi) pipeline 6c-i K1.A kararının ("tek payload nesnesi") production'da geçerli olduğunu somut kanıtlar. Mevcut testler kapsamı çoğaltılmadı, yalnızca yeni invariant katmanı eklendi.
+
+**Realtime suite final:** 147/147 yeşil. Tüm warning'ler temiz (pytest-asyncio deprecation 6b-iv'te kapatıldı).
 
 #### Bitiş kriteri
 
