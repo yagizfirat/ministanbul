@@ -926,6 +926,15 @@ Faz 3'te kullanılan sadeleştirilmiş model:
 - `subscribe`/`unsubscribe`/`subscription_ack` mesajları YOK
 - Aynı IP'den max 5 eşzamanlı bağlantı (cap aşımı: close code 4008)
 
+**REST fallback (Faz 3 6e):** WebSocket'a bağlanamayan client'lar
+için `GET /api/vehicles/live/` endpoint'i son `vehicles:all`
+snapshot'ını JSON olarak döner. Payload formatı WebSocket
+mesajıyla birebir aynı (`vehicles_all_update` type, payload
+örneği §5.7'de). Cache-Control max-age=60 (fetch task tick
+aralığıyla uyumlu). Snapshot yoksa veya bozuksa 503 + retry-
+friendly Cache-Control: no-store. Public endpoint, Faz 3
+kapsamında auth yok; production rate limit Faz 6 polish.
+
 Aşağıdaki orijinal protokol Faz 5'te metro/marmaray/vapur için
 geri gelir.
 
