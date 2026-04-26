@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Mini İstanbul 3D — Faz 3 WebSocket smoke</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { height: 100%; margin: 0; padding: 0; font-family: system-ui, sans-serif; background: #f4f4f4; }
+  main { max-width: 720px; margin: 30px auto; padding: 0 16px; }
+  h1 { font-size: 18px; margin: 0 0 6px 0; }
+  p.subtitle { color: #666; font-size: 13px; margin: 0 0 18px 0; }
+  fieldset { background: white; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 14px; padding: 10px 14px; }
+  legend { font-size: 12px; color: #666; padding: 0 6px; }
+  label { display: inline-block; min-width: 80px; font-size: 13px; color: #555; }
+  input[type="text"] { font-family: monospace; font-size: 13px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 3px; }
+  input#wsUrl { width: 320px; }
+  input#payload { width: 320px; }
+  button { font-size: 13px; padding: 4px 12px; cursor: pointer; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  #hud { font-family: monospace; font-size: 13px; line-height: 1.6; }
+  #hud .row b { display: inline-block; min-width: 110px; color: #333; }
+  #state.OPEN { color: #2a8; font-weight: bold; }
+  #state.CONNECTING { color: #c80; }
+  #state.CLOSED, #state.CLOSING { color: #c33; }
+  #log { background: #1e1e1e; color: #ddd; padding: 10px 12px; border-radius: 3px; max-height: 320px; overflow: auto; margin: 0; font-size: 12px; line-height: 1.5; }
+  #log .sent { color: #8cf; }
+  #log .recv { color: #cf8; }
+  #log .meta { color: #888; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Mini İstanbul 3D — Faz 3 WebSocket smoke</h1>
+  <p class="subtitle">EchoConsumer bağlantı testi (ROADMAP 6b-iv). 6f Leaflet realtime
+  preview'i için iskele.</p>
+
+  <fieldset>
+    <legend>bağlantı</legend>
+    <div><label>WS URL</label> <input id="wsUrl" type="text" value="ws://localhost:8011/ws/echo/"></div>
+    <div style="margin-top: 6px;">
+      <button id="btnConnect">Connect</button>
+      <button id="btnDisconnect" disabled>Disconnect</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>HUD</legend>
+    <div id="hud">
+      <div class="row"><b>state:</b> <span id="state" class="CLOSED">CLOSED</span></div>
+      <div class="row"><b>sent:</b> <span id="sentCount">0</span></div>
+      <div class="row"><b>received:</b> <span id="recvCount">0</span></div>
+      <div class="row"><b>last event:</b> <span id="lastTs">—</span></div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>send (JSON parse edilir)</legend>
+    <div>
+      <label>payload</label>
+      <input id="payload" type="text" value='{"hello": "world"}'>
+      <button id="btnSend" disabled>Send</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>log</legend>
+    <pre id="log"></pre>
+  </fieldset>
+</main>
+
+<script>
+let ws = null;
+let sentCount = 0;
+let recvCount = 0;
+
+const $ = id => document.getElementById(id);
+const elState = $('state');
+const elLog = $('log');
+
+function setState(s) {
+  elState.textContent = s;
+  elState.className = s;
+  $('btnConnect').disabled = (s === 'CONNECTING' || s === 'OPEN');
+  $('btnDisconnect').disabled = !(s === 'OPEN');
+  $('btnSend').disabled = (s !== 'OPEN');
+}
+
+function logLine(cls, text) {
+  const now = new Date().toISOString().substring(11, 23);
+  $('lastTs').textContent = now;
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = `[${now}] ${text}`;
+  elLog.appendChild(line);
+  elLog.scrollTop = elLog.scrollHeight;
+}
+
+$('btnConnect').addEventListener('click', () => {
+  const url = $('wsUrl').value.trim();
+  if (!url) return;
+  setState('CONNECTING');
+  logLine('meta', `connecting → ${url}`);
+  ws = new WebSocket(url);
+  ws.addEventListener('open', () => { setState('OPEN'); logLine('meta', 'open'); });
+  ws.addEventListener('message', evt => {
+    recvCount++;
+    $('recvCount').textContent = recvCount;
+    logLine('recv', `← ${evt.data}`);
+  });
+  ws.addEventListener('close', evt => {
+    setState('CLOSED');
+    logLine('meta', `close (code=${evt.code}, reason=${evt.reason || '∅'})`);
+  });
+  ws.addEventListener('error', () => logLine('meta', 'error (see DevTools console)'));
+});
+
+$('btnDisconnect').addEventListener('click', () => {
+  if (ws) { setState('CLOSING'); ws.close(); }
+});
+
+$('btnSend').addEventListener('click', () => {
+  const raw = $('payload').value;
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch (e) { logLine('meta', `JSON parse hatası: ${e.message}`); return; }
+  const serialized = JSON.stringify(parsed);
+  ws.send(serialized);
+  sentCount++;
+  $('sentCount').textContent = sentCount;
+  logLine('sent', `→ ${serialized}`);
+});
+</script>
+</body>
+</html>
