@@ -78,6 +78,22 @@ Açıldıktan sonra:
 
 Port 8010 kullanılıyor (diğer projeler 8000/8001'de).
 
+**Faz 3+ — WebSocket katmanı için ek terminal.** Daphne ASGI server,
+Django HTTP runserver'la paralel çalışır (Django :8010, Daphne :8011):
+
+```bash
+bash backend/scripts/run_daphne.sh    # Linux/macOS/Git Bash
+# Windows cmd: backend\scripts\run_daphne.bat
+```
+
+Auto-reload yok (Daphne 4.2.1 CLI `--reload` desteklemiyor — 6b-v
+deneme, exit code 2). Kod değişikliklerinde Ctrl+C → tekrar başlat.
+
+Faz 3+ ek endpoint'ler:
+
+- `ws://localhost:8011/ws/echo/` — EchoConsumer (WebSocket smoke testi)
+- `http://localhost:8010/preview/ws-smoke/` — tarayıcı bağlantı testi sayfası
+
 ---
 
 ## 3. Proje yapısı
@@ -558,7 +574,7 @@ Faz 5'e ertelendi.
 
 - **Tek payload boyutu.** 6911 araçlık snapshot ~1MB JSON, sıkıştırma sonrası ~200KB. Daphne default frame buffer (1MB) sınırında — `permessage-deflate` açık olmalı
 - **Memurai db ayrılığı.** `db=0` (Celery) ve `db=1` (Channels) ayrı tutulmalı; `FLUSHDB` ile test ederken yanlış db'ye gitme riski
-- **Native Windows Daphne auto-reload.** Davranış belirsiz — manuel restart fallback
+- **Daphne auto-reload yok.** 6b-v deneme: Daphne 4.2.1 CLI `--reload` bayrağını desteklemiyor (exit code 2, "unrecognized arguments"). Kod değişikliklerinde Ctrl+C → tekrar başlat. Prod'da doğru davranış (hot reload prod-safe değil), dev'de ergonomik kayıp kabul edilebilir
 - **IP cap yarış koşulu.** Aynı anda 5'i aşan eşzamanlı bağlantı için atomic `INCR` + early reject
 - **`scope["client"]` localhost'ta `127.0.0.1`** — tüm dev bağlantıları aynı IP'den, cap'i development için override edilebilir tut (Faz 6 prod `X-Forwarded-For` desteği ayrı iş)
 
