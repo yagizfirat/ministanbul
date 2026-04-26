@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Mini İstanbul 3D — Realtime Smoke</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <style>
+        body { margin: 0; font-family: system-ui, sans-serif; }
+        #map { position: absolute; top: 40px; bottom: 0; left: 0; right: 0; }
+        #hud {
+            position: absolute; top: 0; left: 0; right: 0; height: 40px;
+            background: #1a1a1a; color: #f0f0f0; padding: 8px 16px;
+            display: flex; gap: 24px; align-items: center; font-size: 14px;
+            z-index: 1000;
+        }
+        #hud .label { color: #888; }
+        #hud .value { font-weight: 600; }
+        #hud .conn-ok { color: #4ade80; }
+        #hud .conn-fail { color: #f87171; }
+        .leaflet-popup-content { font-size: 13px; line-height: 1.5; }
+    </style>
+</head>
+<body>
+    <div id="hud">
+        <span><span class="label">Toplam:</span> <span id="total" class="value">—</span></span>
+        <span><span class="label">Mapped:</span> <span id="mapped" class="value">—</span></span>
+        <span><span class="label">Bağlantı:</span> <span id="conn" class="value">connecting…</span></span>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+    const map = L.map('map', {
+        renderer: L.canvas(),  // N3.C: 6900 marker için canvas
+        center: [41.015, 28.98],  // İstanbul
+        zoom: 11,
+    });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap',
+        maxZoom: 19,
+    }).addTo(map);
+
+    const COLOR_MAPPED = '#3b82f6';   // mavi
+    const COLOR_UNMAPPED = '#ef4444'; // kırmızı
+
+    let markerLayer = L.layerGroup().addTo(map);
+
+    function renderSnapshot(payload) {
+        markerLayer.clearLayers();
+        const vehicles = payload.vehicles || [];
+        for (const v of vehicles) {
+            const isMapped = v.route_id !== null;
+            const marker = L.circleMarker([v.lat, v.lon], {
+                radius: 4,
+                color: isMapped ? COLOR_MAPPED : COLOR_UNMAPPED,
+                fillColor: isMapped ? COLOR_MAPPED : COLOR_UNMAPPED,
+                fillOpacity: 0.7,
+                weight: 1,
+            });
+            // N5.B popup format
+            const routeLine = isMapped
+                ? `Hat: ${v.route_id}`
+                : `Hat: <em>bilinmiyor</em>`;
+            marker.bindPopup(
+                `<strong>Kapı:</strong> ${v.id}<br>` +
+                `${routeLine}<br>` +
+                `<strong>Konum:</strong> ${v.lat.toFixed(4)}, ${v.lon.toFixed(4)}`
+            );
+            markerLayer.addLayer(marker);
+        }
+        // HUD update
+        document.getElementById('total').textContent = payload.vehicle_count;
+        document.getElementById('mapped').textContent =
+            `${payload.mapped_count} (${Math.round(100 * payload.mapped_count / payload.vehicle_count)}%)`;
+    }
+
+    function setConnStatus(state, cls) {
+        const el = document.getElementById('conn');
+        el.textContent = state;
+        el.className = `value ${cls}`;
+    }
+
+    const wsUrl = `ws://${location.hostname}:8011/ws/vehicles/`;
+    const ws = new WebSocket(wsUrl);
+
+    ws.addEventListener('open', () => {
+        setConnStatus('açık', 'conn-ok');
+    });
+    ws.addEventListener('message', (event) => {
+        try {
+            const payload = JSON.parse(event.data);
+            if (payload.type === 'vehicles_all_update') {
+                renderSnapshot(payload);
+            }
+        } catch (e) {
+            console.error('Payload parse hatası:', e);
+        }
+    });
+    ws.addEventListener('close', () => {
+        setConnStatus('kapalı (sayfayı yenile)', 'conn-fail');
+    });
+    ws.addEventListener('error', () => {
+        setConnStatus('hata', 'conn-fail');
+    });
+    </script>
+</body>
+</html>

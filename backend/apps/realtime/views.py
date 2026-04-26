@@ -28,6 +28,15 @@ def ws_smoke(request):
     return render(request, "realtime_ws_smoke.html")
 
 
+def realtime_preview(request):
+    """Faz 3 Adım 6f — Leaflet WebSocket smoke sayfası.
+
+    Disposable smoke (Faz 4'te framework gelince yenilenir).
+    /preview/realtime/ — public, no auth, ~6900 araç haritada.
+    """
+    return render(request, "realtime_preview.html")
+
+
 @require_GET
 def vehicles_live(request):
     """GET /api/vehicles/live/ → vehicles:all snapshot.

@@ -7,5 +7,6 @@ from . import views
 
 urlpatterns = [
     path("preview/ws-smoke/", views.ws_smoke, name="realtime-ws-smoke"),
+    path("preview/realtime/", views.realtime_preview, name="realtime_preview"),
     path("api/vehicles/live/", views.vehicles_live, name="vehicles_live"),
 ]
