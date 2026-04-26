@@ -147,6 +147,13 @@ CHANNEL_LAYERS = {
     },
 }
 
+# WebSocket consumer policies (Faz 3+ — VehicleAllConsumer 6d).
+# Per-IP eşzamanlı bağlantı cap. Localhost dev'de tüm bağlantılar
+# 127.0.0.1'den geliyor görünür — çoklu sekme/test için yükseltebilirsin.
+# Consumer her connect'te lazy okur (override_settings test'lerde
+# ve dev hot-reload'da çalışsın diye), modül-level sabit değil.
+WS_MAX_CONN_PER_IP = env.int("WS_MAX_CONN_PER_IP", default=5)
+
 # Celery — worker/beat config. Tasks populated in Phase 2 Step 2+.
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
