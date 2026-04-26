@@ -546,7 +546,7 @@ Faz 5'e ertelendi.
 **Adım 6e — REST fallback endpoint'leri ✅ (tamamlandı 2026-04-26)**
 - `GET /api/vehicles/live/`: `vehicles:all` key'inden snapshot, stale header
 
-**Adım 6f — Leaflet smoke sayfası**
+**Adım 6f — Leaflet smoke sayfası ✅ (tamamlandı 2026-04-26)**
 - `/preview/realtime/`, WebSocket bağlan, 6900 araç nokta olarak çiz
 - HUD: bağlantı, son timestamp, mapped/unmapped breakdown
 - Reconnect (basit exponential backoff)
@@ -560,7 +560,7 @@ Faz 5'e ertelendi.
 - Tüm process'ler ayakta, tek canlı fetch, 3 tick gözlem
 - Rate limit %3 altında kalmalı
 
-#### Adım 6a–6e kapanış kayıtları
+#### Adım 6a–6f kapanış kayıtları
 
 **Sub-step commit chain (Faz 3 başlangıcı):**
 
@@ -582,6 +582,7 @@ Faz 5'e ertelendi.
 | 6e-i | `b15125e` | feat(realtime): vehicles:all REST fallback endpoint |
 | 6e-ii | `37e10d7` | test(realtime): vehicles_live REST endpoint test suite |
 | 6e-iii | `e684514` | docs(spec): document REST fallback endpoint |
+| 6f-i | `23d12d9` | feat(realtime): Leaflet WebSocket smoke preview page |
 
 **Otomasyon smoke (6b-vi, 2026-04-26):**
 
@@ -597,6 +598,8 @@ Faz 5'e ertelendi.
 **Adım 6d özeti (2026-04-26):** VehicleAllConsumer canlı, /ws/vehicles/ endpoint client'lara fetch task broadcast'lerini forward ediyor. Implementation 6d-i'de (IP cap + group_add + snapshot delivery + ping/pong + invalid action drop), 9 unit test 6d-ii'de, fetch task → consumer end-to-end integration test 6d-iii'te. 6d-iv'te otomatik smoke script bisect'i Daphne+channels-redis+Memurai+Windows TCP frame transport sorunuyla karşılaştı; root cause bulunamadı, smoke automation Faz 6 polish backlog'a ertelendi. Bisect sırasında keşfedilen consumer order bug'ı (pre-accept group_add handshake bloku) 6d-iv kapsamında fix edildi. Production-equivalent broadcast doğrulaması 6h canlı smoke'da yapılacak.
 
 **Adım 6e özeti (2026-04-26):** REST fallback endpoint canlı, `GET /api/vehicles/live/` son `vehicles:all` snapshot'ını WebSocket payload'ıyla birebir aynı formatta sunar. Cache-Control max-age=60 (tick uyumu), 503 + no-store snapshot yoksa veya bozuksa. WebSocket'a bağlanamayan client'lar için fallback path (eski tarayıcı, captive portal). Spec §6.4'te dokümante edildi.
+
+**Adım 6f özeti (2026-04-26):** Leaflet smoke sayfası canlı, /preview/realtime/ browser'dan WebSocket'a bağlanıp 12 cassette aracını haritada gösteriyor (manuel smoke). UX pivot invariant görsel olarak teyit edildi: mapped (mavi, hat görünür) ve unmapped (kırmızı, "hat: bilinmiyor") ayrımı net. Popup spec §5.7 formatına uyuyor. WebSocket+Daphne+browser kombinasyonu production-equivalent çalıştı — 6d-iv'te otomatik smoke script takıldığımız Daphne+websockets-lib uyumsuzluğu manuel browser akışında görünmüyor (ROADMAP risk satırı 6d-iv'te zaten kayıtlı). Disposable smoke — Faz 4'te frontend framework gelince yenilenir.
 
 **Realtime suite final:** 145/145 yeşil. Tüm warning'ler temiz (pytest-asyncio deprecation 6b-iv'te kapatıldı).
 
