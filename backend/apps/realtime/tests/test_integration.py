@@ -155,6 +155,12 @@ def _read_snapshot(redis_client) -> dict:
     return json.loads(raw)
 
 
+def _rest_get_vehicles_live():
+    """Sync helper: Django test Client ile /api/vehicles/live/ GET."""
+    from django.test import Client
+    return Client().get("/api/vehicles/live/")
+
+
 # --- 1. End-to-end with real fleet cassette ------------------------------
 
 
@@ -468,3 +474,105 @@ async def test_fetch_task_broadcast_reaches_websocket_consumer(
     assert len(by_route.get(None, [])) == len(vehicles) - 8
 
     await communicator.disconnect()
+
+
+# --- 6. REST + WebSocket serve identical payloads -------------------------
+
+
+@pytest.mark.asyncio
+async def test_rest_and_websocket_serve_identical_payload(
+    fake_redis, monkeypatch, in_memory_channel_layer, fake_async_redis,
+    captured_group_sends,
+):
+    """REST endpoint ve WebSocket consumer aynı vehicles:all
+    snapshot'ını byte-level identical sunar. Fetch task tek payload
+    yazar (6c-i K1.A), iki tüketici aynı kaynaktan okur."""
+    cassette = (CASSETTE_DIR / "filo_fetch_ok.xml").read_text(encoding="utf-8")
+    parsed_at = datetime(2026, 4, 25, 12, 0, 0, tzinfo=timezone.utc)
+    vehicles = _parse_fleet_response(cassette, at=parsed_at)
+    assert len(vehicles) >= 8
+
+    sorted_vehicles = sorted(vehicles, key=lambda v: v.vehicle_id)
+    kapis = [v.vehicle_id for v in sorted_vehicles]
+    by_kapi: dict[str, list[dict]] = {}
+    for kapi in kapis[0:4]:
+        by_kapi[kapi] = [_interval(0, BIG_END_SEC, "29B")]
+
+    _seed_mapping(fake_redis, by_kapi)
+    _patch_adapter_returning(monkeypatch, vehicles)
+
+    # Pipeline tetikle: vehicles:all SET + group_send
+    result = await sync_to_async(fetch_iett_positions)()
+    assert result["status"] == "ok"
+
+    # WebSocket bağlantısı aç (initial snapshot fake_async_redis'te yok,
+    # L4.B silent wait; ama bağlantı kurulmuş olmalı). Test broadcast'i
+    # captured_group_sends'ten alır — captured_group_sends fake group_send
+    # SimpleNamespace üzerinden fetch task çağrısını yakalar; in_memory
+    # layer ayrı dispatch path'tir, bu test'te broadcast oraya gitmez.
+    from config.asgi import application
+    communicator = WebsocketCommunicator(application, "/ws/vehicles/")
+    communicator.scope["client"] = ("127.0.0.1", 12345)
+    connected, _ = await communicator.connect()
+    assert connected is True
+
+    assert len(captured_group_sends) == 1
+    ws_payload_from_broadcast = captured_group_sends[0][1]["data"]
+
+    await communicator.disconnect()
+
+    # REST'ten al
+    rest_response = await sync_to_async(_rest_get_vehicles_live)()
+    rest_payload = rest_response.json()
+
+    # Broadcast (group_send'in data'sı) ile REST identical olmalı
+    assert ws_payload_from_broadcast == rest_payload, (
+        "WebSocket broadcast payload != REST endpoint response — "
+        "iki tüketici aynı snapshot'ı farklı şekilde alıyor."
+    )
+
+    # Redis SET payload ile karşılaştır (kaynak)
+    raw = fake_redis.get(VEHICLES_ALL_KEY)
+    assert raw is not None
+    set_payload = json.loads(raw)
+    assert set_payload == rest_payload, (
+        "vehicles:all SET payload != REST response — REST endpoint "
+        "Redis'i doğru okumuyor."
+    )
+
+
+# --- 7. Pipeline writes identical payload to SET and broadcast ------------
+
+
+def test_fetch_task_payload_identical_in_set_and_broadcast(
+    fake_redis, monkeypatch, captured_group_sends,
+):
+    """Pipeline 6c-i K1.A kararı: tek payload nesnesi hem
+    vehicles:all'a SET hem channel_layer.group_send'e gönderilir.
+    İki yere ayrı serialize/deserialize cycle olmamalı, byte-level
+    identical olmalı."""
+    cassette = (CASSETTE_DIR / "filo_fetch_ok.xml").read_text(encoding="utf-8")
+    parsed_at = datetime(2026, 4, 25, 12, 0, 0, tzinfo=timezone.utc)
+    vehicles = _parse_fleet_response(cassette, at=parsed_at)
+    assert len(vehicles) >= 8
+
+    by_kapi = {vehicles[0].vehicle_id: [_interval(0, BIG_END_SEC, "29B")]}
+    _seed_mapping(fake_redis, by_kapi)
+    _patch_adapter_returning(monkeypatch, vehicles)
+
+    fetch_iett_positions()
+
+    # SET payload (Redis'ten oku)
+    raw = fake_redis.get(VEHICLES_ALL_KEY)
+    assert raw is not None
+    set_payload = json.loads(raw)
+
+    # Broadcast payload (captured group_send'ten oku)
+    assert len(captured_group_sends) == 1
+    broadcast_payload = captured_group_sends[0][1]["data"]
+
+    # İkisi tam identical
+    assert set_payload == broadcast_payload, (
+        "SET payload != broadcast payload — fetch task ayrı serialize "
+        "cycle yapıyor (K1.A 'tek payload' kararı ihlali)."
+    )
