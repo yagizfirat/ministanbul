@@ -18,6 +18,15 @@ tick'ler O(0).
 Per-vehicle maliyet: numpy vectorized haversine, route shape
 pool'unun TÜMÜNE bir kerede minimum mesafe. ~100 noktalık bir
 shape için <0.5ms.
+
+Veri kısıtı (6h-i-fix-2): İETT GTFS feed'i şu an shape verisi
+içermiyor (1096 short_name'in 0'ı shape'li). Public feed
+(raylı+vapur, 496/496) shape'li. Canlı veri akışı SADECE
+İETT'den geldiği için spatial check'in pratik etkisi şu an
+Faz 5+ trip simülasyonuna kadar gelecek. Cache miss'te check
+skip edilir (mapping'e güvenilir) — detay tasks.py spatial_check
+loop'unda. Spec §10 Risk tablosu "shapes.txt eksikse → fallback
++ Faz 6'da OSM" politikasıyla tutarlı.
 """
 from __future__ import annotations
 
