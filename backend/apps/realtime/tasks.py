@@ -315,8 +315,13 @@ def fetch_iett_positions() -> dict:
     # karşı kontrol eder, threshold ihlali varsa route_id null'larız.
     # VehiclePosition Pydantic frozen — in-place setattr ValidationError
     # fırlatır, model_copy(update=...) ile yeni instance üretiyoruz.
+    # Cache miss = "shape kaynağı yok" → mapping'e güven, dokunma
+    # (6h-i-fix-2): İETT GTFS feed'i shape içermediği için aksi halde
+    # canlı akıştaki her aracı null'lardık. Detay spatial.py docstring.
     spatial_input = sum(1 for v in enriched if v.route_id is not None)
-    spatial_nullified = 0
+    skipped_no_shape = 0
+    nullified_off_route = 0
+    passed_check = 0
     if spatial_input:
         cache = get_route_shape_cache()
         new_enriched = []
@@ -326,21 +331,23 @@ def fetch_iett_positions() -> dict:
                 continue
             shape_arr = cache.get(v.route_id)
             if shape_arr is None:
-                # Route GTFS'te yok ya da shape'siz — defansif null.
-                new_enriched.append(v.model_copy(update={"route_id": None}))
-                spatial_nullified += 1
+                skipped_no_shape += 1
+                new_enriched.append(v)
                 continue
             if not is_vehicle_near_route(v.latitude, v.longitude, shape_arr):
                 new_enriched.append(v.model_copy(update={"route_id": None}))
-                spatial_nullified += 1
+                nullified_off_route += 1
                 continue
             new_enriched.append(v)
+            passed_check += 1
         enriched = new_enriched
         logger.info(
-            "spatial_check: input=%d output=%d nullified=%d",
+            "spatial_check: input=%d skipped_no_shape=%d "
+            "nullified_off_route=%d passed=%d",
             spatial_input,
-            spatial_input - spatial_nullified,
-            spatial_nullified,
+            skipped_no_shape,
+            nullified_off_route,
+            passed_check,
         )
 
     mapped_count = sum(1 for v in enriched if v.route_id is not None)
