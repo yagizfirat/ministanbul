@@ -7,7 +7,7 @@ Bu doküman projenin **nihai yol haritasıdır**: ne yapıldı, ne yapılacak,
 her fazda hangi kararlar alındı. Her yeni geliştirme oturumunda ilk
 okunacak doküman budur.
 
-**Durum:** Faz 1 ve Faz 2 tamamlandı. Faz 3 Adım 6a başlıyor (WebSocket katmanı, `vehicles:all` model).
+**Durum:** Faz 1, Faz 2 ve Faz 3 tamamlandı. Faz 3 spatial sanity check eklendi (`apps/realtime/spatial.py`, lazy-load shape cache, 500m haversine threshold), İETT GTFS feed'inde shape verisi olmadığı için cache miss durumunda graceful skip davranışı (mapping korunur, public feed'in 496 shape'i Faz 5+ trip simülasyonu için cache'te hazır). Realtime suite 155/155 yeşil. Faz 4 (3D frontend) sıraya girdi.
 **Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md) (v0.8 — `vehicles:all` pivot)
 
 ---
@@ -20,7 +20,7 @@ okunacak doküman budur.
 4. [Fazlar](#4-fazlar)
    - [Faz 1 — Veri altyapısı ✅](#faz-1--veri-altyapısı-)
    - [Faz 2 — Canlı veri adaptörü ✅](#faz-2--canlı-veri-adaptörü-)
-   - [Faz 3 — WebSocket katmanı 🟡](#faz-3--websocket-katmanı-)
+   - [Faz 3 — WebSocket katmanı ✅](#faz-3--websocket-katmanı-)
    - [Faz 4 — 3D frontend ⚪](#faz-4--3d-frontend-)
    - [Faz 5 — Raylı sistem ve vapur simülasyonu ⚪](#faz-5--raylı-sistem-ve-vapur-simülasyonu-)
    - [Faz 6 — Cilalama ⚪](#faz-6--cilalama-)
@@ -480,9 +480,9 @@ Mevcut 5i-iv `redis.set(DAY_TYPE_MISMATCH_COUNT_KEY, 0)` refresh success path'te
 
 ---
 
-### Faz 3 — WebSocket katmanı 🟡
+### Faz 3 — WebSocket katmanı ✅
 
-**Durum:** Adım 6a başlıyor (2026-04-26).
+**Durum:** Tamamlandı (2026-04-27). Adım 6a-6g ana iş, 6h-i/ii/iii spatial sanity check ve canlı smoke. Realtime suite 155/155 yeşil.
 
 #### Hedef
 
@@ -556,9 +556,15 @@ Faz 5'e ertelendi.
 - End-to-end mesaj akışı doğrulaması
 - Stale REST senaryosu
 
-**Adım 6h — Canlı smoke test (Yağız onayıyla)**
-- Tüm process'ler ayakta, tek canlı fetch, 3 tick gözlem
-- Rate limit %3 altında kalmalı
+**Adım 6h — Canlı smoke + spatial sanity check ✅ (tamamlandı 2026-04-27)**
+
+İlk amaç tek canlı fetch ile 3 tick gözlem ve rate limit %3 altında doğrulama idi. Smoke ortaya bir veri-mantığı boşluğu çıkardı: mapping kaynağı (`KapiNo→HatKodu` zaman-bazlı tablo) bir aracın hangi hatta atanmış olması *gerektiğini* söyler ama gerçekte nerede olduğunu söylemez — araç sefer bitiminde garaja dönmüş ya da molada olabilir, mapping yine onu hat üzerinde gösterir. Bu boşluğu kapatmak için sub-step 6h-i eklendi (spatial sanity check), 6h-ii canlı doğrulama, 6h-iii kapanış olarak yapılandırıldı.
+
+- [x] **6h-i. Spatial sanity check modülü ✅** — `apps/realtime/spatial.py`: lazy-load module-level cache (`get_route_shape_cache()`), numpy vectorized haversine, 500m threshold ile mapped vehicle'ın GTFS shape geometrisinden uzaklaşmış olanlarını `route_id=None`'a degrade eder. Per-vehicle <0.5ms, cold start ~7-10sn (614 route × ~100 nokta). 4 commit ile kod+test ayağa kalktı: `fcf1451` (modül + numpy req), `bc0d5f4` (tasks.py entegrasyon), `b8603d5` (5 unit test), `a07026b` (2 integration test + immutability fix). Suite 147 → 154 yeşil.
+
+- [x] **6h-ii. Canlı smoke + bug + fix-2 ✅** — İlk smoke 6h-i bug'ını ortaya çıkardı: cache miss tüm vehicle'ları null'lıyordu (`mapped_count=0`/tick, 1700+ vehicle defansif null dalında). Teşhis sırasıyla: cache size 496, mapping 614 unique hat, kesişim 0/614; cache key sample'ı sadece raylı (M2, T1) + vapur (BĞZ-2) + uzun isim, hiç İETT kısa kodu yok. Doğrulama sorgusu: **İETT GTFS feed shape coverage 0/1096 short_name, public feed 496/496.** Canlı veri akışı sadece İETT'den geldiği için cache miss canlı akışta default durum — kod bug'ı değil, Faz 1'den beri bilinen veri kısıtının (spec §10 Risk tablosu, "shapes.txt eksikse fallback") spatial check tasarımına yansımamış olması. Fix: cache miss → mapping korunur (graceful skip), cache hit + threshold dışı → eski davranış (null), cache hit + threshold içi → geçer. 3 commit: `2224e9e` (fix tasks.py), `c04d01e` (docs spatial.py docstring), `a316df9` (regression test). Suite 154 → 155 yeşil. Smoke tekrar (3 tick, 21:27-21:28 TR): `mapped_count≈1850`, `spatial_check.skipped_no_shape≈input` (beklenen, İETT shape'siz), `nullified_off_route=0`, `passed=0`. Spatial check altyapısı korundu, Faz 5+ trip simülasyonunda public feed'in 496 shape'i etkin olur.
+
+- [x] **6h-iii. Closure ✅** — Bu blok + spec §10 Risk tablosu güncellemesi + spec 0.7.3 changelog. Faz 3 Adım 6 tamamen kapandı (6a-6g + 6h-i/ii/iii).
 
 #### Adım 6a–6g kapanış kayıtları
 
@@ -584,6 +590,13 @@ Faz 5'e ertelendi.
 | 6e-iii | `e684514` | docs(spec): document REST fallback endpoint |
 | 6f-i | `23d12d9` | feat(realtime): Leaflet WebSocket smoke preview page |
 | 6g-i | `77a3759` | test(realtime): integration tests for REST-WS and SET-broadcast simetry |
+| 6h-i-1 | `fcf1451` | feat(realtime): spatial sanity check module |
+| 6h-i-2 | `bc0d5f4` | feat(realtime): integrate spatial check into fetch task |
+| 6h-i-3 | `b8603d5` | test(realtime): unit tests for spatial sanity check |
+| 6h-i-4 | `a07026b` | test(realtime): spatial filter integration tests + immutability fix |
+| 6h-ii-1 | `2224e9e` | fix(realtime): spatial check graceful skip on cache miss |
+| 6h-ii-2 | `c04d01e` | docs(realtime): note shape data constraint in spatial module |
+| 6h-ii-3 | `a316df9` | test(realtime): cache miss preserves mapping invariant |
 
 **Otomasyon smoke (6b-vi, 2026-04-26):**
 
@@ -604,7 +617,9 @@ Faz 5'e ertelendi.
 
 **Adım 6g özeti (2026-04-26):** İki yeni invariant integration test'i eklendi. Test 1 (REST↔WS↔SET üçlü payload simetrisi) iki tüketici path'inin ve Redis kaynağının byte-level identical olduğunu doğrular — frontend Faz 4'te WebSocket primary + REST fallback kullanırken semantic gap riski yok. Test 2 (SET↔broadcast simetrisi) pipeline 6c-i K1.A kararının ("tek payload nesnesi") production'da geçerli olduğunu somut kanıtlar. Mevcut testler kapsamı çoğaltılmadı, yalnızca yeni invariant katmanı eklendi.
 
-**Realtime suite final:** 147/147 yeşil. Tüm warning'ler temiz (pytest-asyncio deprecation 6b-iv'te kapatıldı).
+**Realtime suite final:** 155/155 yeşil (147 + 6h-i'den 7 yeni test + 6h-ii'den 1 regression test). Tüm warning'ler temiz (pytest-asyncio deprecation 6b-iv'te kapatıldı).
+
+**Adım 6h özeti (2026-04-27):** Spatial sanity check eklendi ve canlı smoke ile doğrulandı. Önemli ortaya çıkış: İETT GTFS feed shape coverage **0/1096**, public feed **496/496** — canlı akıştaki spatial check pratik etkisi şu an yok (cache miss, mapping korunur), Faz 5+ trip simülasyonu public feed'in shape'lerini cache'ten kullanmaya başlayınca devreye girer. Bu, kod kararı değil veri kısıtı — spec §10 Risk tablosu "shapes.txt eksikse fallback" politikasıyla tutarlı, §10 ve §14 (0.7.3 changelog) güncellendi.
 
 #### Bitiş kriteri
 
@@ -613,7 +628,7 @@ Faz 5'e ertelendi.
 - Bağlantıdan hemen sonra ~6900 araçlık ilk snapshot mesajı gelir
 - Sonraki her 60sn'de yeni snapshot mesajı gelir
 - `/api/vehicles/live/` REST fallback aynı snapshot'ı döner (stale değil)
-- Realtime suite hedef: ~140-150/140-150 yeşil (Faz 2'deki 121'in üstüne 6b-6d-6e-6g testleri eklenir, eski hat-bazlı testler silinir)
+- Realtime suite hedef: 155/155 yeşil ✅ (147 base + spatial check 8 yeni test)
 
 #### Riskler
 
