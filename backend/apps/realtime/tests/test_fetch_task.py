@@ -591,3 +591,36 @@ def test_fetch_task_spatial_check_nullifies_far_vehicle(
     payload = json.loads(raw)
     target = next(v for v in payload["vehicles"] if v["id"] == "A-200")
     assert target["route_id"] is None
+
+
+def test_fetch_task_spatial_check_skips_when_no_shape_cached(
+    fake_redis, patch_adapter, monkeypatch,
+):
+    """Cache miss (route shape kaynağı yok) durumunda mapping'e güvenilir
+    — vehicle.route_id null'lanmaz, enrich değeri korunur. İETT feed'i
+    shape içermediği için canlı akıştaki standart durum bu (6h-i-fix-2).
+    Cache boş, route_id "29B" enrich tarafından stamp'lenmiş; spatial
+    check skip edip aynı route_id ile bırakır."""
+    vehicle = _make_vehicle("A-300", latitude=41.0, longitude=29.0)
+    _seed_mapping(fake_redis, {"A-300": [_interval(1000, 99999, "29B")]})
+    patch_adapter(fetch_return=[vehicle])
+
+    from apps.realtime import spatial as spatial_module
+    monkeypatch.setattr(
+        tasks_module, "is_vehicle_near_route",
+        spatial_module.is_vehicle_near_route,
+    )
+    monkeypatch.setattr(
+        tasks_module, "get_route_shape_cache",
+        lambda: {},  # 29B cache'te yok
+    )
+
+    result = fetch_iett_positions()
+
+    assert result["status"] == "ok"
+    assert result["mapped_count"] == 1
+
+    raw = fake_redis.get(VEHICLES_ALL_KEY)
+    payload = json.loads(raw)
+    target = next(v for v in payload["vehicles"] if v["id"] == "A-300")
+    assert target["route_id"] == "29B"
