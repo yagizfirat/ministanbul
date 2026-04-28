@@ -21,7 +21,7 @@ okunacak doküman budur.
    - [Faz 1 — Veri altyapısı ✅](#faz-1--veri-altyapısı-)
    - [Faz 2 — Canlı veri adaptörü ✅](#faz-2--canlı-veri-adaptörü-)
    - [Faz 3 — WebSocket katmanı ✅](#faz-3--websocket-katmanı-)
-   - [Faz 4 — 3D frontend ⚪](#faz-4--3d-frontend-)
+   - [Faz 4 — 3D frontend 🟡](#faz-4--3d-frontend-)
    - [Faz 5 — Raylı sistem ve vapur simülasyonu ⚪](#faz-5--raylı-sistem-ve-vapur-simülasyonu-)
    - [Faz 6 — Cilalama ⚪](#faz-6--cilalama-)
 5. [Veri kaynakları](#5-veri-kaynakları)
@@ -641,7 +641,7 @@ Faz 5'e ertelendi.
 
 ---
 
-### Faz 4 — 3D frontend ⚪
+### Faz 4 — 3D frontend 🟡
 
 **Durum:** Planlı, Faz 3 bitiminde başlar.
 **Tahmini süre:** 3-4 hafta.
@@ -708,27 +708,27 @@ Algoritma (`frontend/src/simulation/bus_interpolator.ts`):
 
 #### Yapılacak iş
 
-1. Vite + TypeScript init + MapLibre kurulumu
-2. OpenFreeMap style yükleme + 3D binalar + Mapterhorn terrain
-3. **Hat filtreleme paneli** (Faz 6'dan MVP'ye taşındı — hat-merkezli modelde olmazsa olmaz):
+1. ✅ Vite + TypeScript init + MapLibre kurulumu
+2. ⚪ OpenFreeMap style yükleme + 3D binalar + Mapterhorn terrain
+3. ⚪ **Hat filtreleme paneli** (Faz 6'dan MVP'ye taşındı — hat-merkezli modelde olmazsa olmaz):
    - `src/ui/RoutePanel.ts` — mod bazlı gruplar, arama, toggle
    - Turkish normalize: ö/ü/ı/ş/ğ/ç → fuzzy search
    - Seçili hat sayısı göstergesi
-4. WebSocket client (`src/data/websocket.ts`):
+4. ✅ WebSocket client (`src/data/websocket.ts`):
    - Reconnect (exponential backoff)
    - Hat seçim değişikliğinde `subscribe` gönder (REPLACE semantiği)
    - Per-route `route_vehicles_update` mesajlarını hat state'lerine route et
-5. REST API client (`src/data/api.ts`):
+5. ⚪ REST API client (`src/data/api.ts`):
    - `GET /api/routes/active/` — kategori listesi (panel doldurma)
    - `GET /api/routes/{id}/shape/` — polyline (hat eklenince cache'le)
    - `GET /api/routes/{id}/live/` — ilk render snapshot
-6. Three.js custom layer + `InstancedMesh` araç sistemi
-7. Interpolator (yukarıdaki algoritma)
-8. Kamera kontrolleri (pitch, bearing, zoom limitleri)
-9. Durak tıklama → popup (yaklaşan araçlar)
-10. Hat tıklama → highlight + focus mode
-11. Araç tıklama → popup
-12. "Son güncelleme: X saniye önce" UI göstergesi (90sn sarı, 180sn kırmızı)
+6. ⚪ Three.js custom layer + `InstancedMesh` araç sistemi
+7. ⚪ Interpolator (yukarıdaki algoritma)
+8. ⚪ Kamera kontrolleri (pitch, bearing, zoom limitleri)
+9. ⚪ Durak tıklama → popup (yaklaşan araçlar)
+10. ⚪ Hat tıklama → highlight + focus mode
+11. ⚪ Araç tıklama → popup
+12. ⚪ "Son güncelleme: X saniye önce" UI göstergesi (90sn sarı, 180sn kırmızı)
 
 #### Bitiş kriteri
 
@@ -748,6 +748,14 @@ Algoritma (`frontend/src/simulation/bus_interpolator.ts`):
 - **Mapterhorn DEM tile boyutu.** İlk yüklemede yavaşlık olabilir, lazy load + LOD stratejisi
 - **Türkçe fuzzy search hatası.** "İETT 29b" araması karakter normalize olmazsa "29B" bulmaz. `Intl.Collator("tr")` ya da manuel map kullan
 - **Hat polyline boyutu.** Bir hat polyline'ı 500-5000 nokta olabilir, 60 hat × ortalama 2000 = 120k nokta sadece polyline'lar. deck.gl layer'a toplu push, hat ekleme/çıkarmada partial update
+
+#### Faz 4 ilerleme
+
+**Adım KM1 özeti (2026-04-28):** Vite + TypeScript scaffold (commit `94cdb50`) ve interpolator v1 + fleet rendering + last-update indicator (commit `4ed462c`) ile Faz 4'ün altyapısı kuruldu. `npm run dev` (5173) + 4 backend pencere (`start_stack.bat`) ile 6911 araç MapLibre haritasında canlı akıyor. Mavi (mapped, 2094) ve kırmızı (unmapped, 4817) renk ayrımı v0.8 UX pivot invariant'ını yansıtıyor. Snapshot store t0/t1 rotation + `requestAnimationFrame` lineer LERP ile 60sn'lik snapshot geçişlerinde gözle "tık" yok. WebSocket primary path, REST polling (5sn timeout) fallback. "Son güncelleme: X sn" göstergesi 90sn sarı / 180sn kırmızı eşikleriyle çalışıyor.
+
+Realtime suite hâlâ 155/155 yeşil — frontend kodu backend kontratlarını tüketiyor, şema değiştirmedi.
+
+Sırada KM2: OpenFreeMap 3D bina (fill-extrusion) + Mapterhorn DEM terrain.
 
 ---
 

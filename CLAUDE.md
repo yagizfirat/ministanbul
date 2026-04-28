@@ -63,6 +63,14 @@ mini-istanbul/
 - **Yeni `.md` dosyası açma** (özellikle `NOTES.md`, `TODO.md`, `PLAN.md` gibi). Bağlam ROADMAP/SPEC'te toplanır.
 - **`requirements/base.txt`'e paket eklerken:** versiyon aralığı (`>=X,<Y`) yaz, dondurma yapma — `development.txt`/`production.txt` üst katmanda gerekirse pinler.
 
+## Faz 4 — Frontend disiplini
+
+- Her KM iki commit'le bitiyor: birinci commit altyapı (scaffold, bağlantılar, render olmadan), ikinci commit somut görsel sonuç.
+- Tarayıcı doğrulaması commit ÖNCESİ yapılıyor (HMR sayesinde dev server hep ayakta, görsel feedback anlık).
+- tsc temiz tutmak şart — `npm run build` her kritik dosyada bir kez çalıştır.
+- Backend kontratı (REST + WS payload şemaları) frontend için değiştirilmiyor; v0.8 `vehicles_all_update` flat şeması Faz 5'e kadar dondu.
+- Stack başlatma: `scripts\start_stack.bat` (çift tıkla, 4 pencere). Vite ayrı: `cd frontend && npm run dev`.
+
 ---
 
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
