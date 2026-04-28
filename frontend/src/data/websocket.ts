@@ -15,9 +15,15 @@ type IncomingMessage = VehicleSnapshot | { type: string; [k: string]: unknown };
 
 export interface VehicleClientHandlers {
   onSnapshot?: (snapshot: VehicleSnapshot) => void;
+  onConnected?: () => void;
+  onDisconnected?: () => void;
 }
 
-export function connectWebSocket(handlers: VehicleClientHandlers = {}): void {
+export interface WsController {
+  isOpen(): boolean;
+}
+
+export function connectWebSocket(handlers: VehicleClientHandlers = {}): WsController {
   let socket: WebSocket | null = null;
   let backoffMs = BACKOFF_INITIAL_MS;
   let pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -33,6 +39,7 @@ export function connectWebSocket(handlers: VehicleClientHandlers = {}): void {
       console.log('[ws] connected');
       backoffMs = BACKOFF_INITIAL_MS;
       pingTimer = setInterval(sendPing, PING_INTERVAL_MS);
+      handlers.onConnected?.();
     });
 
     socket.addEventListener('message', (ev) => {
@@ -61,6 +68,7 @@ export function connectWebSocket(handlers: VehicleClientHandlers = {}): void {
     socket.addEventListener('close', (ev) => {
       console.warn(`[ws] closed (code=${ev.code}); reconnecting in ${backoffMs}ms`);
       cleanupSocket();
+      handlers.onDisconnected?.();
       scheduleReconnect();
     });
 
@@ -93,6 +101,10 @@ export function connectWebSocket(handlers: VehicleClientHandlers = {}): void {
   }
 
   open();
+
+  return {
+    isOpen: () => socket?.readyState === WebSocket.OPEN,
+  };
 }
 
 function buildWsUrl(): string {

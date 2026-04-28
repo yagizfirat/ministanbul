@@ -1,8 +1,18 @@
 # Mini Istanbul 3D — Frontend
 
-Vite + TypeScript + MapLibre GL JS. Faz 4 KM1 iskeleti.
+Vite + TypeScript + MapLibre GL JS. Faz 4 KM1.
 
 ## Geliştirme
+
+Backend stack'i tek tıkla:
+
+```
+scripts\start_stack.bat        # Django 8010, Daphne 8011, Celery worker + beat (4 PowerShell penceresi)
+```
+
+Memurai zaten Windows servisi, ayrı başlatma yok.
+
+Frontend:
 
 ```bash
 cd frontend
@@ -21,23 +31,30 @@ npm run dev      # http://localhost:5173
 
 Vite dev server `5173`'te ayağa kalkar; `/api` istekleri 8010'a, `/ws` bağlantıları 8011'e proxy'lenir (`vite.config.ts`).
 
-## Beklenen ilk açılış
+## Beklenen davranış
 
 Tarayıcı: `http://localhost:5173`
 
-- Boş MapLibre haritası, İstanbul merkez (lon 28.98, lat 41.02), zoom 11.
+- MapLibre haritası, İstanbul merkez (lon 28.98, lat 41.02), zoom 11.
+- ~6911 nokta (canlı araçlar): mavi = mapped (route_id var), kırmızı = unmapped.
+- Sağ üstte "Son güncelleme: X sn önce" göstergesi (yeşil <90s, sarı 90-180s, kırmızı >180s).
+- 60sn'de bir yeni snapshot gelir; noktalar t0→t1 lineer LERP ile akıcı geçer (KM1 v1).
 - DevTools Console:
   - `[map] loaded`
   - `[ws] connecting → ws://localhost:5173/ws/vehicles/`
   - `[ws] connected`
-  - `[ws] snapshot: <N> vehicles, <M> mapped, <N> in payload` (~60sn'de bir)
+  - `[ws] snapshot: 6911 vehicles, ~2178 mapped, 6911 in payload`
 - DevTools Network → WS sekmesi: `ws://localhost:5173/ws/vehicles/` üzerinden `101 Switching Protocols`.
 
-Backend kapanırsa client otomatik reconnect dener (1s → 30s exponential backoff, başarılı handshake'de reset).
+## Reconnect / fallback
 
-## Henüz yok
+- Daphne kapanırsa: WS otomatik reconnect dener (1s → 30s exponential backoff, başarılı handshake'de reset).
+- WS 5sn içinde açılmazsa: REST polling (`/api/vehicles/live/`, 60sn) devreye girer.
+- WS sonradan bağlanırsa: polling durur, akış WS'e döner.
 
-- Araç render (KM1 b/2)
-- Lineer interpolator + 60 FPS rAF (KM1 b/2)
-- "Son güncelleme: X sn önce" UI (KM1 b/2)
-- 3D bina, terrain, deck.gl katmanı (sonraki KM'ler)
+## Henüz yok (sonraki KM'ler)
+
+- Polyline-temelli interpolator v2 (KM4)
+- Hat filtresi UI (Faz 5)
+- 3D bina + terrain (KM2)
+- deck.gl ScatterplotLayer'a geçiş (gerekirse)
