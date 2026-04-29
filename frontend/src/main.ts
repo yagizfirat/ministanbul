@@ -4,9 +4,11 @@ import { connectWebSocket, type VehicleSnapshot } from './data/websocket';
 import { fetchLiveVehicles } from './data/api';
 import { SnapshotStore } from './state/snapshot_store';
 import { initFleetLayer, updateFleet } from './render/fleet_layer';
+import { initBuildingsLayer } from './render/buildings_layer';
+import { initTerrain } from './render/terrain';
 import { createLastUpdateIndicator } from './ui/last_update_indicator';
 
-const ISTANBUL_CENTER: [number, number] = [28.98, 41.02];
+const ISTANBUL_CENTER: [number, number] = [29.00, 41.04];
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/bright';
 const REST_FALLBACK_DELAY_MS = 5_000;
 const REST_POLL_INTERVAL_MS = 60_000;
@@ -18,13 +20,20 @@ const map = new maplibregl.Map({
   container: 'map',
   style: STYLE_URL,
   center: ISTANBUL_CENTER,
-  zoom: 11,
-  pitch: 0,
-  bearing: 0,
+  zoom: 12,
+  pitch: 45,
+  bearing: -20,
+  maxPitch: 75,
+  minZoom: 9,
+  maxZoom: 18,
 });
+
+map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
 
 map.on('load', () => {
   console.log('[map] loaded');
+  initTerrain(map);
+  initBuildingsLayer(map);
   initFleetLayer(map);
   startRenderLoop();
   startRealtime();

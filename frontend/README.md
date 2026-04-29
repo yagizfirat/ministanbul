@@ -1,6 +1,6 @@
 # Mini Istanbul 3D — Frontend
 
-Vite + TypeScript + MapLibre GL JS. Faz 4 KM1.
+Vite + TypeScript + MapLibre GL JS. Faz 4 KM2.
 
 ## Geliştirme
 
@@ -35,9 +35,12 @@ Vite dev server `5173`'te ayağa kalkar; `/api` istekleri 8010'a, `/ws` bağlant
 
 Tarayıcı: `http://localhost:5173`
 
-- MapLibre haritası, İstanbul merkez (lon 28.98, lat 41.02), zoom 11.
-- ~6911 nokta (canlı araçlar): mavi = mapped (route_id var), kırmızı = unmapped.
-- Sağ üstte "Son güncelleme: X sn önce" göstergesi (yeşil <90s, sarı 90-180s, kırmızı >180s).
+- MapLibre 3D haritası, İstanbul (lon 29.00, lat 41.04), zoom 12, pitch 45°, bearing -20°.
+- 3D binalar (`fill-extrusion`, OpenMapTiles `building` source-layer) zoom ≥14'te yükselir.
+- Mapterhorn DEM terrain (`terrarium` encoding, exaggeration 1.0); Boğaz tepeleri belirgin.
+- ~6911 nokta (canlı araçlar): mavi = mapped (route_id var), kırmızı = unmapped. Pitch eğik olsa da binaların üstünde görünür.
+- Sol üstte "Son güncelleme: X sn önce" göstergesi (yeşil <90s, sarı 90-180s, kırmızı >180s).
+- Sağ üstte `NavigationControl` (pitch görselleştirme + zoom).
 - 60sn'de bir yeni snapshot gelir; noktalar t0→t1 lineer LERP ile akıcı geçer (KM1 v1).
 - DevTools Console:
   - `[map] loaded`
@@ -45,6 +48,12 @@ Tarayıcı: `http://localhost:5173`
   - `[ws] connected`
   - `[ws] snapshot: 6911 vehicles, ~2178 mapped, 6911 in payload`
 - DevTools Network → WS sekmesi: `ws://localhost:5173/ws/vehicles/` üzerinden `101 Switching Protocols`.
+
+### Etkileşim
+
+- Sağ tık + sürükle → kamera pitch/bearing değişir.
+- Scroll → zoom (9-18 arası).
+- NavigationControl pusulasına tıkla → bearing 0°'ye sıfırlanır.
 
 ## Reconnect / fallback
 
@@ -54,7 +63,7 @@ Tarayıcı: `http://localhost:5173`
 
 ## Henüz yok (sonraki KM'ler)
 
+- Hat polyline'ları (KM3)
 - Polyline-temelli interpolator v2 (KM4)
 - Hat filtresi UI (Faz 5)
-- 3D bina + terrain (KM2)
 - deck.gl ScatterplotLayer'a geçiş (gerekirse)

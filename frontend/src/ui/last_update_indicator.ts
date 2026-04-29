@@ -15,7 +15,7 @@ export function createLastUpdateIndicator(): LastUpdateIndicator {
   el.style.cssText = [
     'position: fixed',
     'top: 12px',
-    'right: 12px',
+    'left: 12px',
     'padding: 6px 10px',
     'border-radius: 6px',
     'background: rgba(255, 255, 255, 0.92)',
