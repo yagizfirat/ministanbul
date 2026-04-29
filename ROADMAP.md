@@ -709,7 +709,7 @@ Algoritma (`frontend/src/simulation/bus_interpolator.ts`):
 #### Yapılacak iş
 
 1. ✅ Vite + TypeScript init + MapLibre kurulumu
-2. ⚪ OpenFreeMap style yükleme + 3D binalar + Mapterhorn terrain
+2. ✅ OpenFreeMap style yükleme + 3D binalar + Mapterhorn terrain
 3. ⚪ **Hat filtreleme paneli** (Faz 6'dan MVP'ye taşındı — hat-merkezli modelde olmazsa olmaz):
    - `src/ui/RoutePanel.ts` — mod bazlı gruplar, arama, toggle
    - Turkish normalize: ö/ü/ı/ş/ğ/ç → fuzzy search
@@ -755,7 +755,9 @@ Algoritma (`frontend/src/simulation/bus_interpolator.ts`):
 
 Realtime suite hâlâ 155/155 yeşil — frontend kodu backend kontratlarını tüketiyor, şema değiştirmedi.
 
-Sırada KM2: OpenFreeMap 3D bina (fill-extrusion) + Mapterhorn DEM terrain.
+**Adım KM2 özeti (2026-04-29):** OpenFreeMap building source-layer üzerine fill-extrusion (cbd5e1→64748b yükseklik gradient'i, opacity 0.85, minzoom 14) ve Mapterhorn DEM raster terrain (terrarium encoding, tileSize 512, exaggeration 1.0) eklendi. Sky atmosphere açık. Initial pose: pitch 45°, bearing -20°, zoom 12, center [29.00, 41.04]. NavigationControl (visualizePitch) sağ üstte, indicator sol üste taşındı (çakışma yok). Mapterhorn endpoint düzeltildi: tiles.mapterhorn.com (recon'da maps. yerine tiles. doğrulandı, terrarium encoding, TileJSON 200 OK). 6911 araç regression yok, pitch eğikken bina+terrain üstünde görünür kalıyor. Realtime suite hâlâ 155/155 yeşil — backend kontrat değişmedi.
+
+Sırada KM3: hat polyline'ları (sürekli görünür kategoriler için `/api/routes/{id}/shape/` ile cache + render).
 
 ---
 
@@ -868,8 +870,10 @@ yayına hazır hale getirmek.
   +/- 2 saat kaydırılabilir, simülasyon o zamana göre.
 - **Landmark GeoJSON'ları (opsiyonel):** Ayasofya, Galata Kulesi vb.
   OSM'de yoksa manuel ekle.
-- **Production deployment dokümanı:** Nginx + Daphne + systemd + SSL.
-  `docs/DEPLOY.md`.
+- **Production deployment dokümanı:** CloudPanel + Nginx + systemd
+  üzerinde VPS/Linux deploy. Memurai → Redis geçişi, Daphne +
+  Gunicorn + Celery service dosyaları, frontend `npm run build`
+  → static, Let's Encrypt SSL. `docs/DEPLOY.md`.
 - **E2E testler (Playwright):** ana user journey'leri.
 - **Accessibility:** Klavye navigasyonu, screen reader ARIA label'ları.
 

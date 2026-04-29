@@ -4,20 +4,16 @@ Vite + TypeScript + MapLibre GL JS. Faz 4 KM2.
 
 ## Geliştirme
 
-Backend stack'i tek tıkla:
-
-```
-scripts\start_stack.bat        # Django 8010, Daphne 8011, Celery worker + beat (4 PowerShell penceresi)
-```
+`scripts\start_stack.bat` çift tıkla → 5 pencere açılır
+(Django/Daphne/Worker/Beat/Vite). Tarayıcı: http://localhost:5173
 
 Memurai zaten Windows servisi, ayrı başlatma yok.
 
-Frontend:
+İlk sefer Vite bağımlılıkları için:
 
 ```bash
 cd frontend
-npm install      # ilk sefer
-npm run dev      # http://localhost:5173
+npm install
 ```
 
 ## Backend bağımlılığı
