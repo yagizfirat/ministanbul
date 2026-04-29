@@ -718,10 +718,12 @@ Algoritma (`frontend/src/simulation/bus_interpolator.ts`):
    - Reconnect (exponential backoff)
    - Hat seçim değişikliğinde `subscribe` gönder (REPLACE semantiği)
    - Per-route `route_vehicles_update` mesajlarını hat state'lerine route et
-5. ⚪ REST API client (`src/data/api.ts`):
-   - `GET /api/routes/active/` — kategori listesi (panel doldurma)
-   - `GET /api/routes/{id}/shape/` — polyline (hat eklenince cache'le)
-   - `GET /api/routes/{id}/live/` — ilk render snapshot
+5. ✅ REST API client (`src/data/api.ts`):
+   - `GET /api/routes/?mode=<m>&has_shape=true` — DRF list (`/api/routes/active/`
+     yok; backend'de mode filtresi `MODE_TO_ROUTE_TYPE` ile uygulanıyor)
+   - `GET /api/routes/{id}/shape/` — polyline (200 GeoJSON Feature veya
+     204 No Content; 204 → null tolere edilir)
+   - Per-route live: ayrı endpoint yok; global `/api/vehicles/live/` zaten KM1'de
 6. ⚪ Three.js custom layer + `InstancedMesh` araç sistemi
 7. ⚪ Interpolator (yukarıdaki algoritma)
 8. ⚪ Kamera kontrolleri (pitch, bearing, zoom limitleri)
@@ -757,7 +759,9 @@ Realtime suite hâlâ 155/155 yeşil — frontend kodu backend kontratlarını t
 
 **Adım KM2 özeti (2026-04-29):** OpenFreeMap building source-layer üzerine fill-extrusion (cbd5e1→64748b yükseklik gradient'i, opacity 0.85, minzoom 14) ve Mapterhorn DEM raster terrain (terrarium encoding, tileSize 512, exaggeration 1.0) eklendi. Sky atmosphere açık. Initial pose: pitch 45°, bearing -20°, zoom 12, center [29.00, 41.04]. NavigationControl (visualizePitch) sağ üstte, indicator sol üste taşındı (çakışma yok). Mapterhorn endpoint düzeltildi: tiles.mapterhorn.com (recon'da maps. yerine tiles. doğrulandı, terrarium encoding, TileJSON 200 OK). 6911 araç regression yok, pitch eğikken bina+terrain üstünde görünür kalıyor. Realtime suite hâlâ 155/155 yeşil — backend kontrat değişmedi.
 
-Sırada KM3: hat polyline'ları (sürekli görünür kategoriler için `/api/routes/{id}/shape/` ile cache + render).
+**Adım KM3 özeti (2026-04-29):** Açılışta sürekli görünür modların polyline'ları yüklendi: 21 hat (12 metro + 3 Marmaray + 3 tram + 3 funicular). Backend recon'unda `/api/routes/active/` endpoint'inin var olmadığı, gerçek surface'in `/api/routes/?mode=<m>&has_shape=true` (DRF paginated) olduğu doğrulandı; shape endpoint 404 değil **204 No Content** dönüyor (shape'siz hatlar için). `ALWAYS_VISIBLE_MODES = ['subway','tram','funicular']`; subway içinden Marmaray (`short_name.startsWith('Marmaray')`) mor renkle (`#4338ca`), kalan M-hatları lacivert (`#1e40af`) olarak ayrıldı. Tram yeşil (`#16a34a`), funicular turuncu (`#ea580c`). Yeni dosyalar: `src/state/mode_colors.ts`, `src/state/route_store.ts` (add/remove + onRouteAdded/onRouteRemoved listener API — KM6 paneli için hazır), `src/render/route_lines_layer.ts` (tek GeoJSON line layer, color feature property'sinden, line-width 2→6px zoom-bağımlı). 10-batch `Promise.allSettled` ile paralel fetch; 21/0 loaded/skipped. Z-order `beforeId='fleet-circles'` ile garantili: terrain < buildings < route-lines < fleet-circles. Metrobüs polyline'ı **çizilmedi** (İETT GTFS shape'siz, Ek A.10 limit; Faz 5 OSM snapping işi). Vapur (100 hat) **çizilmedi** (KM6 opt-in panel kapsamına alındı; açılışta üst üste turkuaz çizgi karmaşası yok). 6911 araç regression yok, polyline'lar pitch eğikken araçların altında düz yatıyor (terrain takibi yok, MapLibre default — kabul). Realtime suite 155/155 yeşil; backend kontrat değişmedi.
+
+Sırada KM4: polyline-aware interpolator v2 (snapshot LERP yerine route shape üzerinde geodesic ilerleme + tanjant bearing).
 
 ---
 
