@@ -33,6 +33,9 @@ const store = new SnapshotStore();
 const scheduledFleet = new ScheduledFleet();
 const indicator = createLastUpdateIndicator();
 
+// KM3-a direction-bug debug. Removed in KM3-b once diagnosis is closed.
+(window as unknown as { __sf: ScheduledFleet }).__sf = scheduledFleet;
+
 // Module-level Intl.DateTimeFormat cache: avoid building one per frame.
 const ISTANBUL_TIME_FMT = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/Istanbul',

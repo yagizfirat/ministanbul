@@ -77,4 +77,9 @@ export class ScheduledFleet {
   size(): number {
     return this.prepared.size;
   }
+
+  // KM3-a direction-bug debug. Removed in KM3-b once the diagnosis is closed.
+  _debugEntries(): PreparedTrip[] {
+    return Array.from(this.prepared.values());
+  }
 }
