@@ -885,7 +885,8 @@ Alt-iş:
   - **Collapse** (f-polish madde 3, commit `9ab3b02`): collapsed durumda collapse-btn görünür kalır, geri açma yolu
   - **Hint icon** (f-polish madde 4, commit `7a69a1e`): chip kaldırıldı, panel header'ında `?` tooltip
   - Commit zinciri: f-1 keşif raporu, f-2 `a37ff99`, f-3 `296a00d`, f-4 `4e7696d`, f-5 `25c291c`, f-6 (`e10c299`+`281fff7`+`80d1d12`), polish (`a324939`+`0658b2a`+`9ab3b02`+`7a69a1e`)
-  - **140 yeşil Vitest** (önceki 75'ten +65: route_visibility 12, turkish_normalize 20, virtual_list 10, route_panel 26, demojibake 11, collapse +1, route_visibility expansion+reset +5, başka), **191 yeşil backend** (180+11 demojibake)
+  - **161 yeşil Vitest** (f-polish-2 sonrası: route_panel 33, route_panel_flatten 9, route_visibility 14, turkish_normalize 26 [+isMojibake 5], virtual_list 10, fleet_layer 5, route_lines_layer 9, scheduled_layer 11, scheduled_trip 9, scheduled_fleet 11, polyline 11, route_colors 13), **191 yeşil backend** (180+11 demojibake)
+  - **f-polish-2** (4 madde, 4 commit): default state guard + collapsed buton görünür (`ae01760`), isMojibake helper + UI ⚠ uyarı (`439a139`), variant gruplaması + flatten pattern (`be9a933`), bu docs commit. Kullanıcı geri bildirimi: bus 1065 short_name >1 variant (29B = 7, AVR1 = 149) — panel kullanılabilirliği için zorunluydu.
 
 Tahmini süre: 3-4 gün → **gerçek: ~1.5 gün**.
 
