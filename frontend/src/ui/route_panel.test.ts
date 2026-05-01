@@ -46,7 +46,12 @@ function mount(routes = SAMPLE_ROUTES, opts: { config?: Parameters<typeof create
   const allIds = routes.map((r) => r.route_id);
   const visible = routes.filter((r) => r.mode !== 'bus').map((r) => r.route_id);
   const rv = new RouteVisibility(allIds, visible);
-  panel = createRoutePanel({ visibility: rv, routes, config: opts.config });
+  panel = createRoutePanel({
+    visibility: rv,
+    routes,
+    defaultVisibleIds: visible,
+    config: opts.config,
+  });
   return panel;
 }
 
@@ -117,7 +122,11 @@ describe('createRoutePanel — mode groups', () => {
   it('group bulk button click hides all routes in that mode (when all currently visible)', () => {
     const allIds = SAMPLE_ROUTES.map((r) => r.route_id);
     const rv = new RouteVisibility(allIds, POLYLINE_VISIBLE);
-    panel = createRoutePanel({ visibility: rv, routes: SAMPLE_ROUTES });
+    panel = createRoutePanel({
+      visibility: rv,
+      routes: SAMPLE_ROUTES,
+      defaultVisibleIds: POLYLINE_VISIBLE,
+    });
     const metroGroup = document.querySelector('.route-panel__group[data-mode="metro"]') as HTMLElement;
     const bulk = metroGroup.querySelector('.route-panel__group-bulk-btn') as HTMLElement;
     bulk.click();
@@ -130,7 +139,11 @@ describe('createRoutePanel — mode groups', () => {
   it('header count updates on visibility change', () => {
     const allIds = SAMPLE_ROUTES.map((r) => r.route_id);
     const rv = new RouteVisibility(allIds, POLYLINE_VISIBLE);
-    panel = createRoutePanel({ visibility: rv, routes: SAMPLE_ROUTES });
+    panel = createRoutePanel({
+      visibility: rv,
+      routes: SAMPLE_ROUTES,
+      defaultVisibleIds: POLYLINE_VISIBLE,
+    });
     const headerCount = document.querySelector('.route-panel__count') as HTMLElement;
     const initialText = headerCount.textContent;
     rv.toggle('public:m2'); // hide M2
@@ -282,12 +295,91 @@ describe('createRoutePanel — item interaction', () => {
     const rv = new RouteVisibility(allIds, POLYLINE_VISIBLE);
     const spy = vi.fn();
     rv.subscribe(spy);
-    panel = createRoutePanel({ visibility: rv, routes: SAMPLE_ROUTES });
+    panel = createRoutePanel({
+      visibility: rv,
+      routes: SAMPLE_ROUTES,
+      defaultVisibleIds: POLYLINE_VISIBLE,
+    });
     const m2Item = document.querySelector('[data-route-id="public:m2"]') as HTMLElement;
     const cb = m2Item.querySelector('input[type="checkbox"]') as HTMLInputElement;
     cb.checked = false;
     cb.dispatchEvent(new Event('change'));
     expect(rv.isVisible('public:m2')).toBe(false);
     expect(spy).toHaveBeenCalled();
+  });
+});
+
+// ── Header bulk actions + hint icon (KM1 alt-iş f-polish madde 4) ──
+describe('createRoutePanel — header bulk actions + hint', () => {
+  it('renders the hint icon with a tooltip in the header', () => {
+    mount();
+    const hint = document.querySelector('.route-panel__hint-icon') as HTMLElement;
+    expect(hint).not.toBeNull();
+    expect(hint.title).toMatch(/tarife-bazlı/i);
+  });
+
+  it('renders three bulk action buttons (Tümü, Hiçbiri, Reset)', () => {
+    mount();
+    const buttons = document.querySelectorAll<HTMLElement>(
+      '.route-panel__bulk-actions button',
+    );
+    expect(buttons.length).toBe(3);
+    const labels = Array.from(buttons).map((b) => b.textContent);
+    expect(labels).toEqual(['Tümü', 'Hiçbiri', 'Reset']);
+  });
+
+  it('Tümü click marks every route visible', () => {
+    const rv = new RouteVisibility(
+      SAMPLE_ROUTES.map((r) => r.route_id),
+      POLYLINE_VISIBLE, // bus hidden initially
+    );
+    panel = createRoutePanel({
+      visibility: rv,
+      routes: SAMPLE_ROUTES,
+      defaultVisibleIds: POLYLINE_VISIBLE,
+    });
+    const allBtn = Array.from(
+      document.querySelectorAll<HTMLElement>('.route-panel__bulk-actions button'),
+    ).find((b) => b.textContent === 'Tümü')!;
+    allBtn.click();
+    expect(rv.isVisible('iett:29B')).toBe(true);
+    expect(rv.isVisible('public:m2')).toBe(true);
+  });
+
+  it('Hiçbiri click hides every route', () => {
+    const rv = new RouteVisibility(
+      SAMPLE_ROUTES.map((r) => r.route_id),
+      POLYLINE_VISIBLE,
+    );
+    panel = createRoutePanel({
+      visibility: rv,
+      routes: SAMPLE_ROUTES,
+      defaultVisibleIds: POLYLINE_VISIBLE,
+    });
+    const noneBtn = Array.from(
+      document.querySelectorAll<HTMLElement>('.route-panel__bulk-actions button'),
+    ).find((b) => b.textContent === 'Hiçbiri')!;
+    noneBtn.click();
+    expect(rv.getVisible().size).toBe(0);
+  });
+
+  it('Reset returns to defaultVisibleIds even after Tümü', () => {
+    const rv = new RouteVisibility(
+      SAMPLE_ROUTES.map((r) => r.route_id),
+      POLYLINE_VISIBLE,
+    );
+    panel = createRoutePanel({
+      visibility: rv,
+      routes: SAMPLE_ROUTES,
+      defaultVisibleIds: POLYLINE_VISIBLE,
+    });
+    rv.setBulkVisible(SAMPLE_ROUTES.map((r) => r.route_id), true); // Tümü gibi
+    expect(rv.isVisible('iett:29B')).toBe(true);
+    const resetBtn = Array.from(
+      document.querySelectorAll<HTMLElement>('.route-panel__bulk-actions button'),
+    ).find((b) => b.textContent === 'Reset')!;
+    resetBtn.click();
+    expect(rv.isVisible('iett:29B')).toBe(false); // bus tekrar hidden
+    expect(rv.isVisible('public:m2')).toBe(true); // polyline hâlâ visible
   });
 });

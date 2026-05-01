@@ -152,7 +152,11 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
   // 5 polyline modu (subway+tram+funicular+marmaray) + ferry = default visible.
   // Bus default hidden — lazy fetch sonrası expandTotalCount.
   routeVisibility = new RouteVisibility(initialIds, initialIds);
-  routePanel = createRoutePanel({ visibility: routeVisibility, routes: initialRoutes });
+  routePanel = createRoutePanel({
+    visibility: routeVisibility,
+    routes: initialRoutes,
+    defaultVisibleIds: initialIds, // Reset hedefi (polyline + ferry)
+  });
 
   function applyFilters(): void {
     if (!routeVisibility) return;

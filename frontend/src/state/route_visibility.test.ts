@@ -95,6 +95,30 @@ describe('getFilterExpression', () => {
   });
 });
 
+describe('RouteVisibility.resetToDefault (Reset button)', () => {
+  it('replaces the visible set with the default ids and fires once', () => {
+    const rv = fresh();
+    const spy = vi.fn();
+    rv.subscribe(spy);
+    // Mutate state away from default
+    rv.toggle('public:m2');
+    rv.toggle('iett:1');
+    spy.mockClear();
+    rv.resetToDefault(DEFAULT_VISIBLE);
+    expect(rv.isVisible('public:m2')).toBe(true);
+    expect(rv.isVisible('iett:1')).toBe(false);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op when already at default state (no listener fire)', () => {
+    const rv = fresh();
+    const spy = vi.fn();
+    rv.subscribe(spy);
+    rv.resetToDefault(DEFAULT_VISIBLE);
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
+
 describe('RouteVisibility.expandTotalCount (bus lazy fetch)', () => {
   it('grows totalCount and does not fire listeners', () => {
     const rv = fresh();

@@ -67,8 +67,14 @@ interface ModeGroupRefs {
 export interface RoutePanelOptions {
   visibility: RouteVisibility;
   routes: RouteSummary[];
+  // Reset butonunun döndüğü visible set. Genelde polyline + ferry
+  // route_id'leri (bus default hidden — Mini Tokyo 3D paterni).
+  defaultVisibleIds: readonly string[];
   config?: Partial<RoutePanelConfig>;
 }
+
+const HINT_TEXT =
+  'Renkli noktalar tarife-bazlı simülasyondur, gerçek gecikme/aksaklık yansıtmaz.';
 
 export interface RoutePanelHandle {
   element: HTMLElement;
@@ -94,18 +100,44 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   root.style.setProperty('--route-panel-collapse-width', config.collapseWidth);
 
   // ── header ────────────────────────────────────────────────────────
+  // Çift satır: row1 (title + hint + collapse), row2 (count + bulk).
   const header = document.createElement('div');
   header.className = 'route-panel__header';
+
+  const row1 = document.createElement('div');
+  row1.className = 'route-panel__header-row1';
   const title = document.createElement('span');
   title.className = 'route-panel__title';
   title.textContent = 'Hatlar';
-  const headerCount = document.createElement('span');
-  headerCount.className = 'route-panel__count';
+  const hintIcon = document.createElement('span');
+  hintIcon.className = 'route-panel__hint-icon';
+  hintIcon.textContent = '?';
+  hintIcon.title = HINT_TEXT;
   const collapseBtn = document.createElement('button');
   collapseBtn.className = 'route-panel__collapse-btn';
   collapseBtn.textContent = config.position === 'right' ? '<' : '>';
   collapseBtn.addEventListener('click', () => toggleCollapse());
-  header.append(title, headerCount, collapseBtn);
+  row1.append(title, hintIcon, collapseBtn);
+
+  const row2 = document.createElement('div');
+  row2.className = 'route-panel__header-row2';
+  const headerCount = document.createElement('span');
+  headerCount.className = 'route-panel__count';
+  const bulkActions = document.createElement('div');
+  bulkActions.className = 'route-panel__bulk-actions';
+  const allBtn = document.createElement('button');
+  allBtn.textContent = 'Tümü';
+  allBtn.addEventListener('click', () => onSelectAll());
+  const noneBtn = document.createElement('button');
+  noneBtn.textContent = 'Hiçbiri';
+  noneBtn.addEventListener('click', () => onSelectNone());
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = 'Reset';
+  resetBtn.addEventListener('click', () => onReset());
+  bulkActions.append(allBtn, noneBtn, resetBtn);
+  row2.append(headerCount, bulkActions);
+
+  header.append(row1, row2);
   root.appendChild(header);
 
   // ── search ────────────────────────────────────────────────────────
@@ -375,6 +407,20 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
     const ids = routes.map((r) => r.route_id);
     const allVisible = ids.every((id) => opts.visibility.isVisible(id));
     opts.visibility.setBulkVisible(ids, !allVisible);
+  }
+
+  function onSelectAll(): void {
+    const ids = allRoutes.map((r) => r.route_id);
+    opts.visibility.setBulkVisible(ids, true);
+  }
+
+  function onSelectNone(): void {
+    const ids = allRoutes.map((r) => r.route_id);
+    opts.visibility.setBulkVisible(ids, false);
+  }
+
+  function onReset(): void {
+    opts.visibility.resetToDefault(opts.defaultVisibleIds);
   }
 
   function toggleCollapse(): void {

@@ -74,6 +74,24 @@ export class RouteVisibility {
     this.totalCount += addedCount;
   }
 
+  // Reset butonu için: visible set'i defaultIds'e geri al. No-op
+  // (zaten default state'te) ise listener tetiklenmez.
+  resetToDefault(defaultIds: readonly string[]): void {
+    if (defaultIds.length === this.visible.size) {
+      let allMatch = true;
+      for (const id of defaultIds) {
+        if (!this.visible.has(id)) {
+          allMatch = false;
+          break;
+        }
+      }
+      if (allMatch) return;
+    }
+    this.visible.clear();
+    for (const id of defaultIds) this.visible.add(id);
+    this.fire();
+  }
+
   subscribe(fn: RouteVisibilityListener): void {
     this.listeners.push(fn);
   }
