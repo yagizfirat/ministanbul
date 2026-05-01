@@ -64,6 +64,28 @@ export class SnapshotStore {
   latestTimestamp(): number | null {
     return this.t1?.dataTime ?? null;
   }
+
+  // f-polish-3 madde 3: bus için polyline yok → çift tıklamada
+  // vehicle konumlarından bbox hesapla (fallback). En güncel snapshot
+  // (t1) tüketilir; null vehicle yoksa veya hat'a hiç araç yoksa.
+  getVehicleBBoxForRoute(routeId: string): [number, number, number, number] | null {
+    if (this.t1 === null) return null;
+    let minLon = Infinity;
+    let minLat = Infinity;
+    let maxLon = -Infinity;
+    let maxLat = -Infinity;
+    let count = 0;
+    for (const v of this.t1.vehicles.values()) {
+      if (v.route_id !== routeId) continue;
+      if (v.lon < minLon) minLon = v.lon;
+      if (v.lon > maxLon) maxLon = v.lon;
+      if (v.lat < minLat) minLat = v.lat;
+      if (v.lat > maxLat) maxLat = v.lat;
+      count++;
+    }
+    if (count === 0) return null;
+    return [minLon, minLat, maxLon, maxLat];
+  }
 }
 
 function indexVehicles(vehicles: Vehicle[]): Map<string, Vehicle> {
