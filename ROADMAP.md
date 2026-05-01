@@ -869,7 +869,7 @@ yayına hazır hale getirmek.
 Şu anki üç renk katmanı (polyline lacivert tek-mod, scheduled pastel beş-mod, İETT mavi/kırmızı mapped/unmapped) tutarsız. Hedef: İstanbul kurumsal renkleri kullanmak — kullanıcı için çağrışım, demo için profesyonel görsel.
 
 Alt-iş:
-- **Hardcoded renk haritası** (`short_name → hex`): M1A/M1B kırmızı, M2 yeşil, M3 mavi, M4 pembe, M5/M6/M7/M8/M9 Metro İstanbul resmi renkleri, T1/T3/T4 İETT kurumsal, Marmaray turkuaz, F1/F2/F3 turuncu, İETT genel sarı (`#fdc70c` belediye sarısı), Şehir Hatları lacivert (`#003e7e`). Renk metadata'sı feed'lerde yok — manuel.
+- ✅ **Hardcoded renk haritası** (`short_name → hex`) — `frontend/src/styling/route_colors.ts` + 11 Vitest case (commit `a683705`, 2026-05-01). Kanonik hex'ler Wikipedia "Module:Adjacent_stations/Istanbul_Metro" Lua tablosundan: M1A-M14, T1/T4/T5/T6. Marmaray turkuaz (#00B7CD) ve mod fallback'leri (bus #FDC70C, ferry #003E7E) `// TODO: kaynak doğrulaması` notuyla işaretli. T2/T3, F1-F4 ve M1B-vs-M1A ayrımı sonraki turda netleştirilir; o zamana kadar mod fallback'e düşerler. `lighten(hex, amount)` HSL helper'ı alt-iş c için hazır.
 - **Polyline renkleri**: lacivert tek-mod yerine hat-bazlı resmi renk (M2 yeşil polyline, M1A kırmızı polyline, ...).
 - **Scheduled vehicle renkleri**: polyline'ın açık tonu (M2 koyu yeşil polyline + üstünde açık yeşil nokta). Pastel paleti yerine dinamik.
 - **İETT vehicle**: kurumsal sarı `#fdc70c`. Mapped/unmapped ayrımı renk yerine border (mapped: koyu border, unmapped: border yok ya da gri border).
