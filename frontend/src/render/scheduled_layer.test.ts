@@ -24,9 +24,14 @@ describe('buildScheduledLayerPaint', () => {
   });
 });
 
-function pose(short_name: string, mode: string): InterpolatedScheduledTrip {
+function pose(
+  short_name: string,
+  mode: string,
+  route_id = `public:${short_name.toLowerCase()}`,
+): InterpolatedScheduledTrip {
   return {
     trip_id: `t-${short_name}`,
+    route_id,
     short_name,
     lon: 29.0,
     lat: 41.0,
@@ -76,5 +81,10 @@ describe('buildScheduledFeature — corporate-color injection', () => {
   it('places the geometry at the pose lon/lat', () => {
     const f = buildScheduledFeature(pose('M2', 'metro'));
     expect(f.geometry.coordinates).toEqual([29.0, 41.0]);
+  });
+
+  it('propagates route_id into properties (KM1 alt-iş f-6)', () => {
+    const f = buildScheduledFeature(pose('M2', 'metro', 'public:1298'));
+    expect(f.properties.route_id).toBe('public:1298');
   });
 });

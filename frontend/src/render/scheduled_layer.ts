@@ -14,7 +14,13 @@ const LIGHTEN_AMOUNT = 0.2;
 interface ScheduledFeature {
   type: 'Feature';
   geometry: { type: 'Point'; coordinates: [number, number] };
-  properties: { trip_id: string; mode: string; color: string; strokeColor: string };
+  properties: {
+    trip_id: string;
+    route_id: string;
+    mode: string;
+    color: string;
+    strokeColor: string;
+  };
 }
 
 interface ScheduledCollection {
@@ -49,6 +55,7 @@ export function buildScheduledFeature(p: InterpolatedScheduledTrip): ScheduledFe
     geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
     properties: {
       trip_id: p.trip_id,
+      route_id: p.route_id,
       mode: p.mode,
       color: lighten(baseColor, LIGHTEN_AMOUNT),
       strokeColor: baseColor,

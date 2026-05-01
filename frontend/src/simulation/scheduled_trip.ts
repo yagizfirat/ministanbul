@@ -26,6 +26,7 @@ export interface PreparedTrip {
 
 export interface InterpolatedScheduledTrip {
   trip_id: string;
+  route_id: string;
   short_name: string;
   lon: number;
   lat: number;
@@ -97,6 +98,7 @@ export function interpolateScheduledTrip(
     const pose = pointAtArcLength(sps[i].arcLengthM, prep.polyline, prep.cumDist);
     return {
       trip_id: prep.trip_id,
+      route_id: prep.route_id,
       short_name: prep.short_name,
       lon: pose.lon,
       lat: pose.lat,
@@ -112,6 +114,7 @@ export function interpolateScheduledTrip(
   const pose = pointAtArcLength(arcLen, prep.polyline, prep.cumDist);
   return {
     trip_id: prep.trip_id,
+    route_id: prep.route_id,
     short_name: prep.short_name,
     lon: pose.lon,
     lat: pose.lat,
