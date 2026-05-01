@@ -251,6 +251,17 @@ describe('createRoutePanel — collapse', () => {
     btn.click();
     expect(root.dataset.collapsed).toBe('false');
   });
+
+  it('collapsed state keeps the collapse button reachable + flips its glyph', () => {
+    mount(SAMPLE_ROUTES, { config: { position: 'right' } });
+    const btn = document.querySelector('.route-panel__collapse-btn') as HTMLElement;
+    expect(btn.textContent).toBe('<'); // initial (right side, expanded)
+    btn.click();
+    expect(btn.textContent).toBe('>'); // collapsed → re-open glyph
+    expect(btn.isConnected).toBe(true); // still in DOM, click still works
+    btn.click();
+    expect(btn.textContent).toBe('<');
+  });
 });
 
 // ── Destroy ─────────────────────────────────────────────────────────

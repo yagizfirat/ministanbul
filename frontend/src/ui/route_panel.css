@@ -256,10 +256,25 @@
 }
 
 /* Collapsed state */
+.route-panel[data-collapsed="true"] .route-panel__header {
+  /* 40px width — flex satır içi sığmaz; column'a geç + padding daralt
+     → collapse-btn üstte görünür (geri açma yolu), title altta dikey. */
+  flex-direction: column;
+  padding: 8px 4px;
+  gap: 6px;
+}
+
 .route-panel[data-collapsed="true"] .route-panel__title {
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   text-align: center;
+  flex-grow: 0;
+}
+
+.route-panel[data-collapsed="true"] .route-panel__collapse-btn {
+  /* explicit visible — flex shrink baskısı altında kaybolmasın */
+  flex-shrink: 0;
+  padding: 4px 8px;
 }
 
 .route-panel[data-collapsed="true"] .route-panel__count,
