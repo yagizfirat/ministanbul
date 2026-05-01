@@ -13,9 +13,9 @@
 
 export const ROUTE_COLORS: Record<string, string> = {
   // --- Metro İstanbul (kaynak: Wikipedia Lua modülü) ---
-  // Not: M1A ve M1B Wikipedia modülünde aynı kırmızıda (EE2229).
-  // Pratikte metro.istanbul ağ haritalarında M1A kırmızı / M1B açık
-  // mavi şeklinde ayrılır — TODO: B variantı için ayrı renk doğrula.
+  // M1A ve M1B aynı operatör hattı (M1) — Wikipedia / Wikidata
+  // (Q6048705) / metro.istanbul ağ haritası ikisini de aynı
+  // kırmızı kullanır.
   'M1A': '#EE2229',
   'M1B': '#EE2229',
   'M2':  '#059A4D',
