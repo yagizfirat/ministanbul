@@ -1,18 +1,23 @@
 """REST API + preview page for Phase 1 data validation (spec §6.3, §7.1)."""
+from django.db.models import Prefetch
 from django.shortcuts import render
+from django.utils.cache import patch_cache_control
 from django_filters import rest_framework as df_filters
 from rest_framework import status, viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework_gis.filters import InBBoxFilter
 
-from apps.gtfs.models import Agency, Route, Shape, Stop, Trip
+from apps.gtfs.models import Agency, Route, Shape, Stop, StopTime, Trip
 from apps.gtfs.serializers import (
     AgencySerializer,
     RouteSerializer,
     ShapeGeoJSONSerializer,
     StopSerializer,
+    TripActiveSerializer,
 )
+from apps.gtfs.services import MODE_FILTER, active_trips_query
+from apps.gtfs.timeutils import ISTANBUL, now_istanbul, parse_hhmmss
 
 # Human-readable mode -> GTFS route_type ints. Kept here (not in models)
 # because this map is API surface; route_type constants on the model are
@@ -121,3 +126,54 @@ class StopViewSet(viewsets.ReadOnlyModelViewSet):
 def preview(request):
     """Phase 1 Leaflet preview — all stops (clustered) + sample routes."""
     return render(request, "preview.html")
+
+
+@api_view(["GET"])
+def trips_active(request):
+    """Faz 5 KM2: trips active right now for the requested mode.
+
+    Query params:
+      mode  (required): metro | marmaray | tram | funicular | ferry
+      time  (optional): HH:MM:SS in Europe/Istanbul; default now.
+    """
+    mode = request.query_params.get("mode")
+    if mode not in MODE_FILTER:
+        return Response(
+            {"error": f"mode must be one of {sorted(MODE_FILTER)}"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    time_param = request.query_params.get("time")
+    if time_param:
+        try:
+            td = parse_hhmmss(time_param)
+        except (ValueError, AttributeError):
+            return Response(
+                {"error": "time must be HH:MM:SS"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        base = now_istanbul().replace(hour=0, minute=0, second=0, microsecond=0)
+        now_dt = base + td
+    else:
+        now_dt = now_istanbul()
+
+    qs = (
+        active_trips_query(mode, now_dt)
+        .select_related("route", "shape")
+        .prefetch_related(
+            Prefetch(
+                "stop_times",
+                queryset=StopTime.objects.select_related("stop").order_by("stop_sequence"),
+            )
+        )
+    )
+    data = TripActiveSerializer(qs, many=True).data
+
+    response = Response({
+        "mode": mode,
+        "now": now_dt.isoformat(),
+        "count": len(data),
+        "trips": data,
+    })
+    patch_cache_control(response, max_age=60, public=True)
+    return response

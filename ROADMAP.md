@@ -820,7 +820,7 @@ gerçek gecikmeleri yansıtmadığını bilsin.
 #### Yapılacak iş
 
 1a. ✅ Calendar/CalendarDate Django modeli (lite — KM1, 2026-05-01)
-1b. ⚪ `/api/trips/active/` endpoint
+1b. ✅ `/api/trips/active/` endpoint (KM2, 2026-05-01)
 2. Client interpolator'a "scheduled" mode (Faz 4'ün "live" mode'una ek)
 3. Simulated badge + UI toggle (canlı / simüle / ikisi birden)
 4. Metro / Marmaray / vapur için mod-bazlı renk farklılığı

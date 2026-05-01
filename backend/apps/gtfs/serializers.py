@@ -6,7 +6,7 @@ only Shape uses proper GeoJSON via drf-gis (route-line rendering).
 from rest_framework import serializers
 from rest_framework_gis.serializers import GeoFeatureModelSerializer
 
-from apps.gtfs.models import Agency, Route, Shape, Stop
+from apps.gtfs.models import Agency, Route, Shape, Stop, Trip
 
 
 class AgencySerializer(serializers.ModelSerializer):
@@ -56,3 +56,47 @@ class ShapeGeoJSONSerializer(GeoFeatureModelSerializer):
         model = Shape
         geo_field = "geometry"
         fields = ["id", "shape_id"]
+
+
+_INVERSE_MODE_BY_RT = {0: "tram", 4: "ferry", 7: "funicular"}
+
+
+class TripActiveSerializer(serializers.ModelSerializer):
+    """Faz 5 /api/trips/active/ payload (flat trip + stop_times)."""
+
+    mode = serializers.SerializerMethodField()
+    route_id = serializers.CharField(source="route.route_id")
+    route_short_name = serializers.CharField(source="route.short_name")
+    route_long_name = serializers.CharField(source="route.long_name")
+    shape_id = serializers.SerializerMethodField()
+    stop_times = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Trip
+        fields = [
+            "trip_id", "route_id", "route_short_name", "route_long_name",
+            "shape_id", "direction_id", "headsign", "mode", "stop_times",
+        ]
+
+    def get_mode(self, obj):
+        rt = obj.route.route_type
+        short = (obj.route.short_name or "").lower()
+        if rt == 1:
+            return "marmaray" if short.startswith("marmaray") else "metro"
+        return _INVERSE_MODE_BY_RT.get(rt, "unknown")
+
+    def get_shape_id(self, obj):
+        return obj.shape.shape_id if obj.shape_id else None
+
+    def get_stop_times(self, obj):
+        # Discovery: arrival_time is timedelta — serialize as int seconds.
+        # StopTime.Meta.ordering already includes stop_sequence, so the
+        # prefetched list arrives in order.
+        return [
+            {
+                "stop_id": st.stop.stop_id,
+                "sequence": st.stop_sequence,
+                "arrival_seconds": int(st.arrival_time.total_seconds()),
+            }
+            for st in obj.stop_times.all()
+        ]
