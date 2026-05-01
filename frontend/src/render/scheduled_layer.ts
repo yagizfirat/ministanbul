@@ -40,23 +40,40 @@ function modeMatchExpression(field: 'fill' | 'stroke'): DataDrivenPropertyValueS
   ] as unknown as ExpressionSpecification;
 }
 
+// Pure paint factory — alt-iş b/d patterniyle simetri için dışarı
+// export edildi.
+export function buildScheduledLayerPaint() {
+  return {
+    'circle-radius': [
+      'interpolate', ['linear'], ['zoom'],
+      10, 3,
+      14, 5,
+      18, 8,
+    ],
+    'circle-color': modeMatchExpression('fill'),
+    'circle-stroke-width': 1,
+    'circle-stroke-color': modeMatchExpression('stroke'),
+  };
+}
+
+// Pure feature builder — updateScheduled içindeki side-effect'i
+// (setData) test'te zorlamak yerine, properties'i üreten saf
+// fonksiyonu izole eder.
+export function buildScheduledFeature(p: InterpolatedScheduledTrip): ScheduledFeature {
+  return {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+    properties: { trip_id: p.trip_id, mode: p.mode },
+  };
+}
+
 export function initScheduledLayer(map: MapLibreMap): void {
   map.addSource(SOURCE_ID, { type: 'geojson', data: EMPTY_FC });
   map.addLayer({
     id: LAYER_ID,
     type: 'circle',
     source: SOURCE_ID,
-    paint: {
-      'circle-radius': [
-        'interpolate', ['linear'], ['zoom'],
-        10, 3,
-        14, 5,
-        18, 8,
-      ],
-      'circle-color': modeMatchExpression('fill'),
-      'circle-stroke-width': 1,
-      'circle-stroke-color': modeMatchExpression('stroke'),
-    },
+    paint: buildScheduledLayerPaint() as unknown as Record<string, unknown>,
   });
 }
 
@@ -68,12 +85,7 @@ export function updateScheduled(
   if (!source) return;
   const features: ScheduledFeature[] = new Array(positions.length);
   for (let i = 0; i < positions.length; i++) {
-    const p = positions[i];
-    features[i] = {
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
-      properties: { trip_id: p.trip_id, mode: p.mode },
-    };
+    features[i] = buildScheduledFeature(positions[i]);
   }
   source.setData({ type: 'FeatureCollection', features });
 }

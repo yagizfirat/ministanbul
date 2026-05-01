@@ -14,6 +14,7 @@ export interface StopProjection {
 export interface PreparedTrip {
   trip_id: string;
   route_id: string;
+  short_name: string;
   direction_id: number;
   mode: string;
   polyline: LonLat[];
@@ -25,6 +26,7 @@ export interface PreparedTrip {
 
 export interface InterpolatedScheduledTrip {
   trip_id: string;
+  short_name: string;
   lon: number;
   lat: number;
   bearing: number | null;
@@ -63,6 +65,7 @@ export function prepareTrip(trip: ActiveTrip, shape: LonLat[]): PreparedTrip | n
   return {
     trip_id: trip.trip_id,
     route_id: trip.route_id,
+    short_name: trip.route_short_name,
     direction_id: trip.direction_id,
     mode: trip.mode,
     polyline,
@@ -92,8 +95,14 @@ export function interpolateScheduledTrip(
   if (i >= sps.length - 1) {
     // Right at (or past) the last stop — emit the last stop pose.
     const pose = pointAtArcLength(sps[i].arcLengthM, prep.polyline, prep.cumDist);
-    return { trip_id: prep.trip_id, lon: pose.lon, lat: pose.lat,
-             bearing: pose.bearing, mode: prep.mode };
+    return {
+      trip_id: prep.trip_id,
+      short_name: prep.short_name,
+      lon: pose.lon,
+      lat: pose.lat,
+      bearing: pose.bearing,
+      mode: prep.mode,
+    };
   }
   const a = sps[i];
   const b = sps[i + 1];
@@ -103,6 +112,7 @@ export function interpolateScheduledTrip(
   const pose = pointAtArcLength(arcLen, prep.polyline, prep.cumDist);
   return {
     trip_id: prep.trip_id,
+    short_name: prep.short_name,
     lon: pose.lon,
     lat: pose.lat,
     bearing: pose.bearing,
