@@ -224,11 +224,11 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
   });
   map.on('click', 'fleet-circles', (e) => {
     if (!e.features?.[0]) return;
-    showVehiclePopup(map, e.lngLat, e.features[0].properties as never, 'iett');
+    showVehiclePopup(map, e.lngLat, e.features[0].properties as never, 'iett', routeStore);
   });
   map.on('click', 'scheduled-circles', (e) => {
     if (!e.features?.[0]) return;
-    showVehiclePopup(map, e.lngLat, e.features[0].properties as never, 'scheduled');
+    showVehiclePopup(map, e.lngLat, e.features[0].properties as never, 'scheduled', routeStore);
   });
   map.on('click', (e) => {
     // Layer-spesifik handler'lar zaten yakaladı; boş alana tıklamada

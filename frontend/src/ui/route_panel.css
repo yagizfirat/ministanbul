@@ -354,6 +354,36 @@
   font-style: italic;
 }
 
+.vehicle-popup__title {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.vehicle-popup__short {
+  font-weight: 700;
+  font-size: 13px;
+  color: #111827;
+}
+
+.vehicle-popup__long {
+  font-size: 11px;
+  color: #4b5563;
+}
+
+.vehicle-popup__operator {
+  font-size: 11px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.vehicle-popup__unmapped {
+  font-style: italic;
+  color: #9ca3af;
+  font-size: 11px;
+}
+
 /* Toast (alt-iş g f-polish-3 madde 3): bus zoom başarısız vb. küçük
    bilgi mesajları için fade-in/fade-out element. */
 .toast {

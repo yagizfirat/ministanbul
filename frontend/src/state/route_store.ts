@@ -28,6 +28,13 @@ export class RouteStore {
     for (const s of summaries) this.summariesByRouteId.set(s.route_id, s);
   }
 
+  // Vehicle popup için: feature.properties.route_id ile metadata
+  // çekme (short_name + long_name + agency_name). Bus için bus
+  // routes set'i de dahil edildiyse aynı lookup çalışır.
+  getMeta(routeId: string): RouteSummary | null {
+    return this.summariesByRouteId.get(routeId) ?? null;
+  }
+
   has(routeId: string): boolean {
     return this.entries.has(routeId);
   }
