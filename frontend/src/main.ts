@@ -15,6 +15,7 @@ import { initRouteLinesLayer } from './render/route_lines_layer';
 import { initScheduledLayer, updateScheduled } from './render/scheduled_layer';
 import { initTerrain } from './render/terrain';
 import { ScheduledFleet } from './simulation/scheduled_fleet';
+import type { InterpolatedScheduledTrip } from './simulation/scheduled_trip';
 import { createLastUpdateIndicator } from './ui/last_update_indicator';
 
 const ISTANBUL_CENTER: [number, number] = [29.00, 41.04];
@@ -28,9 +29,12 @@ const REST_POLL_INTERVAL_MS = 60_000;
 const ALWAYS_VISIBLE_MODES = ['subway', 'tram', 'funicular'];
 const ROUTE_FETCH_BATCH = 10;
 const SCHEDULED_POLL_INTERVAL_MS = 60_000;
+const SCHEDULED_MODES = ['metro', 'marmaray', 'tram', 'funicular', 'ferry'] as const;
 
 const store = new SnapshotStore();
-const scheduledFleet = new ScheduledFleet();
+const scheduledFleets = new Map<string, ScheduledFleet>(
+  SCHEDULED_MODES.map((m) => [m, new ScheduledFleet()]),
+);
 const indicator = createLastUpdateIndicator();
 
 // Module-level Intl.DateTimeFormat cache: avoid building one per frame.
@@ -127,8 +131,13 @@ function startRenderLoop(): void {
   function frame(): void {
     const positions = store.getInterpolated(performance.now());
     updateFleet(map, positions);
-    const scheduledPositions = scheduledFleet.getInterpolated(nowSecondsIstanbul());
-    updateScheduled(map, scheduledPositions);
+    const nowSec = nowSecondsIstanbul();
+    const allScheduled: InterpolatedScheduledTrip[] = [];
+    for (const fleet of scheduledFleets.values()) {
+      const slice = fleet.getInterpolated(nowSec);
+      for (let i = 0; i < slice.length; i++) allScheduled.push(slice[i]);
+    }
+    updateScheduled(map, allScheduled);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
@@ -136,17 +145,24 @@ function startRenderLoop(): void {
 
 function startScheduledPolling(): void {
   async function pollOnce(): Promise<void> {
-    try {
-      const data = await fetchActiveTrips('metro');
-      const result = await scheduledFleet.setActiveTrips(data.trips);
-      console.log(
-        `[scheduled] metro: ${data.count} active, prepared=${scheduledFleet.size()}, ` +
-          `shapeCache=${scheduledFleet.shapeCacheSize()} ` +
-          `(added=${result.added} retained=${result.retained} removed=${result.removed} ` +
-          `noShape=${result.skippedNoShape} snapFail=${result.skippedSnapFail})`,
-      );
-    } catch (err) {
-      console.warn('[scheduled] poll failed', err);
+    const results = await Promise.allSettled(
+      SCHEDULED_MODES.map(async (mode) => {
+        const data = await fetchActiveTrips(mode);
+        const fleet = scheduledFleets.get(mode)!;
+        const result = await fleet.setActiveTrips(data.trips);
+        return { mode, count: data.count, prepared: fleet.size(), shapeCache: fleet.shapeCacheSize(), result };
+      }),
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        const { mode, count, prepared, shapeCache, result } = r.value;
+        console.log(
+          `[scheduled] ${mode}: ${count} active, prepared=${prepared}, shapeCache=${shapeCache} ` +
+            `(noShape=${result.skippedNoShape} snapFail=${result.skippedSnapFail})`,
+        );
+      } else {
+        console.warn('[scheduled] poll failed', r.reason);
+      }
     }
   }
   void pollOnce();

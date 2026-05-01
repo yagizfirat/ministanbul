@@ -1,11 +1,17 @@
-import type { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
+import type {
+  Map as MapLibreMap,
+  GeoJSONSource,
+  ExpressionSpecification,
+  DataDrivenPropertyValueSpecification,
+} from 'maplibre-gl';
 import type { InterpolatedScheduledTrip } from '../simulation/scheduled_trip';
+import {
+  SCHEDULED_VEHICLE_COLORS,
+  SCHEDULED_VEHICLE_FALLBACK,
+} from '../state/mode_colors';
 
 const SOURCE_ID = 'scheduled';
 const LAYER_ID = 'scheduled-circles';
-
-const COLOR_METRO = '#60a5fa';
-const COLOR_OUTLINE = '#1e3a8a';
 
 interface ScheduledFeature {
   type: 'Feature';
@@ -20,6 +26,20 @@ interface ScheduledCollection {
 
 const EMPTY_FC: ScheduledCollection = { type: 'FeatureCollection', features: [] };
 
+function modeMatchExpression(field: 'fill' | 'stroke'): DataDrivenPropertyValueSpecification<string> {
+  // Build: ['match', ['get', 'mode'], 'metro', '#xxx', 'marmaray', '#xxx', ..., fallback]
+  const branches: (string | string[])[] = [];
+  for (const [mode, colors] of Object.entries(SCHEDULED_VEHICLE_COLORS)) {
+    branches.push(mode, colors[field]);
+  }
+  return [
+    'match',
+    ['get', 'mode'],
+    ...branches,
+    SCHEDULED_VEHICLE_FALLBACK[field],
+  ] as unknown as ExpressionSpecification;
+}
+
 export function initScheduledLayer(map: MapLibreMap): void {
   map.addSource(SOURCE_ID, { type: 'geojson', data: EMPTY_FC });
   map.addLayer({
@@ -33,9 +53,9 @@ export function initScheduledLayer(map: MapLibreMap): void {
         14, 5,
         18, 8,
       ],
-      'circle-color': COLOR_METRO,
+      'circle-color': modeMatchExpression('fill'),
       'circle-stroke-width': 1,
-      'circle-stroke-color': COLOR_OUTLINE,
+      'circle-stroke-color': modeMatchExpression('stroke'),
     },
   });
 }

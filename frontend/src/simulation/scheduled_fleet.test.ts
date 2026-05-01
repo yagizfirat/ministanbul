@@ -151,6 +151,31 @@ describe('ScheduledFleet.setActiveTrips', () => {
   });
 });
 
+describe('ScheduledFleet — multi-instance isolation', () => {
+  it('two fleets cache shapes independently', async () => {
+    const metroFleet = new ScheduledFleet();
+    const ferryFleet = new ScheduledFleet();
+    await metroFleet.setActiveTrips([trip({})]); // shape sh1
+    await ferryFleet.setActiveTrips([trip2({})]); // shape sh2
+    expect(metroFleet.shapeCacheSize()).toBe(1);
+    expect(ferryFleet.shapeCacheSize()).toBe(1);
+    expect(metroFleet.size()).toBe(1);
+    expect(ferryFleet.size()).toBe(1);
+    // sh1 fetched once for metro, sh2 fetched once for ferry → 2 total.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('removing a trip from one fleet does not touch the other', async () => {
+    const metroFleet = new ScheduledFleet();
+    const ferryFleet = new ScheduledFleet();
+    await metroFleet.setActiveTrips([trip({})]);
+    await ferryFleet.setActiveTrips([trip2({})]);
+    await metroFleet.setActiveTrips([]);
+    expect(metroFleet.size()).toBe(0);
+    expect(ferryFleet.size()).toBe(1);
+  });
+});
+
 describe('ScheduledFleet.getInterpolated', () => {
   it('returns only trips whose window covers nowSec', async () => {
     const fleet = new ScheduledFleet();
