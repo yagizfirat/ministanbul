@@ -1,4 +1,4 @@
-import type { ActiveTrip } from '../data/api';
+import { fetchShape, type ActiveTrip } from '../data/api';
 import {
   prepareTrip,
   interpolateScheduledTrip,
@@ -6,8 +6,6 @@ import {
   type PreparedTrip,
 } from './scheduled_trip';
 import type { LonLat } from './polyline';
-
-export type ShapeLookup = (shapeId: string) => LonLat[] | null;
 
 export interface SetActiveTripsResult {
   added: number;
@@ -19,11 +17,9 @@ export interface SetActiveTripsResult {
 
 export class ScheduledFleet {
   private prepared = new Map<string, PreparedTrip>();
+  private shapeCache = new Map<string, LonLat[]>();
 
-  setActiveTrips(
-    trips: ActiveTrip[],
-    shapeLookup: ShapeLookup,
-  ): SetActiveTripsResult {
+  async setActiveTrips(trips: ActiveTrip[]): Promise<SetActiveTripsResult> {
     const incomingIds = new Set(trips.map((t) => t.trip_id));
     let added = 0;
     let retained = 0;
@@ -38,18 +34,39 @@ export class ScheduledFleet {
       }
     }
 
-    for (const trip of trips) {
-      if (this.prepared.has(trip.trip_id)) {
-        retained++;
-        continue;
+    const newTrips = trips.filter((t) => !this.prepared.has(t.trip_id));
+    const heldTrips = trips.length - newTrips.length;
+    retained = heldTrips;
+
+    // Collect distinct shape_ids that are not yet cached, then fetch them in
+    // parallel. A trip with shape_id=null falls into the noShape bucket.
+    const shapeIdsToFetch = new Set<string>();
+    for (const t of newTrips) {
+      if (t.shape_id !== null && !this.shapeCache.has(t.shape_id)) {
+        shapeIdsToFetch.add(t.shape_id);
       }
-      const shapeId = trip.shape_id;
-      if (shapeId === null) {
+    }
+
+    if (shapeIdsToFetch.size > 0) {
+      const fetches = Array.from(shapeIdsToFetch).map(async (sid) => {
+        try {
+          const sf = await fetchShape(sid);
+          this.shapeCache.set(sid, sf.geometry.coordinates as LonLat[]);
+        } catch (err) {
+          console.warn(`[scheduled] shape fetch failed for ${sid}`, err);
+        }
+      });
+      await Promise.all(fetches);
+    }
+
+    for (const trip of newTrips) {
+      const sid = trip.shape_id;
+      if (sid === null) {
         skippedNoShape++;
         continue;
       }
-      const shape = shapeLookup(shapeId);
-      if (shape === null) {
+      const shape = this.shapeCache.get(sid);
+      if (shape === undefined) {
         skippedNoShape++;
         continue;
       }
@@ -78,8 +95,7 @@ export class ScheduledFleet {
     return this.prepared.size;
   }
 
-  // KM3-a direction-bug debug. Removed in KM3-b once the diagnosis is closed.
-  _debugEntries(): PreparedTrip[] {
-    return Array.from(this.prepared.values());
+  shapeCacheSize(): number {
+    return this.shapeCache.size;
   }
 }

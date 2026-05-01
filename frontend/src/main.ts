@@ -11,7 +11,7 @@ import { SnapshotStore } from './state/snapshot_store';
 import { RouteStore } from './state/route_store';
 import { initFleetLayer, updateFleet } from './render/fleet_layer';
 import { initBuildingsLayer } from './render/buildings_layer';
-import { initRouteLinesLayer, getShapeFor } from './render/route_lines_layer';
+import { initRouteLinesLayer } from './render/route_lines_layer';
 import { initScheduledLayer, updateScheduled } from './render/scheduled_layer';
 import { initTerrain } from './render/terrain';
 import { ScheduledFleet } from './simulation/scheduled_fleet';
@@ -32,9 +32,6 @@ const SCHEDULED_POLL_INTERVAL_MS = 60_000;
 const store = new SnapshotStore();
 const scheduledFleet = new ScheduledFleet();
 const indicator = createLastUpdateIndicator();
-
-// KM3-a direction-bug debug. Removed in KM3-b once diagnosis is closed.
-(window as unknown as { __sf: ScheduledFleet }).__sf = scheduledFleet;
 
 // Module-level Intl.DateTimeFormat cache: avoid building one per frame.
 const ISTANBUL_TIME_FMT = new Intl.DateTimeFormat('en-GB', {
@@ -141,9 +138,10 @@ function startScheduledPolling(): void {
   async function pollOnce(): Promise<void> {
     try {
       const data = await fetchActiveTrips('metro');
-      const result = scheduledFleet.setActiveTrips(data.trips, getShapeFor);
+      const result = await scheduledFleet.setActiveTrips(data.trips);
       console.log(
-        `[scheduled] metro: ${data.count} active, prepared=${scheduledFleet.size()} ` +
+        `[scheduled] metro: ${data.count} active, prepared=${scheduledFleet.size()}, ` +
+          `shapeCache=${scheduledFleet.shapeCacheSize()} ` +
           `(added=${result.added} retained=${result.retained} removed=${result.removed} ` +
           `noShape=${result.skippedNoShape} snapFail=${result.skippedSnapFail})`,
       );

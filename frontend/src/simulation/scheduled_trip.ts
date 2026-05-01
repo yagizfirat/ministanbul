@@ -35,11 +35,10 @@ export function prepareTrip(trip: ActiveTrip, shape: LonLat[]): PreparedTrip | n
   if (trip.stop_times.length < 2) return null;
   if (shape.length < 2) return null;
 
-  // direction_id=1 → reverse the shape so the trip walks start → end on the
-  // working polyline. Reverse copy (`[...shape].reverse()`) keeps the cached
-  // forward shape in route_lines_layer untouched.
-  const polyline: LonLat[] =
-    trip.direction_id === 1 ? [...shape].reverse() : [...shape];
+  // Backend serves each direction's shape in its own forward order; the
+  // shape lookup is shape_id-keyed, so no reverse is needed. direction_id
+  // is metadata only at this stage.
+  const polyline: LonLat[] = shape.slice();
   const cumDist = cumulativeDistances(polyline);
 
   const projections: StopProjection[] = [];

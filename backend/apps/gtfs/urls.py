@@ -11,6 +11,11 @@ router.register(r"stops", views.StopViewSet, basename="stop")
 
 urlpatterns = [
     path("api/trips/active/", views.trips_active, name="trips-active"),
+    path(
+        "api/shapes/<str:shape_id>/",
+        views.ShapeDetailView.as_view(),
+        name="shape-detail",
+    ),
     path("api/", include(router.urls)),
     path("preview/", views.preview, name="preview"),
 ]

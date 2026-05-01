@@ -131,3 +131,14 @@ export async function fetchRouteShape(routeId: string): Promise<ShapeFeature | n
   }
   return (await res.json()) as ShapeFeature;
 }
+
+// Per-shape lookup for scheduled trips. Each direction's shape is its own
+// row in GTFS, so trips reference shape_id directly (Faz 5 KM3-a fix).
+export async function fetchShape(shapeId: string): Promise<ShapeFeature> {
+  const url = `/api/shapes/${shapeId}/`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) {
+    throw new Error(`fetchShape(${shapeId}) failed: HTTP ${res.status}`);
+  }
+  return (await res.json()) as ShapeFeature;
+}

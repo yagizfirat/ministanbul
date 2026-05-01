@@ -47,19 +47,13 @@ describe('prepareTrip', () => {
     expect(p.lastArrSec).toBe(36300);
   });
 
-  it('reverses the polyline for direction_id=1 and re-projects stops', () => {
-    const reversed = makeTrip({
-      direction_id: 1,
-      stop_times: [
-        { stop_id: 's2', sequence: 1, arrival_seconds: 36000, lat: 41.02, lon: 29.001 },
-        { stop_id: 's1', sequence: 2, arrival_seconds: 36240, lat: 41.0, lon: 29.001 },
-        { stop_id: 's0', sequence: 3, arrival_seconds: 36300, lat: 41.0, lon: 29.0 },
-      ],
-    });
-    const prep = prepareTrip(reversed, SHAPE);
-    expect(prep).not.toBeNull();
-    expect(prep!.polyline[0]).toEqual([29.001, 41.02]);
-    expect(prep!.polyline[prep!.polyline.length - 1]).toEqual([29.0, 41.0]);
+  it('does not reverse the polyline for direction_id=1 (backend already serves per-direction shape)', () => {
+    const prepFwd = prepareTrip(makeTrip({ direction_id: 0 }), SHAPE)!;
+    const prepRev = prepareTrip(makeTrip({ direction_id: 1 }), SHAPE)!;
+    // Same incoming shape → identical working polyline regardless of direction_id.
+    expect(prepFwd.polyline).toEqual(prepRev.polyline);
+    expect(prepFwd.polyline[0]).toEqual(SHAPE[0]);
+    expect(prepFwd.polyline[prepFwd.polyline.length - 1]).toEqual(SHAPE[SHAPE.length - 1]);
   });
 
   it('returns null when a stop is too far from the polyline (>500 m)', () => {

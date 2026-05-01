@@ -5,6 +5,7 @@ from django.utils.cache import patch_cache_control
 from django_filters import rest_framework as df_filters
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
+from rest_framework.generics import RetrieveAPIView
 from rest_framework.response import Response
 from rest_framework_gis.filters import InBBoxFilter
 
@@ -106,6 +107,27 @@ class RouteViewSet(viewsets.ReadOnlyModelViewSet):
             return Response(status=status.HTTP_204_NO_CONTENT)
         ser = ShapeGeoJSONSerializer(trip.shape)
         return Response(ser.data)
+
+
+class ShapeDetailView(RetrieveAPIView):
+    """Direct lookup of a Shape geometry by GTFS shape_id.
+
+    Faz 5 KM3-a fix: scheduled trips reference their own shape per
+    direction. Looking up `/api/routes/{id}/shape/` only returns one
+    arbitrary direction's shape (route-level "first trip with a shape"),
+    which dropped half the trips. Trips now fetch by shape_id directly.
+    """
+
+    queryset = Shape.objects.all()
+    serializer_class = ShapeGeoJSONSerializer
+    lookup_field = "shape_id"
+
+    def retrieve(self, request, *args, **kwargs):
+        response = super().retrieve(request, *args, **kwargs)
+        # Shape geometry is effectively immutable per shape_id; aggressive
+        # cache is safe and cuts the polling cost on the frontend side.
+        patch_cache_control(response, max_age=86_400, public=True)
+        return response
 
 
 class StopBboxFilter(InBBoxFilter):
