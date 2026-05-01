@@ -1,16 +1,30 @@
 import type { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
 import type { InterpolatedVehicle } from '../state/snapshot_store';
+import { MODE_FALLBACK_COLORS } from '../styling/route_colors';
 
 const SOURCE_ID = 'fleet';
 const LAYER_ID = 'fleet-circles';
 
-const COLOR_MAPPED = '#2563eb';   // blue
-const COLOR_UNMAPPED = '#dc2626'; // red
+// Faz 6 KM1 alt-iş d: tüm İETT araçları İBB belediye sarısı.
+// Mapped/unmapped ayrımı renk yerine border ile (mavi/kırmızı kaldırıldı —
+// kırmızı "hata" çağrışımı yapıyordu, oysa unmapped doğal bir durum,
+// spec §A.13/A.14).
+const COLOR_FILL = MODE_FALLBACK_COLORS.bus;
+const COLOR_STROKE_MAPPED = '#3a2a00'; // koyu kahve — sarının HSL koyu tonu
+const STROKE_WIDTH_MAPPED = 1.5;
+const STROKE_WIDTH_UNMAPPED = 0;
+
+interface FleetFeatureProperties {
+  id: string;
+  // route_id is set ONLY for mapped vehicles. The paint expression
+  // uses ['has', 'route_id'] to draw the border.
+  route_id?: string;
+}
 
 interface FleetFeature {
   type: 'Feature';
   geometry: { type: 'Point'; coordinates: [number, number] };
-  properties: { id: string; color: string };
+  properties: FleetFeatureProperties;
 }
 
 interface FleetCollection {
@@ -21,8 +35,7 @@ interface FleetCollection {
 const EMPTY_FC: FleetCollection = { type: 'FeatureCollection', features: [] };
 
 // Pure paint factory — extracted so the expression structure is
-// unit-testable and so per-iteration tweaks (KM1 alt-iş d) don't have
-// to mutate map.addLayer call sites.
+// unit-testable.
 export function buildFleetPaint() {
   return {
     'circle-radius': [
@@ -30,9 +43,13 @@ export function buildFleetPaint() {
       10, 3,
       14, 6,
     ],
-    'circle-color': ['get', 'color'],
-    'circle-stroke-width': 0.5,
-    'circle-stroke-color': 'rgba(0,0,0,0.3)',
+    'circle-color': COLOR_FILL,
+    'circle-stroke-width': [
+      'case',
+      ['has', 'route_id'], STROKE_WIDTH_MAPPED,
+      STROKE_WIDTH_UNMAPPED,
+    ],
+    'circle-stroke-color': COLOR_STROKE_MAPPED,
   } as const;
 }
 
@@ -52,13 +69,12 @@ export function updateFleet(map: MapLibreMap, positions: InterpolatedVehicle[]):
   const features: FleetFeature[] = new Array(positions.length);
   for (let i = 0; i < positions.length; i++) {
     const p = positions[i];
+    const props: FleetFeatureProperties = { id: p.id };
+    if (p.route_id !== null) props.route_id = p.route_id;
     features[i] = {
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
-      properties: {
-        id: p.id,
-        color: p.route_id === null ? COLOR_UNMAPPED : COLOR_MAPPED,
-      },
+      properties: props,
     };
   }
   source.setData({ type: 'FeatureCollection', features });

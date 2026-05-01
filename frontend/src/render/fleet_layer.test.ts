@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildFleetPaint } from './fleet_layer';
+import { MODE_FALLBACK_COLORS } from '../styling/route_colors';
 
 describe('buildFleetPaint', () => {
   it('returns a circle paint spec with all required keys', () => {
@@ -10,14 +11,39 @@ describe('buildFleetPaint', () => {
     expect(paint['circle-stroke-color']).toBeTruthy();
   });
 
-  it('binds circle-color to the per-feature color property', () => {
-    const paint = buildFleetPaint();
-    expect(paint['circle-color']).toEqual(['get', 'color']);
+  it('uses İBB municipal yellow as the fill for every IETT vehicle', () => {
+    expect(buildFleetPaint()['circle-color']).toBe(MODE_FALLBACK_COLORS.bus);
+  });
+
+  it('drives circle-stroke-width via a case on ["has","route_id"]', () => {
+    const w = buildFleetPaint()['circle-stroke-width'];
+    expect(Array.isArray(w)).toBe(true);
+    expect(w[0]).toBe('case');
+    // [case, condition, then, else]
+    expect(w[1]).toEqual(['has', 'route_id']);
+    expect(w[2]).toBeGreaterThan(0); // mapped → visible border
+    expect(w[3]).toBe(0);            // unmapped → no border
   });
 
   it('uses an interpolate expression for circle-radius (zoom-driven)', () => {
     const radius = buildFleetPaint()['circle-radius'];
     expect(Array.isArray(radius)).toBe(true);
     expect(radius[0]).toBe('interpolate');
+  });
+
+  it('manually evaluates the stroke-width case for a mapped vs unmapped feature', () => {
+    // Tiny inline evaluator to prove the expression's intent end-to-end.
+    const expr = buildFleetPaint()['circle-stroke-width'] as readonly [
+      'case',
+      readonly ['has', string],
+      number,
+      number,
+    ];
+    const ev = (props: Record<string, unknown>): number => {
+      const [, cond, thenV, elseV] = expr;
+      return cond[0] === 'has' && cond[1] in props ? thenV : elseV;
+    };
+    expect(ev({ id: 'x', route_id: '34A' })).toBe(1.5);
+    expect(ev({ id: 'x' })).toBe(0);
   });
 });
