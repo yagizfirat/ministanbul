@@ -26,7 +26,48 @@ export interface RouteSummary {
 export interface ShapeFeature {
   type: 'Feature';
   geometry: { type: 'LineString'; coordinates: [number, number][] };
-  properties: Record<string, unknown>;
+  properties: { shape_id: string };
+}
+
+export interface ActiveTripStopTime {
+  stop_id: string;
+  sequence: number;
+  arrival_seconds: number;
+  lat: number;
+  lon: number;
+}
+
+export interface ActiveTrip {
+  trip_id: string;
+  route_id: string;
+  route_short_name: string;
+  route_long_name: string;
+  shape_id: string | null;
+  direction_id: number;
+  headsign: string;
+  mode: string;
+  stop_times: ActiveTripStopTime[];
+}
+
+export interface ActiveTripsResponse {
+  mode: string;
+  now: string;
+  count: number;
+  trips: ActiveTrip[];
+}
+
+export async function fetchActiveTrips(
+  mode: string,
+  time?: string,
+): Promise<ActiveTripsResponse> {
+  const qs = new URLSearchParams({ mode });
+  if (time) qs.set('time', time);
+  const url = `/api/trips/active/?${qs.toString()}`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) {
+    throw new Error(`fetchActiveTrips(${mode}) failed: HTTP ${res.status}`);
+  }
+  return (await res.json()) as ActiveTripsResponse;
 }
 
 interface BackendRoute {

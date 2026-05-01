@@ -91,12 +91,15 @@ class TripActiveSerializer(serializers.ModelSerializer):
     def get_stop_times(self, obj):
         # Discovery: arrival_time is timedelta — serialize as int seconds.
         # StopTime.Meta.ordering already includes stop_sequence, so the
-        # prefetched list arrives in order.
+        # prefetched list arrives in order. lat/lon embedded for frontend
+        # stop projection (KM3-a) — saves a separate /api/stops/ batch fetch.
         return [
             {
                 "stop_id": st.stop.stop_id,
                 "sequence": st.stop_sequence,
                 "arrival_seconds": int(st.arrival_time.total_seconds()),
+                "lat": st.stop.location.y,
+                "lon": st.stop.location.x,
             }
             for st in obj.stop_times.all()
         ]

@@ -1,13 +1,20 @@
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { connectWebSocket, type VehicleSnapshot } from './data/websocket';
-import { fetchLiveVehicles, fetchActiveRoutes, type RouteSummary } from './data/api';
+import {
+  fetchActiveRoutes,
+  fetchActiveTrips,
+  fetchLiveVehicles,
+  type RouteSummary,
+} from './data/api';
 import { SnapshotStore } from './state/snapshot_store';
 import { RouteStore } from './state/route_store';
 import { initFleetLayer, updateFleet } from './render/fleet_layer';
 import { initBuildingsLayer } from './render/buildings_layer';
-import { initRouteLinesLayer } from './render/route_lines_layer';
+import { initRouteLinesLayer, getShapeFor } from './render/route_lines_layer';
+import { initScheduledLayer, updateScheduled } from './render/scheduled_layer';
 import { initTerrain } from './render/terrain';
+import { ScheduledFleet } from './simulation/scheduled_fleet';
 import { createLastUpdateIndicator } from './ui/last_update_indicator';
 
 const ISTANBUL_CENTER: [number, number] = [29.00, 41.04];
@@ -20,9 +27,34 @@ const REST_POLL_INTERVAL_MS = 60_000;
 // (KM6) — metrobus polyline waits on Faz 5 OSM snapping (Ek A.10).
 const ALWAYS_VISIBLE_MODES = ['subway', 'tram', 'funicular'];
 const ROUTE_FETCH_BATCH = 10;
+const SCHEDULED_POLL_INTERVAL_MS = 60_000;
 
 const store = new SnapshotStore();
+const scheduledFleet = new ScheduledFleet();
 const indicator = createLastUpdateIndicator();
+
+// Module-level Intl.DateTimeFormat cache: avoid building one per frame.
+const ISTANBUL_TIME_FMT = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Istanbul',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+});
+
+function nowSecondsIstanbul(): number {
+  // formatToParts so we don't have to parse free-form string output.
+  const parts = ISTANBUL_TIME_FMT.formatToParts(new Date());
+  let h = 0;
+  let m = 0;
+  let s = 0;
+  for (const p of parts) {
+    if (p.type === 'hour') h = parseInt(p.value, 10);
+    else if (p.type === 'minute') m = parseInt(p.value, 10);
+    else if (p.type === 'second') s = parseInt(p.value, 10);
+  }
+  return h * 3600 + m * 60 + s;
+}
 
 const map = new maplibregl.Map({
   container: 'map',
@@ -47,9 +79,11 @@ map.on('load', () => {
   initFleetLayer(map);
   // Insert route-lines BEFORE fleet-circles so vehicles render on top of lines.
   initRouteLinesLayer(map, 'fleet-circles');
+  // Scheduled layer sits on top of fleet-circles (last → topmost).
+  initScheduledLayer(map);
   startRenderLoop();
   startRealtime();
-  void loadAlwaysVisibleRoutes();
+  void loadAlwaysVisibleRoutes().then(() => startScheduledPolling());
 });
 
 async function loadAlwaysVisibleRoutes(): Promise<void> {
@@ -93,9 +127,29 @@ function startRenderLoop(): void {
   function frame(): void {
     const positions = store.getInterpolated(performance.now());
     updateFleet(map, positions);
+    const scheduledPositions = scheduledFleet.getInterpolated(nowSecondsIstanbul());
+    updateScheduled(map, scheduledPositions);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+}
+
+function startScheduledPolling(): void {
+  async function pollOnce(): Promise<void> {
+    try {
+      const data = await fetchActiveTrips('metro');
+      const result = scheduledFleet.setActiveTrips(data.trips, getShapeFor);
+      console.log(
+        `[scheduled] metro: ${data.count} active, prepared=${scheduledFleet.size()} ` +
+          `(added=${result.added} retained=${result.retained} removed=${result.removed} ` +
+          `noShape=${result.skippedNoShape} snapFail=${result.skippedSnapFail})`,
+      );
+    } catch (err) {
+      console.warn('[scheduled] poll failed', err);
+    }
+  }
+  void pollOnce();
+  setInterval(() => void pollOnce(), SCHEDULED_POLL_INTERVAL_MS);
 }
 
 function startRealtime(): void {

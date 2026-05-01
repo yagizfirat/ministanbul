@@ -229,6 +229,15 @@ def test_arrival_time_serialized_as_int_seconds(client_fri, base_data):
         assert isinstance(a, int)
 
 
+def test_stop_times_carry_lat_lon(client_fri, base_data):
+    r = client_fri.get(URL, {"mode": "metro"})
+    sts = r.json()["trips"][0]["stop_times"]
+    assert all("lat" in st and "lon" in st for st in sts)
+    # First stop fixture: Point(29.0, 41.0)
+    assert sts[0]["lon"] == pytest.approx(29.0)
+    assert sts[0]["lat"] == pytest.approx(41.0)
+
+
 def test_cache_control_header(client_fri, base_data):
     r = client_fri.get(URL, {"mode": "metro"})
     cc = r.headers.get("Cache-Control", "")

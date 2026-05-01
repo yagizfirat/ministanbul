@@ -1,5 +1,6 @@
 import type { Map as MapLibreMap, GeoJSONSource } from 'maplibre-gl';
 import type { ShapeFeature } from '../data/api';
+import type { LonLat } from '../simulation/polyline';
 
 const SOURCE_ID = 'routes';
 const LAYER_ID = 'route-lines';
@@ -7,7 +8,7 @@ const LAYER_ID = 'route-lines';
 interface RouteFeature {
   type: 'Feature';
   geometry: ShapeFeature['geometry'];
-  properties: { route_id: string; mode: string; color: string };
+  properties: { route_id: string; shape_id: string; mode: string; color: string };
 }
 
 interface RouteCollection {
@@ -16,6 +17,7 @@ interface RouteCollection {
 }
 
 const collection: RouteCollection = { type: 'FeatureCollection', features: [] };
+const shapeIndex = new Map<string, LonLat[]>();
 
 export function initRouteLinesLayer(map: MapLibreMap, beforeId?: string): void {
   map.addSource(SOURCE_ID, { type: 'geojson', data: collection });
@@ -48,19 +50,26 @@ export function addRouteToMap(
   shape: ShapeFeature,
 ): void {
   if (collection.features.some((f) => f.properties.route_id === routeId)) return;
+  const shapeId = shape.properties.shape_id;
   collection.features.push({
     type: 'Feature',
     geometry: shape.geometry,
-    properties: { route_id: routeId, mode, color },
+    properties: { route_id: routeId, shape_id: shapeId, mode, color },
   });
+  shapeIndex.set(shapeId, shape.geometry.coordinates as LonLat[]);
   flush(map);
 }
 
 export function removeRouteFromMap(map: MapLibreMap, routeId: string): void {
   const idx = collection.features.findIndex((f) => f.properties.route_id === routeId);
   if (idx === -1) return;
-  collection.features.splice(idx, 1);
+  const [removed] = collection.features.splice(idx, 1);
+  shapeIndex.delete(removed.properties.shape_id);
   flush(map);
+}
+
+export function getShapeFor(shapeId: string): LonLat[] | null {
+  return shapeIndex.get(shapeId) ?? null;
 }
 
 function flush(map: MapLibreMap): void {

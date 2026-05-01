@@ -821,7 +821,8 @@ gerçek gecikmeleri yansıtmadığını bilsin.
 
 1a. ✅ Calendar/CalendarDate Django modeli (lite — KM1, 2026-05-01)
 1b. ✅ `/api/trips/active/` endpoint (KM2, 2026-05-01)
-2. Client interpolator'a "scheduled" mode (Faz 4'ün "live" mode'una ek)
+2a. ✅ Scheduled interpolator metro only (KM3-a, 2026-05-01)
+2b. ⚪ Çoklu mod genişleme (KM3-b)
 3. Simulated badge + UI toggle (canlı / simüle / ikisi birden)
 4. Metro / Marmaray / vapur için mod-bazlı renk farklılığı
 5. OSM Overpass client + `snap_iett_routes` komutu
