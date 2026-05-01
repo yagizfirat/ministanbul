@@ -908,18 +908,26 @@ Alt-iş:
   - **Madde 2**: Bus popup unmapped mesajı insancıllaştırıldı — "Bu araç henüz hat eşlemesi yapılmamış" + "(mapping pipeline güncelleniyor)" detail. Faz 5 borç notu: bus realtime mapping pipeline tamamlanması ayrı tur. (`<bu commit>`)
   - **+5 Vitest case** (194 → 197), **+2 backend** (191 → 193)
 - 📋 **Faz 5 borç (sonraki tur)**: bus realtime mapping pipeline tamamlanması. Şu an İETT canlı vehicle'ların büyük kısmı `route_id=null` (unmapped) → popup'ta "henüz eşlenmemiş" mesajı. Faz 3 6h spatial mapping cache + Faz 5 KM1+ pipeline güncellemesi gerekli.
+- ✅ **alt-iş g f-polish-5** (variant gruplama davranış yeniden tasarımı, 5 commit):
+  - **RouteFocus** array state — multi-route focus (variant grup tek seferde). Tek-variant tek-element array; null = focus yok. (`6f94d1c`)
+  - **3 paint factory** array filter — `['in', ['get','route_id'], ['literal', focused]]` ile tüm variant'lar parlar. setGlowFocus aynı pattern. (`6f94d1c`)
+  - **getRoutesBBox + getVehicleBBoxForRoutes** — union bbox over multiple route_ids; tek-route convenience wrappers korundu. (`6815d4c`)
+  - **Variant satırı sade** — checkbox + "Araç N" italic gri label. long_name (mojibake'li uzun isim) ve agency_name görünmüyor. route_id alfabetik sort, deterministic numbering. (`66dba85`)
+  - **Variant header dblclick** → tüm variants union focus + bbox. `onVariantGroupDoubleClick` callback eklendi (RoutePanelOptions). (`66dba85`)
+  - **main.ts wiring** — `focusAndZoom(routeIds)` helper, hem onRouteDoubleClick hem onVariantGroupDoubleClick aynı yola düşer. (`c6991af`)
+  - **+13 Vitest case** (197 → 210)
 
 ### KM1 toplam (gerçek son)
 
 | | KM1 öncesi | KM1 sonu | Δ |
 |---|---:|---:|---:|
-| Frontend Vitest | 31 | **197** | +166 |
+| Frontend Vitest | 31 | **210** | +179 |
 | Backend pytest | 180 | **193** | +13 (demojibake hibrit) |
-| JS bundle | 1042.87 KB | **1064.39 KB** | +21.52 KB |
-| CSS | 0 KB | **76.69 KB** | +76.69 KB |
+| JS bundle | 1042.87 KB | **1065.70 KB** | +22.83 KB |
+| CSS | 0 KB | **76.78 KB** | +76.78 KB |
 | iETT mojibake recovery | 0% | **75.9%** | +75.9 puan |
 
-KM1 = 7 alt-iş (a/b/c/d/e[geri alındı]/f/g) + 4 polish turu (f-polish, f-polish-2, f-polish-3, f-polish-4). Sıradaki KM kararı (KM2 mobile, KM3 i18n, KM4 perf, KM5 polish) ayrı tartışma.
+KM1 = 7 alt-iş (a/b/c/d/e[geri alındı]/f/g) + 5 polish turu (f-polish, f-polish-2, f-polish-3, f-polish-4, f-polish-5). Sıradaki tur stops sözlüğü mojibake kurtarma (Faz 5 borç). KM2 mobile / KM3 i18n / KM4 perf / KM5 polish ayrı tartışma.
 
 Tahmini süre: 3-4 gün → **gerçek: ~1.5 gün**.
 
