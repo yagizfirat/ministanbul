@@ -354,6 +354,31 @@
   font-style: italic;
 }
 
+/* Toast (alt-iş g f-polish-3 madde 3): bus zoom başarısız vb. küçük
+   bilgi mesajları için fade-in/fade-out element. */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20, 20, 20, 0.92);
+  color: #f3f4f6;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: system-ui, -apple-system, sans-serif;
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+  max-width: 320px;
+  text-align: center;
+}
+
+.toast[data-visible="true"] {
+  opacity: 1;
+}
+
 .route-panel__bus-loading,
 .route-panel__bus-error {
   padding: 16px;
