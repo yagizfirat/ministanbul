@@ -1,0 +1,269 @@
+/* Faz 6 KM1 alt-iş f-5 — RoutePanel UI.
+   Mimari: tüm magic number'lar route_panel.ts içinde RoutePanelConfig
+   sabitleri olarak yaşar; CSS sadece görsel hiyerarşi + transitions. */
+
+.route-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: var(--route-panel-width, 340px);
+  background: rgba(20, 24, 32, 0.92);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: #e5e7eb;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  transition: width 200ms ease;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.route-panel[data-position="left"] {
+  left: 0;
+  right: auto;
+  border-left: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.route-panel[data-collapsed="true"] {
+  width: var(--route-panel-collapse-width, 40px);
+}
+
+.route-panel__header {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.route-panel__title {
+  font-weight: 600;
+  font-size: 14px;
+  flex-grow: 1;
+}
+
+.route-panel__count {
+  font-size: 11px;
+  color: #9ca3af;
+  font-variant-numeric: tabular-nums;
+}
+
+.route-panel__collapse-btn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e5e7eb;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.route-panel__search {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.route-panel__search-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: #e5e7eb;
+  padding: 6px 28px 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+.route-panel__search-input:focus {
+  border-color: #3b82f6;
+}
+
+.route-panel__search-clear {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  font-size: 16px;
+  display: none;
+}
+
+.route-panel__search-clear[data-visible="true"] {
+  display: block;
+}
+
+.route-panel__groups {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.route-panel__group {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.route-panel__group-header {
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.route-panel__group-header:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.route-panel__group-toggle {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0;
+  width: 16px;
+  transition: transform 150ms ease;
+}
+
+.route-panel__group[data-open="false"] .route-panel__group-toggle {
+  transform: rotate(-90deg);
+}
+
+.route-panel__group-label {
+  font-weight: 500;
+  flex-grow: 1;
+}
+
+.route-panel__group-count {
+  font-size: 11px;
+  color: #9ca3af;
+  font-variant-numeric: tabular-nums;
+}
+
+.route-panel__group-bulk-btn {
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e5e7eb;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.route-panel__group-bulk-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.route-panel__group[data-open="false"] .route-panel__group-body {
+  display: none;
+}
+
+.route-panel__group-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.route-panel__route-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  cursor: pointer;
+  /* Bus virtualized list'te absolute positioning virtual_list ile gelir;
+     diğer modlar için flex normal akış. */
+}
+
+.route-panel__route-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.route-panel__route-item[data-hidden="true"] {
+  display: none;
+}
+
+.route-panel__route-item input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.route-panel__route-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+.route-panel__route-short {
+  font-weight: 600;
+  min-width: 38px;
+  font-variant-numeric: tabular-nums;
+}
+
+.route-panel__route-long {
+  flex-grow: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #d1d5db;
+}
+
+.route-panel__route-operator {
+  font-size: 10px;
+  color: #6b7280;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.route-panel__bus-loading,
+.route-panel__bus-error {
+  padding: 16px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.route-panel__bus-error {
+  color: #f87171;
+}
+
+.route-panel__bus-list {
+  /* virtual_list mount target — fixed height + position:relative
+     virtual_list sözleşmesi (virtual_list.ts caller contract). */
+  position: relative;
+  overflow: auto;
+  height: 50vh;
+  min-height: 200px;
+}
+
+/* Collapsed state */
+.route-panel[data-collapsed="true"] .route-panel__title {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: center;
+}
+
+.route-panel[data-collapsed="true"] .route-panel__count,
+.route-panel[data-collapsed="true"] .route-panel__search,
+.route-panel[data-collapsed="true"] .route-panel__groups {
+  display: none;
+}
