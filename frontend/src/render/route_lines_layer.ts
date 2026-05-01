@@ -4,6 +4,7 @@ import type { LonLat } from '../simulation/polyline';
 
 const SOURCE_ID = 'routes';
 const LAYER_ID = 'route-lines';
+const GLOW_LAYER_ID = 'route-lines-glow';
 
 interface RouteFeature {
   type: 'Feature';
@@ -81,8 +82,39 @@ export function buildRouteFeature(
   };
 }
 
+// Glow halo paint — focused hat altında çift layer ışın kılıcı
+// efekti. Filter ile başlangıçta hiçbir feature match etmez (focused
+// null), focus aktif olunca filter focused id'ye set'lenir.
+export function buildRouteLineGlowPaint() {
+  return {
+    'line-color': ['get', 'color'],
+    'line-opacity': 0.4,
+    'line-width': [
+      'interpolate', ['linear'], ['zoom'],
+      10, 8,
+      14, 16,
+      18, 24,
+    ],
+    'line-blur': 4,
+  } as const;
+}
+
 export function initRouteLinesLayer(map: MapLibreMap, beforeId?: string): void {
   map.addSource(SOURCE_ID, { type: 'geojson', data: collection });
+  // Glow ALTTA — normal route-lines ÜSTTE (DOM order, MapLibre layer
+  // stack'inde sonradan eklenen üstte). Önce glow eklenir, sonra
+  // route-lines beforeId ile aynı slot'a yerleşir.
+  map.addLayer(
+    {
+      id: GLOW_LAYER_ID,
+      type: 'line',
+      source: SOURCE_ID,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: buildRouteLineGlowPaint() as unknown as Record<string, unknown>,
+      filter: ['==', ['get', 'route_id'], '__none__'], // initial: hidden
+    },
+    beforeId,
+  );
   map.addLayer(
     {
       id: LAYER_ID,
@@ -92,6 +124,17 @@ export function initRouteLinesLayer(map: MapLibreMap, beforeId?: string): void {
       paint: buildRouteLinePaint() as unknown as Record<string, unknown>,
     },
     beforeId,
+  );
+}
+
+// Focus state değişiminde main.ts tarafından çağrılır.
+export function setGlowFocus(map: MapLibreMap, focusedRouteId: string | null): void {
+  if (!map.getLayer(GLOW_LAYER_ID)) return;
+  map.setFilter(
+    GLOW_LAYER_ID,
+    focusedRouteId
+      ? ['==', ['get', 'route_id'], focusedRouteId]
+      : ['==', ['get', 'route_id'], '__none__'],
   );
 }
 

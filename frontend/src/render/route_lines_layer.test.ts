@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildRouteLinePaint, buildRouteFeature } from './route_lines_layer';
+import {
+  buildRouteFeature,
+  buildRouteLineGlowPaint,
+  buildRouteLinePaint,
+} from './route_lines_layer';
 import { getRouteColor, ROUTE_COLORS, MODE_FALLBACK_COLORS } from '../styling/route_colors';
 import type { ShapeFeature } from '../data/api';
 
@@ -37,6 +41,17 @@ describe('buildRouteLinePaint', () => {
   it('focused dolu → line-width also case-driven (focused thicker)', () => {
     const w = buildRouteLinePaint('public:m2')['line-width'] as readonly unknown[];
     expect(w[0]).toBe('case');
+  });
+});
+
+describe('buildRouteLineGlowPaint', () => {
+  it('uses line-blur and a fat zoom-driven width (halo)', () => {
+    const p = buildRouteLineGlowPaint();
+    expect(p['line-blur']).toBe(4);
+    expect(p['line-color']).toEqual(['get', 'color']);
+    expect(p['line-opacity']).toBe(0.4);
+    const w = p['line-width'] as readonly unknown[];
+    expect(w[0]).toBe('interpolate');
   });
 });
 
