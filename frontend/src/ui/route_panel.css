@@ -384,6 +384,13 @@
   font-size: 11px;
 }
 
+.vehicle-popup__unmapped-detail {
+  font-size: 10px;
+  color: #b0b0b0;
+  margin-top: 2px;
+  font-style: normal;
+}
+
 /* Toast (alt-iş g f-polish-3 madde 3): bus zoom başarısız vb. küçük
    bilgi mesajları için fade-in/fade-out element. */
 .toast {

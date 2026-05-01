@@ -903,7 +903,23 @@ Alt-iş:
   - **Madde 3**: Bus zoom fallback — polyline yok ise SnapshotStore.getVehicleBBoxForRoute (yeni) ile vehicle konumlarından bbox; vehicle yoksa toast uyarı "Bu hatta şu an aktif araç yok". (`f6ea2cc` helper, `26363b2` toast, `1864bb9` integration)
   - Commit zinciri: collapsed `1a214ee`, vehicle bbox `f6ea2cc`, toast `26363b2`, popup `af57d78`, integration+docs (bu commit)
   - **+9 Vitest case** (185 → 194)
-  - **KM1 toplam**: 31 → **194** Vitest, **191** backend, +21 KB JS / +77 KB CSS
+- ✅ **alt-iş g f-polish-4** (gerçek son rötuş, 3 commit):
+  - **Madde 1**: Türkçe karakter recovery — backend `_demojibake` hibrit (cp1252 + latin1 + iso-8859-9 + sanity check). %58 → **%75.9** (5346 → 7038/9275 düzgün, +17.9 puan). Kullanıcının raporladığı "ATAŞEHİR TIP MERKEZİ - ESATPAŞA" düzeldi. Frontend `isMojibake` regex Đ/Þ/Æ ekledi (Türkçe-dışı Latin Extended). Kalan 2237 satır karışık byte sequence (substring-level demojibake KM1 dışı) — frontend ⚠ ile UI'da işaretli. (`188a02d` + `3006e1a`)
+  - **Madde 2**: Bus popup unmapped mesajı insancıllaştırıldı — "Bu araç henüz hat eşlemesi yapılmamış" + "(mapping pipeline güncelleniyor)" detail. Faz 5 borç notu: bus realtime mapping pipeline tamamlanması ayrı tur. (`<bu commit>`)
+  - **+5 Vitest case** (194 → 197), **+2 backend** (191 → 193)
+- 📋 **Faz 5 borç (sonraki tur)**: bus realtime mapping pipeline tamamlanması. Şu an İETT canlı vehicle'ların büyük kısmı `route_id=null` (unmapped) → popup'ta "henüz eşlenmemiş" mesajı. Faz 3 6h spatial mapping cache + Faz 5 KM1+ pipeline güncellemesi gerekli.
+
+### KM1 toplam (gerçek son)
+
+| | KM1 öncesi | KM1 sonu | Δ |
+|---|---:|---:|---:|
+| Frontend Vitest | 31 | **197** | +166 |
+| Backend pytest | 180 | **193** | +13 (demojibake hibrit) |
+| JS bundle | 1042.87 KB | **1064.39 KB** | +21.52 KB |
+| CSS | 0 KB | **76.69 KB** | +76.69 KB |
+| iETT mojibake recovery | 0% | **75.9%** | +75.9 puan |
+
+KM1 = 7 alt-iş (a/b/c/d/e[geri alındı]/f/g) + 4 polish turu (f-polish, f-polish-2, f-polish-3, f-polish-4). Sıradaki KM kararı (KM2 mobile, KM3 i18n, KM4 perf, KM5 polish) ayrı tartışma.
 
 Tahmini süre: 3-4 gün → **gerçek: ~1.5 gün**.
 

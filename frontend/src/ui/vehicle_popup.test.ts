@@ -76,11 +76,12 @@ describe('buildPopupHtml — iett mapped', () => {
 });
 
 describe('buildPopupHtml — iett unmapped', () => {
-  it('renders KapiNo + "Hat bilinmiyor" when meta is null', () => {
+  it('renders KapiNo + unmapped message when meta is null', () => {
     const html = buildPopupHtml({ id: 'C-999' }, 'iett', null);
     expect(html).toContain('KapiNo:');
     expect(html).toContain('C-999');
-    expect(html).toContain('Hat bilinmiyor');
+    expect(html).toContain('Bu araç henüz hat eşlemesi yapılmamış');
+    expect(html).toContain('mapping pipeline güncelleniyor');
   });
 
   it('escapes hostile KapiNo (XSS guard)', () => {

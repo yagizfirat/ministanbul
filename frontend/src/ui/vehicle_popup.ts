@@ -82,7 +82,10 @@ function renderIettPopup(props: VehicleProps, meta: RouteSummary | null): string
   if (!meta) {
     return `<div class="vehicle-popup">
       <div>${kapi}</div>
-      <div class="vehicle-popup__unmapped">Hat bilinmiyor (mapping eksik)</div>
+      <div class="vehicle-popup__unmapped">
+        Bu araç henüz hat eşlemesi yapılmamış
+        <div class="vehicle-popup__unmapped-detail">(mapping pipeline güncelleniyor)</div>
+      </div>
       <div class="vehicle-popup__source">İETT canlı</div>
     </div>`;
   }
