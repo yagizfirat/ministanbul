@@ -56,7 +56,7 @@ export const ROUTE_COLORS: Record<string, string> = {
 };
 
 // Mod-bazlı fallback (renk haritasında olmayan hatlar için).
-// Faz 4 KM3 mode_colors.ts polyline paletiyle hizalı.
+// Faz 4 KM3 polyline paletiyle hizalı.
 export const MODE_FALLBACK_COLORS: Record<string, string> = {
   metro:     '#1e40af',  // lacivert
   marmaray:  '#00B7CD',  // turkuaz (yukarıdaki Marmaray ile tutarlı)
