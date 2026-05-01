@@ -20,6 +20,11 @@ import type { RouteVisibility } from '../state/route_visibility';
 import { fuzzyMatch, isMojibake } from '../util/turkish_normalize';
 import { getRouteColor } from '../styling/route_colors';
 import { createVirtualList, type VirtualListHandle } from './virtual_list';
+import {
+  expandedKey,
+  flattenRoutesForDisplay,
+  type FlatItem,
+} from './route_panel_flatten';
 
 export interface RoutePanelConfig {
   width: string;
@@ -57,11 +62,14 @@ interface ModeGroupRefs {
   body: HTMLElement;
   countEl: HTMLElement;
   bulkBtn: HTMLElement;
-  itemByRouteId: Map<string, HTMLElement>; // bus dışı modlar
+  // bus dışı modlar — flatten sonrası DOM'da satır referansları
+  // (single → route_id key, group-header → `header|${shortName}` key,
+  //  group-variant → route_id key).
+  itemByKey: Map<string, HTMLElement>;
   busListContainer?: HTMLElement;
   busLoadingEl?: HTMLElement;
   busErrorEl?: HTMLElement;
-  virtualList?: VirtualListHandle<RouteSummary>;
+  virtualList?: VirtualListHandle<FlatItem>;
 }
 
 export interface RoutePanelOptions {
@@ -91,6 +99,8 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   let collapsed = false;
   let busLoading = false;
   let busError: string | null = null;
+  // Variant gruplarının açık/kapalı durumu — `${mode}|${shortName}` key.
+  const expandedGroups = new Set<string>();
 
   const root = document.createElement('div');
   root.className = 'route-panel';
@@ -227,15 +237,15 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
       body,
       countEl,
       bulkBtn,
-      itemByRouteId: new Map(),
+      itemByKey: new Map(),
     };
   }
 
   function rebuildItems(): void {
-    // Bus dışı modlar: DOM'da inline. Bus: lazy mount.
+    // Bus dışı modlar: DOM'da inline (flatten edilmiş). Bus: lazy mount.
     for (const [modeKey, refs] of groupsByMode) {
       refs.body.replaceChildren();
-      refs.itemByRouteId.clear();
+      refs.itemByKey.clear();
       if (refs.virtualList) {
         refs.virtualList.destroy();
         refs.virtualList = undefined;
@@ -244,11 +254,7 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
       refs.busLoadingEl = undefined;
       refs.busErrorEl = undefined;
 
-      const modeRoutes = allRoutes.filter((r) => r.mode === modeKey);
-
       if (modeKey === 'bus') {
-        // Loading/error placeholder (state'e göre setBusLoading/setBusError
-        // çağrıları dolduracak).
         const loadingEl = document.createElement('div');
         loadingEl.className = 'route-panel__bus-loading';
         loadingEl.textContent = 'Otobüs hatları yükleniyor…';
@@ -262,40 +268,98 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
         refs.busLoadingEl = loadingEl;
         refs.busErrorEl = errorEl;
         refs.busListContainer = listContainer;
-        // Lazy mount: virtual_list sadece body open olduğunda yaratılır.
         if (refs.el.dataset.open === 'true') {
           mountBusVirtualList(refs);
         }
         applyBusStateVisibility(refs);
       } else {
-        for (const route of modeRoutes) {
-          const item = renderRouteItem(route);
-          refs.body.appendChild(item);
-          refs.itemByRouteId.set(route.route_id, item);
+        // Polyline modlar: flatten + DOM render
+        const modeRoutes = allRoutes.filter((r) => r.mode === modeKey);
+        const flatItems = flattenRoutesForDisplay(modeRoutes, expandedGroups, searchQuery);
+        for (const item of flatItems) {
+          const node = renderFlatItem(item);
+          refs.body.appendChild(node);
+          refs.itemByKey.set(flatItemKey(item), node);
         }
       }
     }
     updateGroupCounts();
   }
 
+  function flatItemKey(item: FlatItem): string {
+    if (item.kind === 'group-header') return `header|${item.mode}|${item.shortName}`;
+    return item.route.route_id;
+  }
+
   function mountBusVirtualList(refs: ModeGroupRefs): void {
     if (refs.virtualList || !refs.busListContainer) return;
-    const busRoutes = currentVisibleBusRoutes();
     refs.virtualList = createVirtualList({
       container: refs.busListContainer,
-      items: busRoutes,
+      items: currentBusFlatItems(),
       itemHeight: config.itemHeight,
       overscan: config.busVirtualizationOverscan,
-      renderItem: (route) => renderRouteItem(route),
+      renderItem: (item) => renderFlatItem(item),
     });
   }
 
-  function currentVisibleBusRoutes(): RouteSummary[] {
+  function currentBusFlatItems(): FlatItem[] {
     const buses = allRoutes.filter((r) => r.mode === 'bus');
-    if (searchQuery === '') return buses;
-    return buses.filter(
-      (r) => fuzzyMatch(searchQuery, r.short_name) || fuzzyMatch(searchQuery, r.long_name),
-    );
+    return flattenRoutesForDisplay(buses, expandedGroups, searchQuery);
+  }
+
+  function renderFlatItem(item: FlatItem): HTMLElement {
+    if (item.kind === 'single') return renderRouteItem(item.route);
+    if (item.kind === 'group-variant') {
+      const el = renderRouteItem(item.route);
+      el.classList.add('route-panel__route-item--variant');
+      return el;
+    }
+    return renderVariantHeader(item.shortName, item.mode, item.variants);
+  }
+
+  function renderVariantHeader(
+    shortName: string,
+    mode: string,
+    variants: RouteSummary[],
+  ): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'route-panel__route-variant-header';
+    el.dataset.shortName = shortName;
+    el.dataset.mode = mode;
+    const isOpen = expandedGroups.has(expandedKey(mode, shortName));
+    el.dataset.open = isOpen ? 'true' : 'false';
+
+    const toggle = document.createElement('span');
+    toggle.className = 'route-panel__route-variant-toggle';
+    toggle.textContent = '▾';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.addEventListener('click', (e) => e.stopPropagation());
+    const ids = variants.map((v) => v.route_id);
+    const visibleCount = ids.filter((id) => opts.visibility.isVisible(id)).length;
+    cb.checked = visibleCount === ids.length;
+    cb.indeterminate = visibleCount > 0 && visibleCount < ids.length;
+    cb.addEventListener('change', () => {
+      const allVisible = ids.every((id) => opts.visibility.isVisible(id));
+      opts.visibility.setBulkVisible(ids, !allVisible);
+    });
+
+    const dot = document.createElement('span');
+    dot.className = 'route-panel__route-color-dot';
+    dot.style.background = getRouteColor(shortName, mode);
+
+    const shortEl = document.createElement('span');
+    shortEl.className = 'route-panel__route-short';
+    shortEl.textContent = shortName;
+
+    const countEl = document.createElement('span');
+    countEl.className = 'route-panel__route-variant-count';
+    countEl.textContent = `(${variants.length})`;
+
+    el.append(toggle, cb, dot, shortEl, countEl);
+    el.addEventListener('click', () => onVariantToggle(mode, shortName));
+    return el;
   }
 
   function renderRouteItem(route: RouteSummary): HTMLElement {
@@ -351,33 +415,62 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   }
 
   function applySearch(): void {
+    // Search state değişti — tüm bodyleri yeniden flatten + DOM rebuild.
+    // (Bus için virtual_list.setItems yeni flatItems alır.)
     for (const [modeKey, refs] of groupsByMode) {
       if (modeKey === 'bus') {
-        // virtual_list setItems
         if (refs.virtualList) {
-          refs.virtualList.setItems(currentVisibleBusRoutes());
+          refs.virtualList.setItems(currentBusFlatItems());
         }
         continue;
       }
-      for (const [, item] of refs.itemByRouteId) {
-        const routeId = item.dataset.routeId!;
-        const route = allRoutes.find((r) => r.route_id === routeId);
-        const match =
-          !route ||
-          searchQuery === '' ||
-          fuzzyMatch(searchQuery, route.short_name) ||
-          fuzzyMatch(searchQuery, route.long_name);
-        item.dataset.hidden = match ? 'false' : 'true';
+      refs.body.replaceChildren();
+      refs.itemByKey.clear();
+      const modeRoutes = allRoutes.filter((r) => r.mode === modeKey);
+      const flatItems = flattenRoutesForDisplay(modeRoutes, expandedGroups, searchQuery);
+      for (const item of flatItems) {
+        const node = renderFlatItem(item);
+        refs.body.appendChild(node);
+        refs.itemByKey.set(flatItemKey(item), node);
       }
     }
   }
 
+  function onVariantToggle(mode: string, shortName: string): void {
+    const key = expandedKey(mode, shortName);
+    if (expandedGroups.has(key)) expandedGroups.delete(key);
+    else expandedGroups.add(key);
+    applySearch();
+    updateGroupCounts();
+  }
+
   function syncCheckboxes(): void {
     for (const [modeKey, refs] of groupsByMode) {
-      if (modeKey === 'bus') continue; // bus item'ları virtual_list ile, render anında okuyor
-      for (const [routeId, item] of refs.itemByRouteId) {
-        const cb = item.querySelector<HTMLInputElement>('input[type="checkbox"]');
-        if (cb) cb.checked = opts.visibility.isVisible(routeId);
+      if (modeKey === 'bus') {
+        if (refs.virtualList) refs.virtualList.setItems(currentBusFlatItems());
+        continue;
+      }
+      // Polyline modları: variant header indeterminate state ve item
+      // checkbox'ları güncellenir. flat list küçük (≤30) — refs.body
+      // child'larını tara.
+      for (const node of refs.itemByKey.values()) {
+        const cb = node.querySelector<HTMLInputElement>('input[type="checkbox"]');
+        if (!cb) continue;
+        if (node.classList.contains('route-panel__route-variant-header')) {
+          const shortName = node.dataset.shortName!;
+          const mode = node.dataset.mode!;
+          const variants = allRoutes.filter(
+            (r) => r.mode === mode && r.short_name === shortName,
+          );
+          const ids = variants.map((v) => v.route_id);
+          const visible = ids.filter((id) => opts.visibility.isVisible(id)).length;
+          cb.checked = visible === ids.length;
+          cb.indeterminate = visible > 0 && visible < ids.length;
+        } else {
+          // single veya group-variant route item
+          const routeId = node.dataset.routeId!;
+          cb.checked = opts.visibility.isVisible(routeId);
+        }
       }
     }
   }

@@ -295,6 +295,46 @@
   cursor: help;
 }
 
+/* Variant header — aynı short_name'in birden fazla varyantı olunca
+   tek satırda toggle + checkbox + dot + short_name + (count) gösterimi. */
+.route-panel__route-variant-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.route-panel__route-variant-header:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.route-panel__route-variant-toggle {
+  color: #9ca3af;
+  font-size: 11px;
+  width: 12px;
+  text-align: center;
+  transition: transform 150ms ease;
+}
+
+.route-panel__route-variant-header[data-open="false"] .route-panel__route-variant-toggle {
+  transform: rotate(-90deg);
+}
+
+.route-panel__route-variant-count {
+  font-size: 10px;
+  color: #9ca3af;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+/* Variant body item'ları indent — header altında olduğu görünmesi için. */
+.route-panel__route-item--variant {
+  padding-left: 32px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
 .route-panel__bus-loading,
 .route-panel__bus-error {
   padding: 16px;

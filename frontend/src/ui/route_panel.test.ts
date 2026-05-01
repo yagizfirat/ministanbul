@@ -154,15 +154,13 @@ describe('createRoutePanel — mode groups', () => {
 
 // ── Search ──────────────────────────────────────────────────────────
 describe('createRoutePanel — search', () => {
-  it('typing M2 hides M1A in the metro group via data-hidden', () => {
+  it('typing M2 removes M1A from the metro group DOM (flatten rebuild)', () => {
     mount();
     const input = document.querySelector('.route-panel__search-input') as HTMLInputElement;
     input.value = 'M2';
     input.dispatchEvent(new Event('input'));
-    const m1a = document.querySelector('[data-route-id="public:m1a"]') as HTMLElement;
-    const m2 = document.querySelector('[data-route-id="public:m2"]') as HTMLElement;
-    expect(m1a.dataset.hidden).toBe('true');
-    expect(m2.dataset.hidden).toBe('false');
+    expect(document.querySelector('[data-route-id="public:m1a"]')).toBeNull();
+    expect(document.querySelector('[data-route-id="public:m2"]')).not.toBeNull();
   });
 
   it('Turkish-aware search ("şiş" matches "Şişhane")', () => {
@@ -170,11 +168,7 @@ describe('createRoutePanel — search', () => {
     const input = document.querySelector('.route-panel__search-input') as HTMLInputElement;
     input.value = 'şiş';
     input.dispatchEvent(new Event('input'));
-    // 29B (long_name "Şişhane – Hacıosman") is bus → no DOM item;
-    // bus virtual_list is closed by default. We assert metro/tram aren't matched
-    // and bus group count goes to 1/1.
-    const m2 = document.querySelector('[data-route-id="public:m2"]') as HTMLElement;
-    expect(m2.dataset.hidden).toBe('true');
+    expect(document.querySelector('[data-route-id="public:m2"]')).toBeNull();
     const busGroup = document.querySelector('.route-panel__group[data-mode="bus"]') as HTMLElement;
     const busCount = busGroup.querySelector('.route-panel__group-count')?.textContent;
     expect(busCount).toBe('1/1');
@@ -190,8 +184,7 @@ describe('createRoutePanel — search', () => {
     clearBtn.click();
     expect(input.value).toBe('');
     expect(clearBtn.dataset.visible).toBe('false');
-    const m1a = document.querySelector('[data-route-id="public:m1a"]') as HTMLElement;
-    expect(m1a.dataset.hidden).toBe('false');
+    expect(document.querySelector('[data-route-id="public:m1a"]')).not.toBeNull();
   });
 
   it('group count shows filtered/total during active search', () => {
@@ -316,6 +309,72 @@ describe('createRoutePanel — item interaction', () => {
     cb.dispatchEvent(new Event('change'));
     expect(rv.isVisible('public:m2')).toBe(false);
     expect(spy).toHaveBeenCalled();
+  });
+});
+
+// ── Variant gruplaması (KM1 alt-iş f-polish-2 madde 3) ────────────
+describe('createRoutePanel — variant grouping', () => {
+  it('shows a single group-header for two routes sharing short_name 29B', () => {
+    const variants = [
+      route({ id: 100, route_id: 'iett:1562', short_name: '29B', long_name: 'A - B', mode: 'metro' }),
+      route({ id: 101, route_id: 'iett:1564', short_name: '29B', long_name: 'C - D', mode: 'metro' }),
+    ];
+    mount(variants);
+    const headers = document.querySelectorAll('.route-panel__route-variant-header');
+    expect(headers.length).toBe(1);
+    const header = headers[0] as HTMLElement;
+    expect(header.dataset.shortName).toBe('29B');
+    expect(header.querySelector('.route-panel__route-variant-count')?.textContent).toBe('(2)');
+    // Body kapalı → variant satırları DOM'da yok
+    expect(document.querySelectorAll('.route-panel__route-item--variant').length).toBe(0);
+  });
+
+  it('clicking the variant header expands the body to show all variants', () => {
+    const variants = [
+      route({ id: 100, route_id: 'iett:1562', short_name: '29B', long_name: 'A - B', mode: 'metro' }),
+      route({ id: 101, route_id: 'iett:1564', short_name: '29B', long_name: 'C - D', mode: 'metro' }),
+      route({ id: 102, route_id: 'iett:1567', short_name: '29B', long_name: 'E - F', mode: 'metro' }),
+    ];
+    mount(variants);
+    const header = document.querySelector('.route-panel__route-variant-header') as HTMLElement;
+    header.click();
+    expect(document.querySelectorAll('.route-panel__route-item--variant').length).toBe(3);
+  });
+
+  it('variant header checkbox is indeterminate when only some variants are visible', () => {
+    const variants = [
+      route({ id: 100, route_id: 'iett:1562', short_name: '29B', long_name: 'A - B', mode: 'metro' }),
+      route({ id: 101, route_id: 'iett:1564', short_name: '29B', long_name: 'C - D', mode: 'metro' }),
+    ];
+    const allIds = variants.map((v) => v.route_id);
+    const rv = new RouteVisibility(allIds, ['iett:1562']); // only one visible
+    panel = createRoutePanel({
+      visibility: rv,
+      routes: variants,
+      defaultVisibleIds: allIds,
+    });
+    const cb = document.querySelector(
+      '.route-panel__route-variant-header input[type="checkbox"]',
+    ) as HTMLInputElement;
+    expect(cb.indeterminate).toBe(true);
+    expect(cb.checked).toBe(false);
+  });
+
+  it('search by long_name auto-expands the parent variant group', () => {
+    const variants = [
+      route({ id: 100, route_id: 'iett:1562', short_name: '29B', long_name: '4.LEVENT METRO', mode: 'metro' }),
+      route({ id: 101, route_id: 'iett:1564', short_name: '29B', long_name: 'ECLİPSE SİTESİ', mode: 'metro' }),
+    ];
+    mount(variants);
+    const input = document.querySelector('.route-panel__search-input') as HTMLInputElement;
+    input.value = 'Eclipse';
+    input.dispatchEvent(new Event('input'));
+    // Auto-expand: header + sadece eşleşen variant
+    expect(document.querySelector('.route-panel__route-variant-header')).not.toBeNull();
+    const variantItems = document.querySelectorAll('.route-panel__route-item--variant');
+    expect(variantItems.length).toBe(1);
+    expect((variantItems[0] as HTMLElement).querySelector('.route-panel__route-long')?.textContent)
+      .toContain('ECLİPSE');
   });
 });
 
