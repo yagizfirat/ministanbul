@@ -165,6 +165,27 @@ export function getShapeFor(shapeId: string): LonLat[] | null {
   return shapeIndex.get(shapeId) ?? null;
 }
 
+// Bbox (min lon, min lat, max lon, max lat) — alt-iş g panel çift
+// tıkla zoom için (map.fitBounds tüketir). Route polyline ~500-2000
+// vertex, single-pass yeterince hızlı.
+export function getRouteBBox(routeId: string): [number, number, number, number] | null {
+  const feature = collection.features.find((f) => f.properties.route_id === routeId);
+  if (!feature) return null;
+  const coords = feature.geometry.coordinates;
+  if (coords.length === 0) return null;
+  let minLon = Infinity;
+  let minLat = Infinity;
+  let maxLon = -Infinity;
+  let maxLat = -Infinity;
+  for (const [lon, lat] of coords) {
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  return [minLon, minLat, maxLon, maxLat];
+}
+
 function flush(map: MapLibreMap): void {
   const source = map.getSource(SOURCE_ID) as GeoJSONSource | undefined;
   source?.setData(collection);

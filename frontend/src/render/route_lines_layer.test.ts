@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import type { Map as MapLibreMap } from 'maplibre-gl';
 import {
+  addRouteToMap,
   buildRouteFeature,
   buildRouteLineGlowPaint,
   buildRouteLinePaint,
+  getRouteBBox,
+  removeRouteFromMap,
 } from './route_lines_layer';
 import { getRouteColor, ROUTE_COLORS, MODE_FALLBACK_COLORS } from '../styling/route_colors';
 import type { ShapeFeature } from '../data/api';
@@ -52,6 +56,38 @@ describe('buildRouteLineGlowPaint', () => {
     expect(p['line-opacity']).toBe(0.4);
     const w = p['line-width'] as readonly unknown[];
     expect(w[0]).toBe('interpolate');
+  });
+});
+
+describe('getRouteBBox', () => {
+  // Stub map — addRouteToMap'in flush() çağrısında getSource undefined
+  // döner, setData no-op. Module-level collection sadece feature push'tan
+  // etkilenir.
+  const stubMap = {
+    getSource: () => undefined,
+  } as unknown as MapLibreMap;
+
+  it('returns null for an unknown route', () => {
+    expect(getRouteBBox('public:nope')).toBeNull();
+  });
+
+  it('computes min/max lon-lat across the geometry coordinates', () => {
+    const shape = {
+      type: 'Feature' as const,
+      geometry: {
+        type: 'LineString' as const,
+        coordinates: [
+          [29.0, 41.0],
+          [29.05, 41.10],
+          [28.95, 41.05],
+        ] as [number, number][],
+      },
+      properties: { shape_id: 'sh-bbox' },
+    };
+    addRouteToMap(stubMap, 'public:bbox-test', 'metro', 'M-X', '#000000', shape);
+    const bbox = getRouteBBox('public:bbox-test');
+    expect(bbox).toEqual([28.95, 41.0, 29.05, 41.1]);
+    removeRouteFromMap(stubMap, 'public:bbox-test'); // cleanup
   });
 });
 
