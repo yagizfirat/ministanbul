@@ -17,7 +17,7 @@
 import './route_panel.css';
 import type { RouteSummary } from '../data/api';
 import type { RouteVisibility } from '../state/route_visibility';
-import { fuzzyMatch } from '../util/turkish_normalize';
+import { fuzzyMatch, isMojibake } from '../util/turkish_normalize';
 import { getRouteColor } from '../styling/route_colors';
 import { createVirtualList, type VirtualListHandle } from './virtual_list';
 
@@ -319,7 +319,16 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
 
     const longEl = document.createElement('span');
     longEl.className = 'route-panel__route-long';
-    longEl.textContent = route.long_name;
+    if (isMojibake(route.long_name)) {
+      const warn = document.createElement('span');
+      warn.className = 'route-panel__route-mojibake-warn';
+      warn.textContent = '⚠ ';
+      warn.title = "Bu hat adı GTFS feed'inde bozuk geliyor (kaynakta encoding sorunu)";
+      longEl.appendChild(warn);
+      longEl.appendChild(document.createTextNode(route.long_name));
+    } else {
+      longEl.textContent = route.long_name;
+    }
 
     const operatorEl = document.createElement('span');
     operatorEl.className = 'route-panel__route-operator';

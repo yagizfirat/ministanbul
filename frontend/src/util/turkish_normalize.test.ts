@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fuzzyMatch, normalize } from './turkish_normalize';
+import { fuzzyMatch, isMojibake, normalize } from './turkish_normalize';
 
 describe('normalize', () => {
   it('lowercases İETT to iett (İ → i)', () => {
@@ -82,5 +82,31 @@ describe('fuzzyMatch', () => {
 
   it('non-empty query against empty target → false', () => {
     expect(fuzzyMatch('xx', '')).toBe(false);
+  });
+});
+
+describe('isMojibake', () => {
+  it('returns false for clean Turkish', () => {
+    expect(isMojibake('KADIKÖY - KİRAZLITEPE')).toBe(false);
+    expect(isMojibake('Şişhane-Hacıosman')).toBe(false);
+  });
+
+  it('detects U+FFFD replacement character', () => {
+    expect(isMojibake('ATA�EHİR')).toBe(true);
+  });
+
+  it('detects double-encoded UTF-8 sequence (Ã + diacritic)', () => {
+    expect(isMojibake('Ã–STÜN')).toBe(true);
+    expect(isMojibake('KÄ°RAZLITEPE')).toBe(true);
+  });
+
+  it('does not flag Portuguese "São Paulo" (Ã + ASCII o)', () => {
+    expect(isMojibake('São Paulo')).toBe(false);
+  });
+
+  it('returns false for ASCII / pure-Latin input', () => {
+    expect(isMojibake('M2')).toBe(false);
+    expect(isMojibake('')).toBe(false);
+    expect(isMojibake('Yenikapi')).toBe(false);
   });
 });

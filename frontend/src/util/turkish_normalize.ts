@@ -30,3 +30,18 @@ export function fuzzyMatch(query: string, target: string): boolean {
   if (query === '') return true; // boş arama → tüm hedefler match
   return normalize(target).includes(normalize(query));
 }
+
+// Backend `import_gtfs._demojibake` iETT routes'larının ~%58'ini
+// kurtardı. Kalan ~%42'de ya U+FFFD (replacement char) ya da
+// `Ã/Ä/Å` + diakritik dizilimleri var — kaynakta byte düşmüş veya
+// cp1252 dışı encoding karması, kurtarılamaz.
+//
+// Frontend bu kalanları UI'da uyarı ikonuyla işaretler — kullanıcı
+// veriyi yine görür ama "bozuk" olduğunu bilir. Türkçe'de Ã/Ä/Å
+// tek başına nadir; "Ã" + sonrasında diakritik benzeri karakter
+// kuvvetli mojibake göstergesidir.
+export function isMojibake(s: string): boolean {
+  if (!s) return false;
+  if (s.includes('�')) return true;
+  return /[ÃÄÅ][-ÿ -⁯]/.test(s);
+}

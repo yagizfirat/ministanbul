@@ -288,6 +288,13 @@
   white-space: nowrap;
 }
 
+.route-panel__route-mojibake-warn {
+  color: #f59e0b;
+  font-size: 11px;
+  margin-right: 2px;
+  cursor: help;
+}
+
 .route-panel__bus-loading,
 .route-panel__bus-error {
   padding: 16px;

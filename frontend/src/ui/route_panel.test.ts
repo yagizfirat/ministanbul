@@ -319,6 +319,33 @@ describe('createRoutePanel — item interaction', () => {
   });
 });
 
+// ── Mojibake warning (KM1 alt-iş f-polish-2 madde 2) ──────────────
+describe('createRoutePanel — mojibake warning', () => {
+  it('renders a ⚠ icon next to a route whose long_name is mojibake', () => {
+    // Broken hat metro mod'unda (düz DOM render — bus default kapalı,
+    // virtual_list lazy mount). Mojibake davranışı mod-bağımsız.
+    const broken = route({
+      id: 99,
+      route_id: 'public:broken',
+      short_name: 'X',
+      long_name: 'ATA�EHİR - KÄ°RAZLITEPE',
+      mode: 'metro',
+    });
+    mount([...SAMPLE_ROUTES, broken]);
+    const item = document.querySelector('[data-route-id="public:broken"]') as HTMLElement;
+    expect(item).not.toBeNull();
+    const warn = item.querySelector('.route-panel__route-mojibake-warn');
+    expect(warn).not.toBeNull();
+    expect((warn as HTMLElement).title).toContain("GTFS feed");
+  });
+
+  it('does not render the warn icon for clean Turkish text', () => {
+    mount();
+    const m2 = document.querySelector('[data-route-id="public:m2"]') as HTMLElement;
+    expect(m2.querySelector('.route-panel__route-mojibake-warn')).toBeNull();
+  });
+});
+
 // ── Header bulk actions + hint icon (KM1 alt-iş f-polish madde 4) ──
 describe('createRoutePanel — header bulk actions + hint', () => {
   it('renders the hint icon with a tooltip in the header', () => {
