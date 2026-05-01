@@ -7,7 +7,7 @@ Bu doküman projenin **nihai yol haritasıdır**: ne yapıldı, ne yapılacak,
 her fazda hangi kararlar alındı. Her yeni geliştirme oturumunda ilk
 okunacak doküman budur.
 
-**Durum:** Faz 1, Faz 2 ve Faz 3 tamamlandı. Faz 3 spatial sanity check eklendi (`apps/realtime/spatial.py`, lazy-load shape cache, 500m haversine threshold), İETT GTFS feed'inde shape verisi olmadığı için cache miss durumunda graceful skip davranışı (mapping korunur, public feed'in 496 shape'i Faz 5+ trip simülasyonu için cache'te hazır). Realtime suite 155/155 yeşil. Faz 4 (3D frontend) sıraya girdi.
+**Durum:** Faz 1-5 tamamlandı (2026-05-01). Faz 5.5 (OSM yol snapping) ve Faz 6 (cilalama, kurumsal renk + filtreleme öncelikli) paralel açık. Realtime suite 155/155 yeşil, gtfs suite 25/25 yeşil. Toplam 180/180.
 **Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md) (v0.8 — `vehicles:all` pivot)
 
 ---
@@ -22,7 +22,8 @@ okunacak doküman budur.
    - [Faz 2 — Canlı veri adaptörü ✅](#faz-2--canlı-veri-adaptörü-)
    - [Faz 3 — WebSocket katmanı ✅](#faz-3--websocket-katmanı-)
    - [Faz 4 — 3D frontend ✅](#faz-4--3d-frontend-)
-   - [Faz 5 — Raylı sistem ve vapur simülasyonu ⚪](#faz-5--raylı-sistem-ve-vapur-simülasyonu-)
+   - [Faz 5 — Raylı sistem ve vapur simülasyonu ✅](#faz-5--raylı-sistem-ve-vapur-simülasyonu-)
+   - [Faz 5.5 — OSM yol snapping ⚪](#faz-55--osm-yol-snapping-)
    - [Faz 6 — Cilalama ⚪](#faz-6--cilalama-)
 5. [Veri kaynakları](#5-veri-kaynakları)
 6. [Teknoloji seçimleri](#6-teknoloji-seçimleri)
@@ -771,64 +772,41 @@ Realtime suite hâlâ 155/155 yeşil — frontend kodu backend kontratlarını t
 
 ---
 
-### Faz 5 — Raylı sistem ve vapur simülasyonu ⚪
+### Faz 5 — Raylı sistem ve vapur simülasyonu ✅
 
-**Durum:** Planlı.
-**Tahmini süre:** 2 hafta.
+**Durum:** Tamamlandı (2026-05-01).
+**Git tag:** `phase-5-complete`
 
-#### Hedef
+#### Yapılan iş (özet)
 
-Canlı veri olmayan modları (metro, Marmaray, vapur) tarife-bazlı
-simülasyonla hareketli hale getirmek. Bonus: İETT otobüsleri için OSM
-route snapping ile gerçek güzergah geometrisi üretmek.
+- **KM1** — `Calendar` modeli (lite). Migration 0002, 52 satır import (49 public + 3 iETT). `CalendarDate` ve `Trip.service_id` FK upgrade Faz 6'ya ertelendi.
+- **KM2** — `GET /api/trips/active/?mode=...` endpoint. Mod filter (metro/marmaray/tram/funicular/ferry), Europe/Istanbul TZ, Cache-Control 60s. Tarih filtresi bypass (feed `end_date=20241231` bayat). 15 pytest yeşil.
+- **KM3-a** — Frontend scheduled metro interpolator. Stop-level pre-computed projections, route-cached. 9 Vitest yeşil.
+- **KM3-a-fix** — `/api/shapes/{shape_id}/` endpoint + lazy fetch + reverse mantığı kaldırıldı. Direction bug'ı çözüldü, shape coverage 30/60'tan 63/63'e çıktı.
+- **KM3-b** — Çoklu mod genişleme. 5 mod paralel polling, mode-aware MapLibre paint expression. Perf ölçümü: hiçbir mod 500ms üstünde değil, denormalize borç eklenmedi.
+- **KM3-c** — `import_gtfs --force` idempotency check. 7/7 tablo BEFORE=AFTER, 13 saniye reimport, anormal yok.
+- **KM4** — Simulated badge UX (sağ üst chip, 5 renkli dot + label + `?` hint tooltip).
 
-#### Teknik yaklaşım
+#### Bitiş kriterleri
 
-**Raylı sistemler ve vapur için (GTFS stop_times-driven simülasyon):**
+- [x] Metro, Marmaray, vapur araçları 3D haritada hareketli (tarife doğru) — KM3-a + KM3-b
+- [x] M2 treni Yenikapı→Hacıosman doğru yönde — KM3-a-fix sonrası kanıtlandı (browser smoke + Vitest "iki yön aynı polyline" regression)
+- [x] Vapur Kadıköy-Karaköy hattı Boğaz üstünde gerçek rotayla — KM3-b smoke (31 ferry shape lazy cache, görsel teyit)
+- [→] İETT OSM snap — Faz 5.5'e taşındı
 
-1. Sunucu: `GET /api/trips/active/?mode=metro&time=now`
-   - `stop_times.txt` + `calendar.txt` sorgulanır
-   - Şu an aktif olan trip'ler (başlangıç zamanı geçmiş, son durağa
-     varmamış) döner
-   - Her trip için durak-zaman çiftleri listesi
-2. İstemci: her aktif trip için sürekli interpolasyon
-   - Durak A'dan 14:23:00'de çıktı, durak B'ye 14:25:30'da varıyor
-   - Şu an 14:24:15 → yolun %50'sinde
-   - A-B arası geometri `shapes.txt`'den; polyline üstünde %50 mesafe
-     hesapla
-3. `requestAnimationFrame` ile güncelleme (Faz 4 interpolator'ıyla aynı
-   runtime)
+#### Discovery raporları
 
-**UI:** Canlı veri olmayan araçlarda `Simulated` badge — kullanıcı
-gerçek gecikmeleri yansıtmadığını bilsin.
+- `docs/phase5_trips_active_discovery.md` — KM2 öncesi keşif
+- `docs/phase5_km3a_direction_bug.md` — KM3-a-fix teşhis
+- `docs/phase5_km3c_reimport_idempotency.md` — KM3-c kanıt
 
-**OSM route snapping (İETT otobüsleri için):**
+#### Notlar (gerçek sayılar)
 
-İETT'de `shapes.csv` yok. Duraklar arası düz çizgi kötü görünüyor.
-Çözüm: OSM Overpass API'den stop dizilimine göre yol ağını çek, PostGIS
-`pgr_dijkstra` ile shortest path.
+Reimport sonrası DB durumu (KM3-c'de teyitli):
+- Agency: 9 — Calendar: 52 — Route: 9 773 — Shape: 953
+- Stop: 22 458 — Trip: 150 012 — StopTime: 1 248 454
 
-1. `apps/gtfs/osm_snap.py` yeni modül
-2. `python manage.py snap_iett_routes` komutu:
-   - Her İETT trip için duraklar sırayla
-   - Her ardışık durak çifti arası Overpass ile highway=* yolları çek
-   - `pgrouting` shortest path → polyline
-   - Cache'le (`Shape` tablosuna kaydet)
-3. Maliyet: ~9000 hat × ortalama 30 durak = 270.000 snap çağrısı. Overpass
-   rate limit nedeniyle saatlerce sürecek, batch + cache.
-
-#### Yapılacak iş
-
-1a. ✅ Calendar/CalendarDate Django modeli (lite — KM1, 2026-05-01)
-1b. ✅ `/api/trips/active/` endpoint (KM2, 2026-05-01)
-2a. ✅ Scheduled interpolator metro only (KM3-a, 2026-05-01, direction-bug fix dahil)
-2b. ✅ Çoklu mod genişleme (KM3-b, 2026-05-01)
-2c. ✅ import_gtfs --force idempotency check (KM3-c, 2026-05-01)
-3. ✅ Simulated badge (KM4, 2026-05-01) — sadece bilgilendirici chip; toggle Faz 6'ya
-4. ✅ Mod-bazlı renk farklılığı (KM3-b'de yapıldı, kapanış)
-5. OSM Overpass client + `snap_iett_routes` komutu
-6. `pgrouting` extension kurulumu + PostGIS upgrade kontrolü
-7. Snap sonuçlarını `Shape` tablosuna yazma + trip eşleme
+Discovery raporları daha küçük tahminler vermişti (sadece public feed sayılmıştı). Gerçek toplam (iETT dahil) ×10 büyük.
 
 #### Faz 5 deferred (Faz 6 polish'e taşındı)
 
@@ -839,22 +817,39 @@ gerçek gecikmeleri yansıtmadığını bilsin.
 - **Public feed `end_date=20241231` (bayat)** — `download_gtfs` Hash match (İBB tarafında değişmemiş). Endpoint `start_date/end_date` filtresini bypass ediyor (sadece `monday/tuesday/...` flag). Feed yenilenince filtre devreye alınır; o zamana kadar dev/demo modu.
 - **Mod toggle UI (canlı / simüle / ikisi birden)** — KM4 sadece bilgilendirici badge yaptı. Kullanıcı modları seçici olarak göstermek isterse Faz 6 polish kapsamında interaction katmanı eklenir.
 
-#### Bitiş kriteri
+---
 
-- Metro, Marmaray, vapur araçları 3D haritada hareketli (tarife doğru)
-- M2 treni gerçekten Yenikapı→Hacıosman doğrultusunda, ters değil
-- Vapur Kadıköy-Karaköy hattı Boğaz'ın üstünde gerçek rotayla ilerliyor
-- İETT otobüslerinin güzergahı OSM snapping sonrası yolları takip ediyor
-  (Faz 4'teki düz çizgi gitti)
+### Faz 5.5 — OSM yol snapping ⚪
+
+**Durum:** Planlı. Faz 5'in "bonus" maddesi olarak kapsamı belirsizdi (pgrouting Windows kurulumu, Overpass rate limit, 270K snap çağrısı ölçeği). Faz 5'i bekletmemek için bağımsız saga'ya taşındı. Faz 6 polish'le paralel yapılabilir veya istenince açılır.
+
+**Tahmini süre:** 1-2 hafta (Windows pgrouting kurulumu + Overpass rate limit keşifleri sonrası netleşir).
+
+#### Hedef
+
+İETT otobüslerinin tarayıcıda yoldan çıkarak hareket etme problemini çözmek. Faz 4 KM1'deki `bus_interpolator.ts` iki GPS snapshot arasını düz çizgi yürütüyor — kıvrımlı yollarda otobüs binaların içinden geçiyor görünüyor. Çözüm: OSM yol ağından gerçek güzergah polyline'ı, `pgr_dijkstra` ile her stop pair için shortest path, snap sonucunu `Shape` tablosuna yaz, frontend bu shape üzerinde yürüsün.
+
+#### Yapılacak iş (alt-fazlar)
+
+- **KM5-a** — pgrouting kurulum + smoke (PostGIS 3.6 + PostgreSQL 15 + Windows uyumu)
+- **KM5-b** — Overpass API client (`apps/gtfs/osm_client.py` — rate limit, retry, cache)
+- **KM5-c** — OSM yol ağı extraction (İstanbul bbox bölünmesi, `osm_ways` tablosu)
+- **KM5-d** — `pgr_dijkstra` proof of concept (1 İETT hatla end-to-end snap, "yol bağlantısı yok" edge case'i)
+- **KM5-e** — `python manage.py snap_iett_routes` komutu (batch + progress save + resume)
+- **KM5-f** — Snap sonuçlarını `Shape` tablosuna yazma + Trip eşleme
+- **KM5-g** — Frontend tarafı: snap'lenmiş shape'leri kullanarak `bus_interpolator.ts` refactor'ü
 
 #### Riskler
 
-- **`pgrouting` PostGIS ile sürüm uyumu.** Kurulum sırasında
-  doğrulanacak.
-- **Overpass rate limit.** Çalışmaya başlamadan kontrol — belki gece
-  cron job + progress save + resume mantığı lazım.
-- **Tarife gerçeği yansıtmıyor.** Raylı sistemler aksamalarda tarifenin
-  çok dışına çıkabilir. UI'da "Simulated" badge'i net tut.
+- Windows pgrouting kurulum sıkıntılı olabilir (Linux'ta `apt-get install postgresql-15-pgrouting` tek satır, Windows'ta OSGeo4W veya manuel build)
+- Overpass API rate limit (10K query/gün IP bazlı) — 270K snap çağrısı için yol ağı önceden cache'lenmeli, snap aşamasında Overpass'a gitmemeli
+- 270K dijkstra sorgusu PostgreSQL'de saatler sürer; gerekirse overnight batch + Celery task
+
+#### Bitiş kriteri
+
+- İETT otobüs hareket smoke'ında Beşiktaş kavşak gibi karmaşık geometrili noktalarda otobüs yoldan çıkmıyor
+- `Trip.shape_id` İETT trip'lerinin %90+'unda dolu (eskiden NULL'du)
+- Performans: snap shape'i lazy fetch + cache (KM3-a-fix pattern'i reuse)
 
 ---
 
@@ -869,35 +864,51 @@ yayına hazır hale getirmek.
 
 #### Yapılacak iş
 
-- **i18next entegrasyonu:** TR / EN dil değiştirici. Tüm UI string'leri
-  `src/i18n/tr.json` + `en.json`. Tarih/saat locale-aware.
-- **Mobile responsive:** 768px breakpoint. Kontrol panelleri
-  hamburger'a, popup'lar bottom sheet'e dönsün. Touch events
-  (pinch zoom, two-finger rotate).
-- **Performans:** Viewport dışı araçları cull et (bbox filtrelemesi
-  zaten WebSocket'te var, ama mesh'ler de update edilmesin). Level-of-
-  detail: zoom < 10'da araçları nokta olarak göster.
-- **Hardcoded renk map'i:** `short_name → hex` — Metro İstanbul ve İETT
-  kurumsal renkleri (Faz 1'de tespit edildi, renk metadata'sı İBB
-  feed'lerinde yok).
-- **Durak arama:** Autocomplete input, PostGIS `pg_trgm` ile fuzzy
-  Turkish search (ö/ü/ı normalize).
-- ~~**Hat filtreleme paneli:** Operatöre, moda, renge göre toggle.~~ →
-  **Faz 4'e taşındı (MVP özelliği).** Hat-merkezli UI modeli gereği
-  (v0.7 spec §3.3), bu panel olmadan otobüsler gösterilemez. Faz 4
-  sağ "Hatlar" paneli olarak doğdu.
-- **Gelişmiş panel özellikleri:** Favori hatları yıldızla, renge göre
-  gruplama, grup seç/kaldır (v1.1 ile senkron)
-- **Saat çubuğu (opsiyonel, v2'ye ertelenebilir):** Şu anki zaman
-  +/- 2 saat kaydırılabilir, simülasyon o zamana göre.
-- **Landmark GeoJSON'ları (opsiyonel):** Ayasofya, Galata Kulesi vb.
-  OSM'de yoksa manuel ekle.
-- **Production deployment dokümanı:** CloudPanel + Nginx + systemd
-  üzerinde VPS/Linux deploy. Memurai → Redis geçişi, Daphne +
-  Gunicorn + Celery service dosyaları, frontend `npm run build`
-  → static, Let's Encrypt SSL. `docs/DEPLOY.md`.
-- **E2E testler (Playwright):** ana user journey'leri.
-- **Accessibility:** Klavye navigasyonu, screen reader ARIA label'ları.
+##### KM1 — Kurumsal renk + filtreleme paneli (öncelikli)
+
+Şu anki üç renk katmanı (polyline lacivert tek-mod, scheduled pastel beş-mod, İETT mavi/kırmızı mapped/unmapped) tutarsız. Hedef: İstanbul kurumsal renkleri kullanmak — kullanıcı için çağrışım, demo için profesyonel görsel.
+
+Alt-iş:
+- **Hardcoded renk haritası** (`short_name → hex`): M1A/M1B kırmızı, M2 yeşil, M3 mavi, M4 pembe, M5/M6/M7/M8/M9 Metro İstanbul resmi renkleri, T1/T3/T4 İETT kurumsal, Marmaray turkuaz, F1/F2/F3 turuncu, İETT genel sarı (`#fdc70c` belediye sarısı), Şehir Hatları lacivert (`#003e7e`). Renk metadata'sı feed'lerde yok — manuel.
+- **Polyline renkleri**: lacivert tek-mod yerine hat-bazlı resmi renk (M2 yeşil polyline, M1A kırmızı polyline, ...).
+- **Scheduled vehicle renkleri**: polyline'ın açık tonu (M2 koyu yeşil polyline + üstünde açık yeşil nokta). Pastel paleti yerine dinamik.
+- **İETT vehicle**: kurumsal sarı `#fdc70c`. Mapped/unmapped ayrımı renk yerine border (mapped: koyu border, unmapped: border yok ya da gri border).
+- **Chip filtreleme**: KM4 chip'lerine `onclick` ekle — tıklanan mod gizlenir/gösterilir. State `Map<mode, boolean>`, MapLibre layer filter expression'ına enjekte et. "Tümü" / "Hiçbiri" toggle butonu eklenebilir.
+- **Hat-bazlı filtreleme paneli** (sağ panel):
+  - Mod gruplandırması (Metro / Tram / Marmaray / Vapur / Otobüs)
+  - Türkçe fuzzy search (ö/ü/ı/ş/ğ/ç normalize, "29b" → 29B)
+  - Her hat toggle'lı: seçili → görünür, değil → gizli
+  - Sürekli görünür kategoriler varsayılan açık, otobüsler varsayılan kapalı (kalabalık önler)
+  - Faz 4'e taşınmıştı ama implement edilmemişti — Faz 6'da çıkacak
+
+Tahmini süre: 3-4 gün.
+
+##### KM2 — Mobile responsive (768px breakpoint)
+
+Kontrol panelleri hamburger menüye, popup'lar bottom sheet'e dönsün. Touch events (pinch zoom, two-finger rotate). Chip'ler mobile'da daha küçük + alt köşeye kayma.
+
+##### KM3 — i18n (TR/EN)
+
+i18next entegrasyonu, dil değiştirici, tüm UI string'leri `src/i18n/tr.json` + `en.json`. Tarih/saat locale-aware.
+
+##### KM4 — Performans cilalama
+
+Viewport dışı araçları cull et (mesh update'leri pas geçilsin). Level-of-detail: zoom < 10'da araçları nokta yerine basit point. Three.js `InstancedMesh` (Faz 4 KM5'ten ertelenmişti).
+
+##### KM5 — Diğer borç maddeleri
+
+Faz 5 deferred'tan gelen iş:
+- CalendarDate import
+- Trip.service_id FK upgrade
+- frequencies.csv expansion (Marmaray görünürlüğü için)
+- route_type=9/10 araştırması
+- Mod toggle UI (KM1'de yapıldı, satır kaldırılır)
+- Production deployment dokümanı (Nginx + Daphne + systemd + SSL)
+- E2E testler (Playwright)
+- Accessibility (klavye, ARIA)
+- Durak arama (autocomplete + PostGIS `pg_trgm` fuzzy Turkish)
+- Saat çubuğu (opsiyonel, +/- 2 saat kaydırma)
+- Landmark GeoJSON'ları (opsiyonel: Ayasofya, Galata Kulesi)
 
 #### Bitiş kriteri
 
