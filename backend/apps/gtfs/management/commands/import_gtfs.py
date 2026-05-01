@@ -427,7 +427,7 @@ class Command(BaseCommand):
         objs = [
             Agency(
                 agency_id=str(r.agency_id),
-                name=str(getattr(r, "agency_name", "") or ""),
+                name=_demojibake(str(getattr(r, "agency_name", "") or "")),
                 url=str(getattr(r, "agency_url", "") or ""),
                 timezone=str(getattr(r, "agency_timezone", "") or "Europe/Istanbul"),
                 lang=str(getattr(r, "agency_lang", "") or "tr"),
@@ -482,8 +482,8 @@ class Command(BaseCommand):
             objs.append(Route(
                 route_id=f"{prefix}{rid_raw}",
                 agency_id=pk,
-                short_name=str(getattr(r, "route_short_name", "") or "")[:50],
-                long_name=str(getattr(r, "route_long_name", "") or "")[:200],
+                short_name=_demojibake(str(getattr(r, "route_short_name", "") or ""))[:50],
+                long_name=_demojibake(str(getattr(r, "route_long_name", "") or ""))[:200],
                 route_type=_safe_int(rt, default=3),
                 color=f"#{color_hex}" if color_hex else "#000000",
                 text_color=f"#{text_hex}" if text_hex else "#FFFFFF",
@@ -541,7 +541,7 @@ class Command(BaseCommand):
 
             objs.append(Stop(
                 stop_id=sid,
-                name=str(getattr(r, "stop_name", "") or "")[:200],
+                name=_demojibake(str(getattr(r, "stop_name", "") or ""))[:200],
                 location=Point(lon_val, lat_val, srid=SRID_WGS84),
                 location_type=_safe_int(getattr(r, "location_type", 0)),
             ))
@@ -661,7 +661,7 @@ class Command(BaseCommand):
                 trip_id=str(r.trip_id),
                 route_id=route_pk[rid],
                 shape_id=shape_fk,
-                headsign=str(getattr(r, "trip_headsign", "") or "")[:200],
+                headsign=_demojibake(str(getattr(r, "trip_headsign", "") or ""))[:200],
                 direction_id=_safe_int(getattr(r, "direction_id", 0)),
                 service_id=str(getattr(r, "service_id", "") or "")[:50],
             ))
@@ -815,3 +815,27 @@ def _parse_gtfs_bool(s) -> bool:
     if s is None or (isinstance(s, float) and pd.isna(s)):
         return False
     return str(s).strip() == "1"
+
+
+def _demojibake(s: str) -> str:
+    """Reverse cp1252→UTF-8 double encoding (e.g. 'KADIKÃ–Y' → 'KADIKÖY').
+
+    Discovered in iETT GTFS routes.csv (Faz 6 KM1 f-polish madde 1):
+    İBB pipeline UTF-8 baytları cp1252 olarak decode edip tekrar
+    UTF-8 olarak encode etmiş. stops.csv ve agency.csv aynı feed'de
+    temiz — dosya-bazlı tutarsızlık. Heuristic feed-bağımsız +
+    idempotent uygulanır:
+
+      - Mojibake markers (Ã, Ä, Å) string'de yoksa → no-op
+      - Round-trip cp1252.encode + utf-8.decode başarısız ise
+        (Portekizce 'São Paulo' veya zaten temiz Türkçe) → orijinal
+      - Sadece gerçekten double-encoded UTF-8 byte dizisi recover olur
+
+    Idempotent: temiz çıktı tekrar çağrılırsa marker bulamaz, no-op.
+    """
+    if not s or not any(c in s for c in "ÃÄÅ"):
+        return s
+    try:
+        return s.encode("cp1252").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return s
