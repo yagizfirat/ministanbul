@@ -14,7 +14,8 @@ export class RouteVisibility {
   private readonly listeners: RouteVisibilityListener[] = [];
   // ALL_ROUTES — tüm route_id'lerin sayısı; getFilterExpression'ın
   // "tümü visible → null" karar noktası için bilinmesi şart.
-  private readonly totalCount: number;
+  // Bus lazy fetch sonrası expandAllIds ile artırılır.
+  private totalCount: number;
 
   constructor(allRouteIds: readonly string[], initiallyVisible: readonly string[]) {
     this.totalCount = allRouteIds.length;
@@ -62,6 +63,15 @@ export class RouteVisibility {
 
   getTotalCount(): number {
     return this.totalCount;
+  }
+
+  // Bus lazy fetch için: yeni route_id'ler totalCount'a eklenir
+  // ama default hidden — visible Set dokunulmaz, listener tetiklenmez
+  // (visible açısından hiçbir şey değişmedi). getFilterExpression
+  // sonraki çağrılarında "tümü visible" yanlış değerlendirmesin diye
+  // totalCount'un güncel olması şart.
+  expandTotalCount(addedCount: number): void {
+    this.totalCount += addedCount;
   }
 
   subscribe(fn: RouteVisibilityListener): void {

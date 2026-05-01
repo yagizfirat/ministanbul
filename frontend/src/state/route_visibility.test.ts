@@ -94,3 +94,31 @@ describe('getFilterExpression', () => {
     expect(FILTER_NEVER).toEqual(['==', ['get', 'route_id'], '__none__']);
   });
 });
+
+describe('RouteVisibility.expandTotalCount (bus lazy fetch)', () => {
+  it('grows totalCount and does not fire listeners', () => {
+    const rv = fresh();
+    const spy = vi.fn();
+    rv.subscribe(spy);
+    const before = rv.getTotalCount();
+    rv.expandTotalCount(9275);
+    expect(rv.getTotalCount()).toBe(before + 9275);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('keeps the visible set untouched (newly counted routes stay hidden)', () => {
+    const rv = fresh();
+    const visibleBefore = Array.from(rv.getVisible());
+    rv.expandTotalCount(9275);
+    expect(Array.from(rv.getVisible())).toEqual(visibleBefore);
+  });
+
+  it('makes getFilterExpression keep returning a non-null filter after expansion', () => {
+    const rv = fresh();
+    // 5 routes, 3 visible → mixed → ['in', ...]
+    expect(getFilterExpression(rv.getVisible(), rv.getTotalCount())).not.toBeNull();
+    rv.expandTotalCount(9275);
+    // Hâlâ mixed (3 visible / 9280 total) → ['in', ...]
+    expect(getFilterExpression(rv.getVisible(), rv.getTotalCount())).not.toBeNull();
+  });
+});

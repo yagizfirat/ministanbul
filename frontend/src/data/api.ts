@@ -92,6 +92,28 @@ export async function fetchActiveRoutes(modes: string[]): Promise<RouteSummary[]
   return perMode.flat();
 }
 
+// Bus için tek seferde fetch (9275 hat). Backend search filter yok →
+// frontend in-memory fuzzy match. page_size=10000 override edilebilir
+// (KM3-c discovery'de 5000 testte çalışmıştı, 10000 güvenli üst sınır).
+export async function fetchAllBusRoutes(): Promise<RouteSummary[]> {
+  const url = '/api/routes/?mode=bus&page_size=10000';
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) {
+    throw new Error(`fetchAllBusRoutes failed: HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as RouteListResponse;
+  return data.results.map((r) => ({
+    id: r.id,
+    route_id: r.route_id,
+    short_name: r.short_name,
+    long_name: r.long_name,
+    route_type: r.route_type,
+    route_type_label: r.route_type_label,
+    agency_name: r.agency?.name ?? '',
+    mode: 'bus',
+  }));
+}
+
 async function fetchRoutesForMode(mode: string): Promise<RouteSummary[]> {
   const url = `/api/routes/?mode=${encodeURIComponent(mode)}&has_shape=true&page_size=200`;
   const res = await fetch(url, { headers: { Accept: 'application/json' } });

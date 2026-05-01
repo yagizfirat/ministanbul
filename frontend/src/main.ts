@@ -4,6 +4,7 @@ import { connectWebSocket, type VehicleSnapshot } from './data/websocket';
 import {
   fetchActiveRoutes,
   fetchActiveTrips,
+  fetchAllBusRoutes,
   fetchLiveVehicles,
   type RouteSummary,
 } from './data/api';
@@ -18,11 +19,17 @@ import { ScheduledFleet } from './simulation/scheduled_fleet';
 import type { InterpolatedScheduledTrip } from './simulation/scheduled_trip';
 import {
   ModeVisibility,
-  getFilterExpression,
+  getFilterExpression as getModeFilter,
   type ModeKey,
 } from './state/mode_visibility';
+import {
+  RouteVisibility,
+  getFilterExpression as getRouteFilter,
+} from './state/route_visibility';
+import { combineFilters } from './state/composite_filter';
 import { createLastUpdateIndicator } from './ui/last_update_indicator';
 import { createSimulatedBadge } from './ui/simulated_badge';
+import { createRoutePanel, type RoutePanelHandle } from './ui/route_panel';
 
 const ISTANBUL_CENTER: [number, number] = [29.00, 41.04];
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/bright';
@@ -98,33 +105,32 @@ map.on('load', () => {
   initRouteLinesLayer(map, 'fleet-circles');
   // Scheduled layer sits on top of fleet-circles (last → topmost).
   initScheduledLayer(map);
-  // KM1 alt-iş e: chip click → mode_visibility → MapLibre setFilter.
-  modeVisibility.subscribe((visible) => {
-    const expr = getFilterExpression(visible);
-    map.setFilter('scheduled-circles', expr as never);
-    simulatedBadge.syncVisibility();
-  });
+  // Chip dot opacity sync — composite filter applyFilters tarafından
+  // tetiklenecek (loadAlwaysVisibleRoutes içinde subscribe edilir).
   startRenderLoop();
   startRealtime();
   void loadAlwaysVisibleRoutes().then(() => startScheduledPolling());
 });
 
+let routeVisibility: RouteVisibility | null = null;
+let routePanel: RoutePanelHandle | null = null;
+
 async function loadAlwaysVisibleRoutes(): Promise<void> {
   console.log(`[routes] discovering active routes for ${ALWAYS_VISIBLE_MODES.length} modes...`);
-  let summaries: RouteSummary[];
+  let polylineSummaries: RouteSummary[];
   try {
-    summaries = await fetchActiveRoutes(ALWAYS_VISIBLE_MODES);
+    polylineSummaries = await fetchActiveRoutes(ALWAYS_VISIBLE_MODES);
   } catch (err) {
     console.warn('[routes] discovery failed', err);
     return;
   }
-  routeStore.registerSummaries(summaries);
-  console.log(`[routes] found ${summaries.length} routes, loading shapes...`);
+  routeStore.registerSummaries(polylineSummaries);
+  console.log(`[routes] found ${polylineSummaries.length} routes, loading shapes...`);
 
   let loaded = 0;
   let skipped = 0;
-  for (let i = 0; i < summaries.length; i += ROUTE_FETCH_BATCH) {
-    const batch = summaries.slice(i, i + ROUTE_FETCH_BATCH);
+  for (let i = 0; i < polylineSummaries.length; i += ROUTE_FETCH_BATCH) {
+    const batch = polylineSummaries.slice(i, i + ROUTE_FETCH_BATCH);
     const results = await Promise.allSettled(
       batch.map(async (s) => ({ s, outcome: await routeStore.add(s.route_id) })),
     );
@@ -144,6 +150,58 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
     }
   }
   console.log(`[routes] all done: ${loaded} loaded, ${skipped} skipped`);
+
+  // KM1 alt-iş f-6 — RoutePanel + composite filter wiring.
+  // Ferry polyline çizilmez (KM3 paterni) ama panel'de listelenir;
+  // scheduled vehicle layer'ı route_id filter'ına tabi olduğu için
+  // ferry default visible kalır (vapur scheduled noktalar görünür).
+  let ferrySummaries: RouteSummary[] = [];
+  try {
+    ferrySummaries = await fetchActiveRoutes(['ferry']);
+    console.log(`[routes] ferry metadata for panel: ${ferrySummaries.length}`);
+  } catch (err) {
+    console.warn('[routes] ferry fetch failed', err);
+  }
+
+  const initialRoutes = [...polylineSummaries, ...ferrySummaries];
+  const initialIds = initialRoutes.map((r) => r.route_id);
+  // 5 polyline modu (subway+tram+funicular+marmaray) + ferry = default visible.
+  // Bus default hidden — lazy fetch sonrası expandTotalCount.
+  routeVisibility = new RouteVisibility(initialIds, initialIds);
+  routePanel = createRoutePanel({ visibility: routeVisibility, routes: initialRoutes });
+
+  function applyFilters(): void {
+    if (!routeVisibility) return;
+    const modeF = getModeFilter(modeVisibility.getVisible());
+    const routeF = getRouteFilter(routeVisibility.getVisible(), routeVisibility.getTotalCount());
+    if (map.getLayer('route-lines')) {
+      map.setFilter('route-lines', routeF as never);
+    }
+    if (map.getLayer('scheduled-circles')) {
+      map.setFilter('scheduled-circles', combineFilters(modeF, routeF) as never);
+    }
+    if (map.getLayer('fleet-circles')) {
+      map.setFilter('fleet-circles', routeF as never);
+    }
+    simulatedBadge.syncVisibility();
+  }
+  modeVisibility.subscribe(applyFilters);
+  routeVisibility.subscribe(applyFilters);
+  applyFilters();
+
+  // Bus lazy fetch (~9275 hat, page_size=10000 tek seferde).
+  routePanel.setBusLoading(true);
+  fetchAllBusRoutes()
+    .then((busRoutes) => {
+      console.log(`[bus] loaded ${busRoutes.length} routes`);
+      routeVisibility?.expandTotalCount(busRoutes.length);
+      routePanel?.setRoutes([...initialRoutes, ...busRoutes]);
+    })
+    .catch((err) => {
+      console.warn('[bus] fetch failed', err);
+      routePanel?.setBusError('Otobüs hatları yüklenemedi');
+    })
+    .finally(() => routePanel?.setBusLoading(false));
 }
 
 function startRenderLoop(): void {
