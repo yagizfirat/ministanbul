@@ -34,10 +34,11 @@ interface FleetCollection {
 
 const EMPTY_FC: FleetCollection = { type: 'FeatureCollection', features: [] };
 
-// Pure paint factory — extracted so the expression structure is
-// unit-testable.
-export function buildFleetPaint() {
-  return {
+// Pure paint factory — focused null → mevcut paint.
+// focused dolu → o hattaki İETT vehicle'ları opacity 1.0,
+// diğerleri (mapped + unmapped) 0.2 (alt-iş g focus mode).
+export function buildFleetPaint(focused: string | null = null) {
+  const base = {
     'circle-radius': [
       'interpolate', ['linear'], ['zoom'],
       10, 3,
@@ -50,6 +51,20 @@ export function buildFleetPaint() {
       STROKE_WIDTH_UNMAPPED,
     ],
     'circle-stroke-color': COLOR_STROKE_MAPPED,
+  } as const;
+  if (focused === null) return base;
+  return {
+    ...base,
+    'circle-opacity': [
+      'case',
+      ['==', ['get', 'route_id'], focused], 1.0,
+      0.2,
+    ],
+    'circle-stroke-opacity': [
+      'case',
+      ['==', ['get', 'route_id'], focused], 1.0,
+      0.2,
+    ],
   } as const;
 }
 

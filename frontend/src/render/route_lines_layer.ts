@@ -25,18 +25,35 @@ interface RouteCollection {
 const collection: RouteCollection = { type: 'FeatureCollection', features: [] };
 const shapeIndex = new Map<string, LonLat[]>();
 
-// Pure paint factory — KM1 alt-iş d patterniyle simetri için
-// dışarı export edildi. Test edilebilir + alt-iş c/e'de değişimi
-// lokalize eder.
-export function buildRouteLinePaint() {
+// Pure paint factory — focused null → mevcut paint.
+// focused dolu → focused hat parlak (opacity 1.0, %50 daha kalın),
+// diğerleri sönük (opacity 0.2). Alt-iş g focus mode "ışın kılıcı"
+// efektinin route-lines kısmı.
+export function buildRouteLinePaint(focused: string | null = null) {
+  if (focused === null) {
+    return {
+      'line-color': ['get', 'color'],
+      'line-opacity': 0.85,
+      'line-width': [
+        'interpolate', ['linear'], ['zoom'],
+        10, 2,
+        14, 4,
+        18, 6,
+      ],
+    } as const;
+  }
   return {
     'line-color': ['get', 'color'],
-    'line-opacity': 0.85,
+    'line-opacity': [
+      'case',
+      ['==', ['get', 'route_id'], focused], 1.0,
+      0.2,
+    ],
     'line-width': [
-      'interpolate', ['linear'], ['zoom'],
-      10, 2,
-      14, 4,
-      18, 6,
+      'case',
+      ['==', ['get', 'route_id'], focused],
+      ['interpolate', ['linear'], ['zoom'], 10, 3, 14, 6, 18, 9],
+      ['interpolate', ['linear'], ['zoom'], 10, 2, 14, 4, 18, 6],
     ],
   } as const;
 }

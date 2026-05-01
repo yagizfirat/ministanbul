@@ -30,10 +30,11 @@ interface ScheduledCollection {
 
 const EMPTY_FC: ScheduledCollection = { type: 'FeatureCollection', features: [] };
 
-// Pure paint factory — alt-iş b/d patterniyle simetri için dışarı
-// export edildi. Data-driven `['get', 'color']` / `['get', 'strokeColor']`.
-export function buildScheduledLayerPaint() {
-  return {
+// Pure paint factory — focused null → mevcut paint.
+// focused dolu → o hatın trip'leri opacity 1.0, diğerleri 0.2
+// (alt-iş g focus mode).
+export function buildScheduledLayerPaint(focused: string | null = null) {
+  const base = {
     'circle-radius': [
       'interpolate', ['linear'], ['zoom'],
       10, 3,
@@ -43,6 +44,20 @@ export function buildScheduledLayerPaint() {
     'circle-color': ['get', 'color'],
     'circle-stroke-width': 1,
     'circle-stroke-color': ['get', 'strokeColor'],
+  } as const;
+  if (focused === null) return base;
+  return {
+    ...base,
+    'circle-opacity': [
+      'case',
+      ['==', ['get', 'route_id'], focused], 1.0,
+      0.2,
+    ],
+    'circle-stroke-opacity': [
+      'case',
+      ['==', ['get', 'route_id'], focused], 1.0,
+      0.2,
+    ],
   } as const;
 }
 

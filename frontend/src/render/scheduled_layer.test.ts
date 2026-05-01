@@ -22,6 +22,19 @@ describe('buildScheduledLayerPaint', () => {
     expect(Array.isArray(paint['circle-radius'])).toBe(true);
     expect(paint['circle-radius'][0]).toBe('interpolate');
   });
+
+  it('focused null → no circle-opacity key (default rendering)', () => {
+    const paint = buildScheduledLayerPaint(null);
+    expect((paint as Record<string, unknown>)['circle-opacity']).toBeUndefined();
+  });
+
+  it('focused dolu → circle-opacity case expression (focused 1.0, others 0.2)', () => {
+    const paint = buildScheduledLayerPaint('public:m2') as Record<string, unknown>;
+    const op = paint['circle-opacity'] as readonly unknown[];
+    expect(op[0]).toBe('case');
+    expect(op[2]).toBe(1.0);
+    expect(op[3]).toBe(0.2);
+  });
 });
 
 function pose(

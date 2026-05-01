@@ -31,6 +31,18 @@ describe('buildFleetPaint', () => {
     expect(radius[0]).toBe('interpolate');
   });
 
+  it('focused null → no circle-opacity (default rendering)', () => {
+    expect((buildFleetPaint(null) as Record<string, unknown>)['circle-opacity']).toBeUndefined();
+  });
+
+  it('focused dolu → circle-opacity case expression', () => {
+    const paint = buildFleetPaint('iett:29B') as Record<string, unknown>;
+    const op = paint['circle-opacity'] as readonly unknown[];
+    expect(op[0]).toBe('case');
+    expect(op[2]).toBe(1.0);
+    expect(op[3]).toBe(0.2);
+  });
+
   it('manually evaluates the stroke-width case for a mapped vs unmapped feature', () => {
     // Tiny inline evaluator to prove the expression's intent end-to-end.
     const expr = buildFleetPaint()['circle-stroke-width'] as readonly [

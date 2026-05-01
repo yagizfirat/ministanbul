@@ -20,6 +20,24 @@ describe('buildRouteLinePaint', () => {
     expect(Array.isArray(w)).toBe(true);
     expect(w[0]).toBe('interpolate');
   });
+
+  it('focused null returns base paint (line-opacity sabit 0.85)', () => {
+    expect(buildRouteLinePaint(null)['line-opacity']).toBe(0.85);
+  });
+
+  it('focused dolu → line-opacity case expression with focused id', () => {
+    const p = buildRouteLinePaint('public:m2');
+    const op = p['line-opacity'] as readonly unknown[];
+    expect(op[0]).toBe('case');
+    expect(op[1]).toEqual(['==', ['get', 'route_id'], 'public:m2']);
+    expect(op[2]).toBe(1.0); // focused
+    expect(op[3]).toBe(0.2); // others
+  });
+
+  it('focused dolu → line-width also case-driven (focused thicker)', () => {
+    const w = buildRouteLinePaint('public:m2')['line-width'] as readonly unknown[];
+    expect(w[0]).toBe('case');
+  });
 });
 
 const SHAPE: ShapeFeature = {
