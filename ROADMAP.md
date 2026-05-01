@@ -873,15 +873,21 @@ Alt-iş:
 - ✅ **Polyline renkleri**: lacivert tek-mod yerine hat-bazlı resmi renk (M2 yeşil, M1A kırmızı, T1 lacivert, …). Mevcut tek-source/tek-layer + data-driven `['get', 'color']` paint zaten Yol B'ye hazırdı; `route_store.add` çağrısında renk lookup'ı `colorForMode` → `getRouteColor(short_name, mode)` swap edildi. `addRouteToMap` imzasına `shortName` eklendi, `RouteFeature.properties` `short_name` alanı taşıyor (alt-iş f hat panelinin filtrelemesi için de hazır). Refactor commit `2f5ec01` (paint pure function `buildRouteLinePaint` + `buildRouteFeature` + short_name propagation), feat commit `bb5ef1f` (KM1 alt-iş b, 2026-05-01). 9 Vitest case eklendi (toplam 56). Funicular F1-F4 hâlâ mod fallback turuncusunda (ROUTE_COLORS'ta hex yok — beklenen; sonraki tur).
 - ✅ **Scheduled vehicle renkleri**: polyline'ın açık tonu (M2 koyu yeşil polyline + üstünde açık yeşil nokta). `lighten(getRouteColor(short_name, mode), 0.2)` HSL +0.2L; stroke = orijinal hat rengi (vehicle "halka içinde açık ton" olarak okunur). Eski mod-bazlı 5-pastel `SCHEDULED_VEHICLE_COLORS` paleti kaldırıldı, `state/mode_colors.ts` komple silindi (alt-iş b sonrası colorForMode/MODE_COLORS zaten ölüydü, c'de SCHEDULED_VEHICLE_* da öldü → tek atomik silme). `PreparedTrip` ve `InterpolatedScheduledTrip`'e `short_name` alanı eklendi (pipeline genişletildi). Refactor commit `8f1e858` (paint pure function + short_name propagation), feat commit `2277229` (KM1 alt-iş c, 2026-05-01), chore commit `ff6b51c` (mode_colors.ts sildi). 10 Vitest case eklendi (toplam 66).
 - ✅ **İETT vehicle**: kurumsal sarı `#FDC70C`. Mapped/unmapped ayrımı renk yerine border (mapped: 1.5px `#3a2a00` koyu kahve, unmapped: border yok). `circle-stroke-width` paint expression `['case', ['has', 'route_id'], 1.5, 0]`. Eski mavi/kırmızı (mapped/unmapped) palet kaldırıldı — kırmızı "hata" çağrışımını yumuşatma kararı (spec §A.13/A.14 unmapped doğal). Refactor commit `ea66f47` (paint pure function), feat commit `ba796cd` (KM1 alt-iş d, 2026-05-01). 5 Vitest sanity case eklendi (toplam 47).
-- ✅ **Chip filtreleme**: KM4 chip'lerine `onclick` eklendi — tıklanan mod scheduled-circles layer'ından gizlenir/gösterilir. `state/mode_visibility.ts` (yeni): `Set<ModeKey>` + listener pattern + `getFilterExpression(visible)` (5/5→`null` no-op, 0/5→`['==','__none__']`, mixed→`['in', ['get','mode'], ['literal', [...]]]`). Snapshot listener (mutation race önler). Hidden dot opacity 0.3 + `transition: 150ms ease`. Chip dot renkleri `MODE_FALLBACK_COLORS`'a hizalandı (alt-iş c sonrası tutarsızlık temizliği). "Tümü/Hiçbiri" butonu **eklenmedi** — alt-iş f sağ paneline ertelendi (chip minimal kaldı). state commit `07e0084`, ui+integration birleşik commit `c22ad20` (KM1 alt-iş e, 2026-05-01). 7 yeni Vitest case (toplam 75) — DOM testi atlandı (jsdom dep eklemekten kaçınıldı, manuel doğrulama).
-- **Hat-bazlı filtreleme paneli** (sağ panel):
-  - Mod gruplandırması (Metro / Tram / Marmaray / Vapur / Otobüs)
-  - Türkçe fuzzy search (ö/ü/ı/ş/ğ/ç normalize, "29b" → 29B)
-  - Her hat toggle'lı: seçili → görünür, değil → gizli
-  - Sürekli görünür kategoriler varsayılan açık, otobüsler varsayılan kapalı (kalabalık önler)
-  - Faz 4'e taşınmıştı ama implement edilmemişti — Faz 6'da çıkacak
+- ❌ **Chip filtreleme**: KM4 chip'leri tıklanabilir yapılmıştı (commit `07e0084` + `c22ad20`) ama f-polish manuel doğrulamada kullanıcı geri bildirimi: sağ panel mod grupları chip'in info+toggle işlevini ikame etti. **Geri alındı** — `state/mode_visibility.ts`, `state/composite_filter.ts`, `ui/simulated_badge.ts` silindi (commit `0658b2a`). Tarife-bazlı uyarı panel header'ında `?` ikonuyla korundu (alt-iş f-polish madde 4).
+- ✅ **Hat-bazlı filtreleme paneli** (sağ panel) — alt-iş f (7 alt-adım f-1..f-6 + manuel f-7 + 4 maddelik polish turu):
+  - **Mod gruplandırması** (Metro / Marmaray / Tram / Funicular / Vapur / Otobüs) — 6 grup, bus default kapalı (lazy mount)
+  - **Türkçe fuzzy search** (`util/turkish_normalize.ts` + 20 case): ö/ü/ı/ş/ğ/ç normalize, "29b" → 29B, "şiş" → Şişhane match
+  - **Her hat toggle'lı**: checkbox + RouteVisibility.toggle, RouteFeature filter
+  - **Bulk actions** (header row2): Tümü / Hiçbiri / Reset (Reset = polyline + ferry default)
+  - **Bus virtualized list** (`ui/virtual_list.ts` + 10 case): 9275 hat × 40px sabit, ≤20 DOM node, jsdom test
+  - **Composite filter** (3 layer): `route-lines`, `scheduled-circles`, `fleet-circles` tek route filter altında
+  - **Demojibake** (f-polish madde 1, commit `a324939`): iETT routes UTF-8 mojibake'i import sırasında geri çevirir, ~5346 hat düzeldi
+  - **Collapse** (f-polish madde 3, commit `9ab3b02`): collapsed durumda collapse-btn görünür kalır, geri açma yolu
+  - **Hint icon** (f-polish madde 4, commit `7a69a1e`): chip kaldırıldı, panel header'ında `?` tooltip
+  - Commit zinciri: f-1 keşif raporu, f-2 `a37ff99`, f-3 `296a00d`, f-4 `4e7696d`, f-5 `25c291c`, f-6 (`e10c299`+`281fff7`+`80d1d12`), polish (`a324939`+`0658b2a`+`9ab3b02`+`7a69a1e`)
+  - **140 yeşil Vitest** (önceki 75'ten +65: route_visibility 12, turkish_normalize 20, virtual_list 10, route_panel 26, demojibake 11, collapse +1, route_visibility expansion+reset +5, başka), **191 yeşil backend** (180+11 demojibake)
 
-Tahmini süre: 3-4 gün.
+Tahmini süre: 3-4 gün → **gerçek: ~1.5 gün**.
 
 ##### KM2 — Mobile responsive (768px breakpoint)
 
