@@ -66,25 +66,33 @@ export class SnapshotStore {
   }
 
   // f-polish-3 madde 3: bus için polyline yok → çift tıklamada
-  // vehicle konumlarından bbox hesapla (fallback). En güncel snapshot
-  // (t1) tüketilir; null vehicle yoksa veya hat'a hiç araç yoksa.
+  // vehicle konumlarından bbox hesapla (fallback). Single-route
+  // convenience; multi-route için getVehicleBBoxForRoutes.
   getVehicleBBoxForRoute(routeId: string): [number, number, number, number] | null {
-    if (this.t1 === null) return null;
+    return this.getVehicleBBoxForRoutes([routeId]);
+  }
+
+  // f-polish-5: union bbox over multiple route_ids (variant group).
+  // Bus 29B = 7 variant route_id; tüm araçların ortak bbox'ı.
+  getVehicleBBoxForRoutes(
+    routeIds: readonly string[],
+  ): [number, number, number, number] | null {
+    if (this.t1 === null || routeIds.length === 0) return null;
+    const idSet = new Set(routeIds);
     let minLon = Infinity;
     let minLat = Infinity;
     let maxLon = -Infinity;
     let maxLat = -Infinity;
     let count = 0;
     for (const v of this.t1.vehicles.values()) {
-      if (v.route_id !== routeId) continue;
+      if (v.route_id === null || !idSet.has(v.route_id)) continue;
       if (v.lon < minLon) minLon = v.lon;
       if (v.lon > maxLon) maxLon = v.lon;
       if (v.lat < minLat) minLat = v.lat;
       if (v.lat > maxLat) maxLat = v.lat;
       count++;
     }
-    if (count === 0) return null;
-    return [minLon, minLat, maxLon, maxLat];
+    return count === 0 ? null : [minLon, minLat, maxLon, maxLat];
   }
 }
 

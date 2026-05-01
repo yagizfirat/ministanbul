@@ -50,6 +50,29 @@ describe('SnapshotStore.getVehicleBBoxForRoute', () => {
     expect(s.getVehicleBBoxForRoute('iett:29B')).toEqual([29.0, 41.0, 29.30, 41.20]);
   });
 
+  it('getVehicleBBoxForRoutes (multi) computes union over variant ids', () => {
+    const s = new SnapshotStore();
+    s.push(
+      snap([
+        { id: 'a', lat: 41.0, lon: 29.0, bearing: null, speed: 0, route_id: 'iett:1562' },
+        { id: 'b', lat: 41.10, lon: 29.10, bearing: null, speed: 0, route_id: 'iett:1564' },
+        { id: 'c', lat: 41.20, lon: 29.20, bearing: null, speed: 0, route_id: 'iett:1567' },
+        // Group dışı — dahil edilmemeli
+        { id: 'd', lat: 40.5, lon: 28.5, bearing: null, speed: 0, route_id: 'iett:other' },
+      ]) as unknown as VehicleSnapshot,
+    );
+    expect(s.getVehicleBBoxForRoutes(['iett:1562', 'iett:1564', 'iett:1567']))
+      .toEqual([29.0, 41.0, 29.20, 41.20]);
+  });
+
+  it('getVehicleBBoxForRoutes returns null for empty input', () => {
+    const s = new SnapshotStore();
+    s.push(snap([
+      { id: 'a', lat: 41.0, lon: 29.0, bearing: null, speed: 0, route_id: 'iett:1' },
+    ]) as unknown as VehicleSnapshot);
+    expect(s.getVehicleBBoxForRoutes([])).toBeNull();
+  });
+
   it('uses the latest snapshot only (t1), not t0', () => {
     const s = new SnapshotStore();
     s.push(

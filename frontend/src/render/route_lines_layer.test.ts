@@ -6,6 +6,7 @@ import {
   buildRouteLineGlowPaint,
   buildRouteLinePaint,
   getRouteBBox,
+  getRoutesBBox,
   removeRouteFromMap,
 } from './route_lines_layer';
 import { getRouteColor, ROUTE_COLORS, MODE_FALLBACK_COLORS } from '../styling/route_colors';
@@ -67,6 +68,36 @@ describe('buildRouteLineGlowPaint', () => {
     expect(p['line-opacity']).toBe(0.4);
     const w = p['line-width'] as readonly unknown[];
     expect(w[0]).toBe('interpolate');
+  });
+});
+
+describe('getRoutesBBox (f-polish-5 — union over variant group)', () => {
+  const stubMap = { getSource: () => undefined } as unknown as MapLibreMap;
+
+  it('returns null for empty input', () => {
+    expect(getRoutesBBox([])).toBeNull();
+  });
+
+  it('union bbox over multiple routes covers all coords', () => {
+    addRouteToMap(stubMap, 'r1', 'metro', 'A', '#000', {
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: [[29.0, 41.0], [29.05, 41.05]] as [number, number][],
+      },
+      properties: { shape_id: 's-r1' },
+    });
+    addRouteToMap(stubMap, 'r2', 'metro', 'A', '#000', {
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: [[28.95, 41.10], [29.10, 41.15]] as [number, number][],
+      },
+      properties: { shape_id: 's-r2' },
+    });
+    expect(getRoutesBBox(['r1', 'r2'])).toEqual([28.95, 41.0, 29.10, 41.15]);
+    removeRouteFromMap(stubMap, 'r1');
+    removeRouteFromMap(stubMap, 'r2');
   });
 });
 

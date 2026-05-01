@@ -166,25 +166,36 @@ export function getShapeFor(shapeId: string): LonLat[] | null {
   return shapeIndex.get(shapeId) ?? null;
 }
 
-// Bbox (min lon, min lat, max lon, max lat) — alt-iş g panel çift
-// tıkla zoom için (map.fitBounds tüketir). Route polyline ~500-2000
-// vertex, single-pass yeterince hızlı.
+// Bbox (min lon, min lat, max lon, max lat) — panel çift tıkla zoom
+// için. Single-route convenience wrapper, multi-route varyant grubu
+// için getRoutesBBox kullanılır.
 export function getRouteBBox(routeId: string): [number, number, number, number] | null {
-  const feature = collection.features.find((f) => f.properties.route_id === routeId);
-  if (!feature) return null;
-  const coords = feature.geometry.coordinates;
-  if (coords.length === 0) return null;
+  return getRoutesBBox([routeId]);
+}
+
+// f-polish-5: union bbox over multiple route_ids (variant group).
+// Tüm matching feature'ların coordinates birleşiminin min/max'i.
+export function getRoutesBBox(
+  routeIds: readonly string[],
+): [number, number, number, number] | null {
+  if (routeIds.length === 0) return null;
+  const idSet = new Set(routeIds);
   let minLon = Infinity;
   let minLat = Infinity;
   let maxLon = -Infinity;
   let maxLat = -Infinity;
-  for (const [lon, lat] of coords) {
-    if (lon < minLon) minLon = lon;
-    if (lon > maxLon) maxLon = lon;
-    if (lat < minLat) minLat = lat;
-    if (lat > maxLat) maxLat = lat;
+  let found = false;
+  for (const f of collection.features) {
+    if (!idSet.has(f.properties.route_id)) continue;
+    for (const [lon, lat] of f.geometry.coordinates) {
+      if (lon < minLon) minLon = lon;
+      if (lon > maxLon) maxLon = lon;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+    }
+    found = true;
   }
-  return [minLon, minLat, maxLon, maxLat];
+  return found ? [minLon, minLat, maxLon, maxLat] : null;
 }
 
 function flush(map: MapLibreMap): void {
