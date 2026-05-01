@@ -17,6 +17,7 @@ import { initTerrain } from './render/terrain';
 import { ScheduledFleet } from './simulation/scheduled_fleet';
 import type { InterpolatedScheduledTrip } from './simulation/scheduled_trip';
 import { createLastUpdateIndicator } from './ui/last_update_indicator';
+import { createSimulatedBadge } from './ui/simulated_badge';
 
 const ISTANBUL_CENTER: [number, number] = [29.00, 41.04];
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/bright';
@@ -36,6 +37,7 @@ const scheduledFleets = new Map<string, ScheduledFleet>(
   SCHEDULED_MODES.map((m) => [m, new ScheduledFleet()]),
 );
 const indicator = createLastUpdateIndicator();
+createSimulatedBadge();
 
 // Module-level Intl.DateTimeFormat cache: avoid building one per frame.
 const ISTANBUL_TIME_FMT = new Intl.DateTimeFormat('en-GB', {

@@ -824,8 +824,8 @@ gerçek gecikmeleri yansıtmadığını bilsin.
 2a. ✅ Scheduled interpolator metro only (KM3-a, 2026-05-01, direction-bug fix dahil)
 2b. ✅ Çoklu mod genişleme (KM3-b, 2026-05-01)
 2c. ✅ import_gtfs --force idempotency check (KM3-c, 2026-05-01)
-3. Simulated badge + UI toggle (canlı / simüle / ikisi birden)
-4. Metro / Marmaray / vapur için mod-bazlı renk farklılığı
+3. ✅ Simulated badge (KM4, 2026-05-01) — sadece bilgilendirici chip; toggle Faz 6'ya
+4. ✅ Mod-bazlı renk farklılığı (KM3-b'de yapıldı, kapanış)
 5. OSM Overpass client + `snap_iett_routes` komutu
 6. `pgrouting` extension kurulumu + PostGIS upgrade kontrolü
 7. Snap sonuçlarını `Shape` tablosuna yazma + trip eşleme
@@ -837,6 +837,7 @@ gerçek gecikmeleri yansıtmadığını bilsin.
 - **`route_type=9`** (317 route, 880 trip) ve **`route_type=10`** (58 route, 230 trip) — discovery'de dolmuş/shuttle/ring/hastane servisi gibi görünüyor; GTFS extended kod değil, non-standard İBB değeri. Endpoint whitelist dışı; ne anlama geldikleri Faz 6'da araştırılacak.
 - **`frequencies.csv` expansion** — Public feed 2 311 satır, 1 230 distinct trip_id. Marmaray 6/10 trip headway template; subway/tram/ferry'de azınlık. Endpoint v0 explicit `stop_times` üzerinden çalışıyor — frequency-based trip'ler "tek görünür sefer" sınırlamasıyla görünür. Tam expansion Faz 6.
 - **Public feed `end_date=20241231` (bayat)** — `download_gtfs` Hash match (İBB tarafında değişmemiş). Endpoint `start_date/end_date` filtresini bypass ediyor (sadece `monday/tuesday/...` flag). Feed yenilenince filtre devreye alınır; o zamana kadar dev/demo modu.
+- **Mod toggle UI (canlı / simüle / ikisi birden)** — KM4 sadece bilgilendirici badge yaptı. Kullanıcı modları seçici olarak göstermek isterse Faz 6 polish kapsamında interaction katmanı eklenir.
 
 #### Bitiş kriteri
 
