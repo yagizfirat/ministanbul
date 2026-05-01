@@ -62,6 +62,22 @@ describe('lighten', () => {
     expect(lighten('#FFFFFF', 0.5)).toBe('#FFFFFF');
   });
 
+  it('darkens with a negative amount (HSL L decreases)', () => {
+    const orig = '#FDC70C';
+    const out = lighten(orig, -0.15);
+    expect(out).toMatch(/^#[0-9A-F]{6}$/);
+    expect(out).not.toBe(orig);
+    const sum = (h: string) =>
+      parseInt(h.slice(1, 3), 16) +
+      parseInt(h.slice(3, 5), 16) +
+      parseInt(h.slice(5, 7), 16);
+    expect(sum(out)).toBeLessThan(sum(orig));
+  });
+
+  it('clamps L at 0 (black) for an over-negative amount', () => {
+    expect(lighten('#000000', -0.5)).toBe('#000000');
+  });
+
   it('returns a 7-char #RRGGBB string for any input', () => {
     for (const hex of ['#EE2229', '#059A4D', '#FCD10D']) {
       const out = lighten(hex, 0.1);

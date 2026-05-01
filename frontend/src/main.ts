@@ -16,6 +16,11 @@ import { initScheduledLayer, updateScheduled } from './render/scheduled_layer';
 import { initTerrain } from './render/terrain';
 import { ScheduledFleet } from './simulation/scheduled_fleet';
 import type { InterpolatedScheduledTrip } from './simulation/scheduled_trip';
+import {
+  ModeVisibility,
+  getFilterExpression,
+  type ModeKey,
+} from './state/mode_visibility';
 import { createLastUpdateIndicator } from './ui/last_update_indicator';
 import { createSimulatedBadge } from './ui/simulated_badge';
 
@@ -37,7 +42,13 @@ const scheduledFleets = new Map<string, ScheduledFleet>(
   SCHEDULED_MODES.map((m) => [m, new ScheduledFleet()]),
 );
 const indicator = createLastUpdateIndicator();
-createSimulatedBadge();
+const modeVisibility = new ModeVisibility();
+const simulatedBadge = createSimulatedBadge({
+  onToggle: (mode: ModeKey) => {
+    modeVisibility.toggle(mode);
+  },
+  isVisible: (mode: ModeKey) => modeVisibility.isVisible(mode),
+});
 
 // Module-level Intl.DateTimeFormat cache: avoid building one per frame.
 const ISTANBUL_TIME_FMT = new Intl.DateTimeFormat('en-GB', {
@@ -87,6 +98,12 @@ map.on('load', () => {
   initRouteLinesLayer(map, 'fleet-circles');
   // Scheduled layer sits on top of fleet-circles (last → topmost).
   initScheduledLayer(map);
+  // KM1 alt-iş e: chip click → mode_visibility → MapLibre setFilter.
+  modeVisibility.subscribe((visible) => {
+    const expr = getFilterExpression(visible);
+    map.setFilter('scheduled-circles', expr as never);
+    simulatedBadge.syncVisibility();
+  });
   startRenderLoop();
   startRealtime();
   void loadAlwaysVisibleRoutes().then(() => startScheduledPolling());
@@ -160,7 +177,7 @@ function startScheduledPolling(): void {
         const { mode, count, prepared, shapeCache, result } = r.value;
         console.log(
           `[scheduled] ${mode}: ${count} active, prepared=${prepared}, shapeCache=${shapeCache} ` +
-            `(noShape=${result.skippedNoShape} snapFail=${result.skippedSnapFail})`,
+          `(noShape=${result.skippedNoShape} snapFail=${result.skippedSnapFail})`,
         );
       } else {
         console.warn('[scheduled] poll failed', r.reason);
@@ -185,7 +202,7 @@ function startRealtime(): void {
       const snap = await fetchLiveVehicles();
       console.log(
         `[rest] snapshot: ${snap.vehicle_count} vehicles, ` +
-          `${snap.mapped_count} mapped, ${snap.vehicles.length} in payload`,
+        `${snap.mapped_count} mapped, ${snap.vehicles.length} in payload`,
       );
       pushSnapshot(snap);
     } catch (err) {
@@ -231,3 +248,5 @@ function startRealtime(): void {
 
   armFallback();
 }
+
+(window as any).__map = map;

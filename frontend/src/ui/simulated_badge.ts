@@ -1,29 +1,45 @@
 // Faz 5 KM4 — informational chip explaining the colored vehicle dots are
 // schedule-based simulation, not live positions. Top-right, below the
 // MapLibre NavigationControl.
+//
+// Faz 6 KM1 alt-iş e — chip dot'ları:
+//   (i) MODE_FALLBACK_COLORS'a hizalandı (ekrandaki gerçek nokta paleti
+//       ile aynı kaynak; alt-iş c sonrası mode_colors.ts silindi),
+//   (ii) tıklanabilir hale geldi → mode_visibility state'i toggle eder.
+
+import { MODE_FALLBACK_COLORS, lighten } from '../styling/route_colors';
+import { ALL_MODES, type ModeKey } from '../state/mode_visibility';
 
 const HINT_TEXT =
   'Renkli noktalar gerçek konum değil, GTFS tarifesine göre tahmini ' +
   'konumdur. Gerçek gecikme/aksaklık yansıtılmaz.';
 
-interface ModeRow {
-  key: string;
-  label: string;
-  fill: string;
-  stroke: string;
+const LABELS: Record<ModeKey, string> = {
+  metro: 'Metro',
+  marmaray: 'Marmaray',
+  tram: 'Tramvay',
+  funicular: 'Füniküler',
+  ferry: 'Vapur',
+};
+
+// Stroke for chip dot = lighten(fill, -0.15) — fill'in koyu kenarı.
+// Alt-iş a/c'de fill = MODE_FALLBACK_COLORS[mode]; chip dot böylece
+// scheduled vehicle paletinin minyatür temsilidir.
+const STROKE_DARKEN = -0.15;
+
+export interface SimulatedBadgeOptions {
+  onToggle: (mode: ModeKey) => void;
+  isVisible: (mode: ModeKey) => boolean;
 }
 
-// Hardcoded to keep this file CSS-only-in-JS without pulling the runtime
-// palette through an import indirection (per project decision).
-const MODES: ModeRow[] = [
-  { key: 'metro', label: 'Metro', fill: '#60a5fa', stroke: '#1e3a8a' },
-  { key: 'marmaray', label: 'Marmaray', fill: '#c084fc', stroke: '#6b21a8' },
-  { key: 'tram', label: 'Tramvay', fill: '#4ade80', stroke: '#166534' },
-  { key: 'funicular', label: 'Füniküler', fill: '#fb923c', stroke: '#9a3412' },
-  { key: 'ferry', label: 'Vapur', fill: '#22d3ee', stroke: '#155e75' },
-];
+export interface SimulatedBadgeHandle {
+  element: HTMLElement;
+  syncVisibility(): void;
+}
 
-export function createSimulatedBadge(): HTMLElement {
+export function createSimulatedBadge(
+  opts: SimulatedBadgeOptions,
+): SimulatedBadgeHandle {
   const container = document.createElement('div');
   container.style.cssText = [
     'position: fixed',
@@ -45,18 +61,27 @@ export function createSimulatedBadge(): HTMLElement {
     '-webkit-backdrop-filter: blur(4px)',
   ].join(';');
 
-  for (const m of MODES) {
+  const dotByMode = new Map<ModeKey, HTMLElement>();
+
+  for (const mode of ALL_MODES) {
     const dot = document.createElement('span');
-    dot.title = m.label;
+    dot.dataset.mode = mode;
+    dot.title = LABELS[mode];
+    const fill = MODE_FALLBACK_COLORS[mode];
+    const stroke = lighten(fill, STROKE_DARKEN);
     dot.style.cssText = [
       'display: inline-block',
       'width: 8px',
       'height: 8px',
       'border-radius: 50%',
-      `background: ${m.fill}`,
-      `border: 1px solid ${m.stroke}`,
+      `background: ${fill}`,
+      `border: 1px solid ${stroke}`,
+      'cursor: pointer',
+      'transition: opacity 150ms ease',
     ].join(';');
+    dot.addEventListener('click', () => opts.onToggle(mode));
     container.appendChild(dot);
+    dotByMode.set(mode, dot);
   }
 
   const label = document.createElement('span');
@@ -82,6 +107,14 @@ export function createSimulatedBadge(): HTMLElement {
   ].join(';');
   container.appendChild(hint);
 
+  function syncVisibility(): void {
+    for (const [mode, dot] of dotByMode) {
+      dot.style.opacity = opts.isVisible(mode) ? '1' : '0.3';
+    }
+  }
+
   document.body.appendChild(container);
-  return container;
+  syncVisibility();
+
+  return { element: container, syncVisibility };
 }
