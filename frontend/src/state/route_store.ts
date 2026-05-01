@@ -47,7 +47,14 @@ export class RouteStore {
       this.entries.set(routeId, { summary, hasShape: false });
       return 'no-shape';
     }
-    addRouteToMap(this.map, routeId, summary.mode, colorForMode(summary.mode), shape);
+    addRouteToMap(
+      this.map,
+      routeId,
+      summary.mode,
+      summary.short_name,
+      colorForMode(summary.mode),
+      shape,
+    );
     this.entries.set(routeId, { summary, hasShape: true });
     for (const fn of this.addedListeners) fn(routeId);
     return 'added';

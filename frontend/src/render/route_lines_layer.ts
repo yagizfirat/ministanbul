@@ -8,7 +8,13 @@ const LAYER_ID = 'route-lines';
 interface RouteFeature {
   type: 'Feature';
   geometry: ShapeFeature['geometry'];
-  properties: { route_id: string; shape_id: string; mode: string; color: string };
+  properties: {
+    route_id: string;
+    shape_id: string;
+    short_name: string;
+    mode: string;
+    color: string;
+  };
 }
 
 interface RouteCollection {
@@ -19,6 +25,45 @@ interface RouteCollection {
 const collection: RouteCollection = { type: 'FeatureCollection', features: [] };
 const shapeIndex = new Map<string, LonLat[]>();
 
+// Pure paint factory — KM1 alt-iş d patterniyle simetri için
+// dışarı export edildi. Test edilebilir + alt-iş c/e'de değişimi
+// lokalize eder.
+export function buildRouteLinePaint() {
+  return {
+    'line-color': ['get', 'color'],
+    'line-opacity': 0.85,
+    'line-width': [
+      'interpolate', ['linear'], ['zoom'],
+      10, 2,
+      14, 4,
+      18, 6,
+    ],
+  } as const;
+}
+
+// Pure feature builder — addRouteToMap içindeki MapLibre side-effect'i
+// (collection.push + setData) test'te zorlamak yerine, properties'i
+// üreten saf fonksiyonu izole eder.
+export function buildRouteFeature(
+  routeId: string,
+  shortName: string,
+  mode: string,
+  color: string,
+  shape: ShapeFeature,
+): RouteFeature {
+  return {
+    type: 'Feature',
+    geometry: shape.geometry,
+    properties: {
+      route_id: routeId,
+      shape_id: shape.properties.shape_id,
+      short_name: shortName,
+      mode,
+      color,
+    },
+  };
+}
+
 export function initRouteLinesLayer(map: MapLibreMap, beforeId?: string): void {
   map.addSource(SOURCE_ID, { type: 'geojson', data: collection });
   map.addLayer(
@@ -27,16 +72,7 @@ export function initRouteLinesLayer(map: MapLibreMap, beforeId?: string): void {
       type: 'line',
       source: SOURCE_ID,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-color': ['get', 'color'],
-        'line-opacity': 0.85,
-        'line-width': [
-          'interpolate', ['linear'], ['zoom'],
-          10, 2,
-          14, 4,
-          18, 6,
-        ],
-      },
+      paint: buildRouteLinePaint() as unknown as Record<string, unknown>,
     },
     beforeId,
   );
@@ -46,17 +82,14 @@ export function addRouteToMap(
   map: MapLibreMap,
   routeId: string,
   mode: string,
+  shortName: string,
   color: string,
   shape: ShapeFeature,
 ): void {
   if (collection.features.some((f) => f.properties.route_id === routeId)) return;
-  const shapeId = shape.properties.shape_id;
-  collection.features.push({
-    type: 'Feature',
-    geometry: shape.geometry,
-    properties: { route_id: routeId, shape_id: shapeId, mode, color },
-  });
-  shapeIndex.set(shapeId, shape.geometry.coordinates as LonLat[]);
+  const feature = buildRouteFeature(routeId, shortName, mode, color, shape);
+  collection.features.push(feature);
+  shapeIndex.set(feature.properties.shape_id, shape.geometry.coordinates as LonLat[]);
   flush(map);
 }
 
