@@ -275,6 +275,16 @@ describe('createRoutePanel — collapse', () => {
     btn.click();
     expect(btn.textContent).toBe('<');
   });
+
+  it('starts in expanded state with data-collapsed="false"', () => {
+    mount();
+    const root = document.querySelector('.route-panel') as HTMLElement;
+    // CSS guard: data-collapsed attr explicit set'li (HMR/cache fallback için)
+    expect(root.dataset.collapsed).toBe('false');
+    // Header row2 (count + bulk actions) görünür durumda render edilmiş
+    const row2 = document.querySelector('.route-panel__header-row2');
+    expect(row2).not.toBeNull();
+  });
 });
 
 // ── Destroy ─────────────────────────────────────────────────────────

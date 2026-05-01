@@ -28,6 +28,13 @@
   border-right: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+/* Default state explicit guard — bazı tarayıcı/HMR senaryolarında
+   data-collapsed attr eksik kalırsa fallback width 340px korunur. */
+.route-panel[data-collapsed="false"],
+.route-panel:not([data-collapsed]) {
+  width: var(--route-panel-width, 340px);
+}
+
 .route-panel[data-collapsed="true"] {
   width: var(--route-panel-collapse-width, 40px);
 }
@@ -305,11 +312,12 @@
 
 /* Collapsed state */
 .route-panel[data-collapsed="true"] .route-panel__header {
-  /* 40px width — flex satır içi sığmaz; column'a geç + padding daralt
+  /* 40px width — flex satır içi sığmaz; column'a geç + ortala
      → collapse-btn üstte görünür (geri açma yolu), title altta dikey. */
   flex-direction: column;
-  padding: 8px 4px;
-  gap: 6px;
+  align-items: center;
+  padding: 8px 0;
+  gap: 8px;
 }
 
 .route-panel[data-collapsed="true"] .route-panel__title {
@@ -320,9 +328,13 @@
 }
 
 .route-panel[data-collapsed="true"] .route-panel__collapse-btn {
-  /* explicit visible — flex shrink baskısı altında kaybolmasın */
-  flex-shrink: 0;
-  padding: 4px 8px;
+  /* explicit visible guard — flex shrink/parent collapse durumunda
+     kaybolmasın diye display + flex baskı yok. */
+  display: block;
+  flex: 0 0 auto;
+  margin: 0 auto;
+  padding: 6px 10px;
+  font-size: 14px;
 }
 
 .route-panel[data-collapsed="true"] .route-panel__header-row2,
