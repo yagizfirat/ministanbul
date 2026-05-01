@@ -18,17 +18,10 @@ import { initTerrain } from './render/terrain';
 import { ScheduledFleet } from './simulation/scheduled_fleet';
 import type { InterpolatedScheduledTrip } from './simulation/scheduled_trip';
 import {
-  ModeVisibility,
-  getFilterExpression as getModeFilter,
-  type ModeKey,
-} from './state/mode_visibility';
-import {
   RouteVisibility,
   getFilterExpression as getRouteFilter,
 } from './state/route_visibility';
-import { combineFilters } from './state/composite_filter';
 import { createLastUpdateIndicator } from './ui/last_update_indicator';
-import { createSimulatedBadge } from './ui/simulated_badge';
 import { createRoutePanel, type RoutePanelHandle } from './ui/route_panel';
 
 const ISTANBUL_CENTER: [number, number] = [29.00, 41.04];
@@ -49,13 +42,6 @@ const scheduledFleets = new Map<string, ScheduledFleet>(
   SCHEDULED_MODES.map((m) => [m, new ScheduledFleet()]),
 );
 const indicator = createLastUpdateIndicator();
-const modeVisibility = new ModeVisibility();
-const simulatedBadge = createSimulatedBadge({
-  onToggle: (mode: ModeKey) => {
-    modeVisibility.toggle(mode);
-  },
-  isVisible: (mode: ModeKey) => modeVisibility.isVisible(mode),
-});
 
 // Module-level Intl.DateTimeFormat cache: avoid building one per frame.
 const ISTANBUL_TIME_FMT = new Intl.DateTimeFormat('en-GB', {
@@ -105,8 +91,6 @@ map.on('load', () => {
   initRouteLinesLayer(map, 'fleet-circles');
   // Scheduled layer sits on top of fleet-circles (last → topmost).
   initScheduledLayer(map);
-  // Chip dot opacity sync — composite filter applyFilters tarafından
-  // tetiklenecek (loadAlwaysVisibleRoutes içinde subscribe edilir).
   startRenderLoop();
   startRealtime();
   void loadAlwaysVisibleRoutes().then(() => startScheduledPolling());
@@ -151,7 +135,7 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
   }
   console.log(`[routes] all done: ${loaded} loaded, ${skipped} skipped`);
 
-  // KM1 alt-iş f-6 — RoutePanel + composite filter wiring.
+  // KM1 alt-iş f-6 — RoutePanel + route filter wiring.
   // Ferry polyline çizilmez (KM3 paterni) ama panel'de listelenir;
   // scheduled vehicle layer'ı route_id filter'ına tabi olduğu için
   // ferry default visible kalır (vapur scheduled noktalar görünür).
@@ -172,20 +156,17 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
 
   function applyFilters(): void {
     if (!routeVisibility) return;
-    const modeF = getModeFilter(modeVisibility.getVisible());
     const routeF = getRouteFilter(routeVisibility.getVisible(), routeVisibility.getTotalCount());
     if (map.getLayer('route-lines')) {
       map.setFilter('route-lines', routeF as never);
     }
     if (map.getLayer('scheduled-circles')) {
-      map.setFilter('scheduled-circles', combineFilters(modeF, routeF) as never);
+      map.setFilter('scheduled-circles', routeF as never);
     }
     if (map.getLayer('fleet-circles')) {
       map.setFilter('fleet-circles', routeF as never);
     }
-    simulatedBadge.syncVisibility();
   }
-  modeVisibility.subscribe(applyFilters);
   routeVisibility.subscribe(applyFilters);
   applyFilters();
 
