@@ -14,7 +14,7 @@ import { buildFleetPaint, initFleetLayer, updateFleet } from './render/fleet_lay
 import { initBuildingsLayer } from './render/buildings_layer';
 import {
   buildRouteLinePaint,
-  getRouteBBox,
+  getRoutesBBox,
   initRouteLinesLayer,
   setGlowFocus,
 } from './render/route_lines_layer';
@@ -207,20 +207,22 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
     visibility: routeVisibility,
     routes: initialRoutes,
     defaultVisibleIds: initialIds, // Reset hedefi (polyline + ferry)
-    onRouteDoubleClick: (routeId) => {
-      routeFocus.setFocus([routeId]);
-      // Polyline bbox'ı dene (metro/marmaray/tram/funicular/ferry).
-      // Bus için polyline yok (Faz 5 OSM snapping bekliyor) → vehicle
-      // konumlarından fallback bbox. Hat'a hiç araç yoksa toast uyarı.
-      const bbox =
-        getRouteBBox(routeId) ?? store.getVehicleBBoxForRoute(routeId);
-      if (bbox) {
-        map.fitBounds(bbox as [number, number, number, number], { padding: 80 });
-      } else {
-        showToast('Bu hatta şu an aktif araç yok, zoom yapılamadı');
-      }
-    },
+    onRouteDoubleClick: (routeId) => focusAndZoom([routeId]),
+    onVariantGroupDoubleClick: (routeIds) => focusAndZoom(routeIds),
   });
+
+  function focusAndZoom(routeIds: readonly string[]): void {
+    routeFocus.setFocus(routeIds);
+    // Polyline bbox'ı dene (metro/marmaray/tram/funicular/ferry).
+    // Bus için polyline yok → vehicle konumlarından fallback. Variant
+    // grup tek tıkla → tüm variant'lar union bbox'ı.
+    const bbox = getRoutesBBox(routeIds) ?? store.getVehicleBBoxForRoutes(routeIds);
+    if (bbox) {
+      map.fitBounds(bbox as [number, number, number, number], { padding: 80 });
+    } else {
+      showToast('Bu hatta şu an aktif araç yok, zoom yapılamadı');
+    }
+  }
 
   // Focus paint listener — alt-iş g.
   routeFocus.subscribe(applyFocusPaint);
