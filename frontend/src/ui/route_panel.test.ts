@@ -344,7 +344,7 @@ describe('createRoutePanel — variant grouping', () => {
     expect(document.querySelectorAll('.route-panel__route-item--variant').length).toBe(0);
   });
 
-  it('clicking the variant header expands the body to show all variants', () => {
+  it('clicking the variant header expands the body to show all variants with "Araç N" labels', () => {
     const variants = [
       route({ id: 100, route_id: 'iett:1562', short_name: '29B', long_name: 'A - B', mode: 'metro' }),
       route({ id: 101, route_id: 'iett:1564', short_name: '29B', long_name: 'C - D', mode: 'metro' }),
@@ -353,7 +353,33 @@ describe('createRoutePanel — variant grouping', () => {
     mount(variants);
     const header = document.querySelector('.route-panel__route-variant-header') as HTMLElement;
     header.click();
-    expect(document.querySelectorAll('.route-panel__route-item--variant').length).toBe(3);
+    const items = document.querySelectorAll('.route-panel__route-item--variant');
+    expect(items.length).toBe(3);
+    const labels = Array.from(items).map(
+      (it) => (it.querySelector('.route-panel__variant-label') as HTMLElement).textContent,
+    );
+    expect(labels).toEqual(['Araç 1', 'Araç 2', 'Araç 3']);
+    // f-polish-5: long_name görünmemeli
+    expect(items[0].querySelector('.route-panel__route-long')).toBeNull();
+  });
+
+  it('variant header dblclick fires onVariantGroupDoubleClick with all variant ids', () => {
+    const variants = [
+      route({ id: 100, route_id: 'iett:1562', short_name: '29B', long_name: 'A - B', mode: 'metro' }),
+      route({ id: 101, route_id: 'iett:1564', short_name: '29B', long_name: 'C - D', mode: 'metro' }),
+    ];
+    const allIds = variants.map((v) => v.route_id);
+    const rv = new RouteVisibility(allIds, []);
+    const spy = vi.fn();
+    panel = createRoutePanel({
+      visibility: rv,
+      routes: variants,
+      defaultVisibleIds: allIds,
+      onVariantGroupDoubleClick: spy,
+    });
+    const header = document.querySelector('.route-panel__route-variant-header') as HTMLElement;
+    header.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(spy).toHaveBeenCalledWith(['iett:1562', 'iett:1564']);
   });
 
   it('variant header checkbox is indeterminate when only some variants are visible', () => {
@@ -384,12 +410,13 @@ describe('createRoutePanel — variant grouping', () => {
     const input = document.querySelector('.route-panel__search-input') as HTMLInputElement;
     input.value = 'Eclipse';
     input.dispatchEvent(new Event('input'));
-    // Auto-expand: header + sadece eşleşen variant
+    // Auto-expand: header + sadece eşleşen variant. Variant satırında
+    // long_name yok (f-polish-5), eşleşen variant'ın route_id'si ile
+    // doğrula.
     expect(document.querySelector('.route-panel__route-variant-header')).not.toBeNull();
     const variantItems = document.querySelectorAll('.route-panel__route-item--variant');
     expect(variantItems.length).toBe(1);
-    expect((variantItems[0] as HTMLElement).querySelector('.route-panel__route-long')?.textContent)
-      .toContain('ECLİPSE');
+    expect((variantItems[0] as HTMLElement).dataset.routeId).toBe('iett:1564');
   });
 });
 

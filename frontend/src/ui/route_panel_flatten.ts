@@ -15,7 +15,14 @@ import { fuzzyMatch } from '../util/turkish_normalize';
 export type FlatItem =
   | { kind: 'single'; route: RouteSummary }
   | { kind: 'group-header'; shortName: string; mode: string; variants: RouteSummary[] }
-  | { kind: 'group-variant'; route: RouteSummary; parentShortName: string };
+  | {
+      kind: 'group-variant';
+      route: RouteSummary;
+      parentShortName: string;
+      // f-polish-5: variant satırı uzun isim/operatör göstermez,
+      // sıralı "Araç 1, Araç 2, ..." labelları kullanır.
+      displayLabel: string;
+    };
 
 // `expandedGroups` key formatı: `${mode}|${shortName}` (mod-altında çakışma önler).
 export function expandedKey(mode: string, shortName: string): string {
@@ -89,13 +96,22 @@ export function flattenRoutesForDisplay(
     const bodyVisible = expandedGroups.has(groupKey) || autoExpand;
     if (!bodyVisible) continue;
 
-    for (let i = 0; i < variants.length; i++) {
-      // Search active + sadece bazı variant'lar match → o subset'i göster.
-      // Inactive ise hepsini göster.
-      if (!searchActive || variantMatches[i] || headerNameMatches) {
-        out.push({ kind: 'group-variant', route: variants[i], parentShortName: shortName });
+    // f-polish-5: variant'ları route_id alfabetik sırayla "Araç N"
+    // labelı ile döndür. Sort hem deterministic numbering hem
+    // search match subset'inin nasıl göründüğünü stabilize eder.
+    const sorted = [...variants]
+      .map((route, originalIdx) => ({ route, originalIdx }))
+      .sort((a, b) => a.route.route_id.localeCompare(b.route.route_id));
+    sorted.forEach(({ route, originalIdx }, sortedIdx) => {
+      if (!searchActive || variantMatches[originalIdx] || headerNameMatches) {
+        out.push({
+          kind: 'group-variant',
+          route,
+          parentShortName: shortName,
+          displayLabel: `Araç ${sortedIdx + 1}`,
+        });
       }
-    }
+    });
   }
 
   return out;

@@ -65,6 +65,21 @@ describe('flattenRoutesForDisplay — multi-variant routes', () => {
       'group-variant',
     ]);
   });
+
+  it('variant rows carry "Araç N" labels in alphabetic route_id order', () => {
+    const expanded = new Set([expandedKey('bus', '29B')]);
+    const out = flattenRoutesForDisplay(TWO_NINETY_B_VARIANTS, expanded, '');
+    const variants = out.filter((i) => i.kind === 'group-variant') as Array<
+      Extract<typeof out[number], { kind: 'group-variant' }>
+    >;
+    // route_id'ler 1562, 1564, 1567 — alfabetik zaten sıralı
+    expect(variants.map((v) => v.displayLabel)).toEqual(['Araç 1', 'Araç 2', 'Araç 3']);
+    expect(variants.map((v) => v.route.route_id)).toEqual([
+      'iett:1562',
+      'iett:1564',
+      'iett:1567',
+    ]);
+  });
 });
 
 describe('flattenRoutesForDisplay — search filter', () => {

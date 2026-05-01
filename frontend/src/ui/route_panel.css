@@ -335,6 +335,14 @@
   background: rgba(0, 0, 0, 0.15);
 }
 
+/* f-polish-5: variant satırı sade — checkbox + "Araç N" italic gri. */
+.route-panel__variant-label {
+  font-size: 12px;
+  color: #9ca3af;
+  font-style: italic;
+  margin-left: 4px;
+}
+
 /* Vehicle popup (alt-iş g madde 5) — MapLibre default popup stili
    üzerine küçük yapısal düzenleme. MapLibre body'ye render eder,
    route-panel scope dışı ama tek CSS dosyasında tutuyoruz. */

@@ -80,6 +80,8 @@ export interface RoutePanelOptions {
   defaultVisibleIds: readonly string[];
   // Alt-iş g: hat satırına çift tıklayınca focus + bbox zoom.
   onRouteDoubleClick?: (routeId: string) => void;
+  // f-polish-5: variant header çift tıkla → tüm variants union focus.
+  onVariantGroupDoubleClick?: (routeIds: readonly string[]) => void;
   config?: Partial<RoutePanelConfig>;
 }
 
@@ -312,11 +314,39 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   function renderFlatItem(item: FlatItem): HTMLElement {
     if (item.kind === 'single') return renderRouteItem(item.route);
     if (item.kind === 'group-variant') {
-      const el = renderRouteItem(item.route);
-      el.classList.add('route-panel__route-item--variant');
-      return el;
+      return renderVariantItem(item.route, item.displayLabel);
     }
     return renderVariantHeader(item.shortName, item.mode, item.variants);
+  }
+
+  // f-polish-5: variant satırı sade — checkbox + "Araç N". long_name
+  // (mojibake'li) ve agency_name görünmez. Çift tıkla → sadece o
+  // variant'a focus + bbox.
+  function renderVariantItem(route: RouteSummary, displayLabel: string): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'route-panel__route-item route-panel__route-item--variant';
+    el.dataset.routeId = route.route_id;
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = opts.visibility.isVisible(route.route_id);
+    cb.addEventListener('click', (e) => e.stopPropagation());
+    cb.addEventListener('change', () => opts.visibility.toggle(route.route_id));
+
+    const label = document.createElement('span');
+    label.className = 'route-panel__variant-label';
+    label.textContent = displayLabel;
+
+    el.append(cb, label);
+    el.addEventListener('click', () => {
+      cb.checked = !cb.checked;
+      opts.visibility.toggle(route.route_id);
+    });
+    el.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      opts.onRouteDoubleClick?.(route.route_id);
+    });
+    return el;
   }
 
   function renderVariantHeader(
@@ -361,6 +391,11 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
 
     el.append(toggle, cb, dot, shortEl, countEl);
     el.addEventListener('click', () => onVariantToggle(mode, shortName));
+    // f-polish-5: çift tıkla → tüm variant'ların union focus + bbox.
+    el.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      opts.onVariantGroupDoubleClick?.(ids);
+    });
     return el;
   }
 
