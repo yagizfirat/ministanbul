@@ -21,7 +21,7 @@ okunacak doküman budur.
    - [Faz 1 — Veri altyapısı ✅](#faz-1--veri-altyapısı-)
    - [Faz 2 — Canlı veri adaptörü ✅](#faz-2--canlı-veri-adaptörü-)
    - [Faz 3 — WebSocket katmanı ✅](#faz-3--websocket-katmanı-)
-   - [Faz 4 — 3D frontend 🟡](#faz-4--3d-frontend-)
+   - [Faz 4 — 3D frontend ✅](#faz-4--3d-frontend-)
    - [Faz 5 — Raylı sistem ve vapur simülasyonu ⚪](#faz-5--raylı-sistem-ve-vapur-simülasyonu-)
    - [Faz 6 — Cilalama ⚪](#faz-6--cilalama-)
 5. [Veri kaynakları](#5-veri-kaynakları)
@@ -641,7 +641,7 @@ Faz 5'e ertelendi.
 
 ---
 
-### Faz 4 — 3D frontend 🟡
+### Faz 4 — 3D frontend ✅
 
 **Durum:** Planlı, Faz 3 bitiminde başlar.
 **Tahmini süre:** 3-4 hafta.
@@ -732,6 +732,12 @@ Algoritma (`frontend/src/simulation/bus_interpolator.ts`):
 11. ⚪ Araç tıklama → popup
 12. ⚪ "Son güncelleme: X saniye önce" UI göstergesi (90sn sarı, 180sn kırmızı)
 
+**Faz 4 kapanışı (2026-05-01):**
+KM1-KM3 + KM4-A tamamlandı. KM4-B/C, KM5, KM6 backlog'a ertelendi:
+- KM4-B (interpolator integration) ve KM4-C (bearing + edge cases) Faz 5'in raylı sistem/vapur simülasyonuna gömüldü — simüle araçlar zaten `simulation/polyline.ts` üzerinden hareket edecek. Pure algoritma kütüphane olarak hazır, 11/11 Vitest suite ile korunuyor.
+- KM5 (InstancedMesh perf) Faz 6 polish'e ertelendi: 6911 araç + 21 polyline + 3D + terrain kombinasyonu Vite + MapLibre default circle layer ile akıcı, FPS sorun yok. İhtiyaç gözlenirse dönülür.
+- KM6 (hat filtre paneli, otobüs opt-in dahil) Faz 5 sonrasına ertelendi: simüle metro/Marmaray/vapur araçları geldikten sonra "panelden hat aç → araçlar görünür" deneyimi tam UX olarak kurulabilir.
+
 #### Bitiş kriteri
 
 - `npm run dev` + backend (Django + Daphne + Celery worker + beat) çalışıyor
@@ -762,8 +768,6 @@ Realtime suite hâlâ 155/155 yeşil — frontend kodu backend kontratlarını t
 **Adım KM3 özeti (2026-04-29):** Açılışta sürekli görünür modların polyline'ları yüklendi: 21 hat (12 metro + 3 Marmaray + 3 tram + 3 funicular). Backend recon'unda `/api/routes/active/` endpoint'inin var olmadığı, gerçek surface'in `/api/routes/?mode=<m>&has_shape=true` (DRF paginated) olduğu doğrulandı; shape endpoint 404 değil **204 No Content** dönüyor (shape'siz hatlar için). `ALWAYS_VISIBLE_MODES = ['subway','tram','funicular']`; subway içinden Marmaray (`short_name.startsWith('Marmaray')`) mor renkle (`#4338ca`), kalan M-hatları lacivert (`#1e40af`) olarak ayrıldı. Tram yeşil (`#16a34a`), funicular turuncu (`#ea580c`). Yeni dosyalar: `src/state/mode_colors.ts`, `src/state/route_store.ts` (add/remove + onRouteAdded/onRouteRemoved listener API — KM6 paneli için hazır), `src/render/route_lines_layer.ts` (tek GeoJSON line layer, color feature property'sinden, line-width 2→6px zoom-bağımlı). 10-batch `Promise.allSettled` ile paralel fetch; 21/0 loaded/skipped. Z-order `beforeId='fleet-circles'` ile garantili: terrain < buildings < route-lines < fleet-circles. Metrobüs polyline'ı **çizilmedi** (İETT GTFS shape'siz, Ek A.10 limit; Faz 5 OSM snapping işi). Vapur (100 hat) **çizilmedi** (KM6 opt-in panel kapsamına alındı; açılışta üst üste turkuaz çizgi karmaşası yok). 6911 araç regression yok, polyline'lar pitch eğikken araçların altında düz yatıyor (terrain takibi yok, MapLibre default — kabul). Realtime suite 155/155 yeşil; backend kontrat değişmedi.
 
 **Adım KM4-A özeti (2026-05-01):** Polyline-aware interpolation algoritması saf modül olarak yazıldı (`frontend/src/simulation/polyline.ts`, 142 satır), 11 Vitest unit testi (`frontend/src/simulation/polyline.test.ts`) ile 11/11 yeşil. Public API: `interpolateAlongPolyline(t0, t1, polyline, alpha) → InterpolatedPose | null`. Yardımcılar export edilmiş: `cumulativeDistances` (Haversine), `snapToPolyline` (equirectangular projeksiyon, metric-correct), `pointAtArcLength` (segment LERP + tanjant bearing). `SNAP_THRESHOLD_M = 500m`, backend Faz 3 6h-i spatial sanity check eşiğiyle uyumlu. Kritik test #11: U-şekilli kavisli polyline ile arc-length midpoint vs chord midpoint farkını numerik olarak kanıtladı — algoritma yolu takip eder, kestirmez. Render entegrasyonu YOK (KM4-B'ye), mevcut `interpolator.ts` v1 LERP fallback için duruyor. Vitest `^2.0.0` devDep, `vitest.config.ts` node env, npm `test`/`test:watch` scriptleri eklendi. Build temiz, tsc hatasız, 1037 kB bundle (KM3'ten +7 kB).
-
-Sırada KM4-B: interpolator integration, mapped+shape araçlar için polyline takibi, mapped değil veya shape yok araçlar için v1 LERP fallback.
 
 ---
 
