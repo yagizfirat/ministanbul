@@ -10,10 +10,19 @@ import {
 } from './data/api';
 import { SnapshotStore } from './state/snapshot_store';
 import { RouteStore } from './state/route_store';
-import { initFleetLayer, updateFleet } from './render/fleet_layer';
+import { buildFleetPaint, initFleetLayer, updateFleet } from './render/fleet_layer';
 import { initBuildingsLayer } from './render/buildings_layer';
-import { initRouteLinesLayer } from './render/route_lines_layer';
-import { initScheduledLayer, updateScheduled } from './render/scheduled_layer';
+import {
+  buildRouteLinePaint,
+  getRouteBBox,
+  initRouteLinesLayer,
+  setGlowFocus,
+} from './render/route_lines_layer';
+import {
+  buildScheduledLayerPaint,
+  initScheduledLayer,
+  updateScheduled,
+} from './render/scheduled_layer';
 import { initTerrain } from './render/terrain';
 import { ScheduledFleet } from './simulation/scheduled_fleet';
 import type { InterpolatedScheduledTrip } from './simulation/scheduled_trip';
@@ -21,8 +30,10 @@ import {
   RouteVisibility,
   getFilterExpression as getRouteFilter,
 } from './state/route_visibility';
+import { RouteFocus } from './state/route_focus';
 import { createLastUpdateIndicator } from './ui/last_update_indicator';
 import { createRoutePanel, type RoutePanelHandle } from './ui/route_panel';
+import { showVehiclePopup } from './ui/vehicle_popup';
 
 const ISTANBUL_CENTER: [number, number] = [29.00, 41.04];
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/bright';
@@ -98,6 +109,44 @@ map.on('load', () => {
 
 let routeVisibility: RouteVisibility | null = null;
 let routePanel: RoutePanelHandle | null = null;
+const routeFocus = new RouteFocus();
+
+// Alt-iş g: focus state değişiminde 3 layer paint + glow filter
+// güncellenir. Map.on('load') sonrasında subscribe edilir.
+function applyFocusPaint(focused: string | null): void {
+  if (map.getLayer('route-lines')) {
+    const p = buildRouteLinePaint(focused) as Record<string, unknown>;
+    map.setPaintProperty('route-lines', 'line-opacity', p['line-opacity'] as never);
+    map.setPaintProperty('route-lines', 'line-width', p['line-width'] as never);
+  }
+  if (map.getLayer('scheduled-circles')) {
+    const p = buildScheduledLayerPaint(focused) as Record<string, unknown>;
+    map.setPaintProperty(
+      'scheduled-circles',
+      'circle-opacity',
+      (p['circle-opacity'] ?? 1) as never,
+    );
+    map.setPaintProperty(
+      'scheduled-circles',
+      'circle-stroke-opacity',
+      (p['circle-stroke-opacity'] ?? 1) as never,
+    );
+  }
+  if (map.getLayer('fleet-circles')) {
+    const p = buildFleetPaint(focused) as Record<string, unknown>;
+    map.setPaintProperty(
+      'fleet-circles',
+      'circle-opacity',
+      (p['circle-opacity'] ?? 1) as never,
+    );
+    map.setPaintProperty(
+      'fleet-circles',
+      'circle-stroke-opacity',
+      (p['circle-stroke-opacity'] ?? 1) as never,
+    );
+  }
+  setGlowFocus(map, focused);
+}
 
 async function loadAlwaysVisibleRoutes(): Promise<void> {
   console.log(`[routes] discovering active routes for ${ALWAYS_VISIBLE_MODES.length} modes...`);
@@ -156,6 +205,38 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
     visibility: routeVisibility,
     routes: initialRoutes,
     defaultVisibleIds: initialIds, // Reset hedefi (polyline + ferry)
+    onRouteDoubleClick: (routeId) => {
+      routeFocus.setFocus(routeId);
+      const bbox = getRouteBBox(routeId);
+      if (bbox) {
+        map.fitBounds(bbox as [number, number, number, number], { padding: 80 });
+      }
+    },
+  });
+
+  // Focus paint listener — alt-iş g.
+  routeFocus.subscribe(applyFocusPaint);
+
+  // Polyline tıkla → focus o hat. Map global click → boş alan ise reset.
+  map.on('click', 'route-lines', (e) => {
+    const rid = e.features?.[0]?.properties?.route_id as string | undefined;
+    if (rid) routeFocus.setFocus(rid);
+  });
+  map.on('click', 'fleet-circles', (e) => {
+    if (!e.features?.[0]) return;
+    showVehiclePopup(map, e.lngLat, e.features[0].properties as never, 'iett');
+  });
+  map.on('click', 'scheduled-circles', (e) => {
+    if (!e.features?.[0]) return;
+    showVehiclePopup(map, e.lngLat, e.features[0].properties as never, 'scheduled');
+  });
+  map.on('click', (e) => {
+    // Layer-spesifik handler'lar zaten yakaladı; boş alana tıklamada
+    // queryRenderedFeatures targeted layer'larda boş döner → focus reset.
+    const hits = map.queryRenderedFeatures(e.point, {
+      layers: ['route-lines', 'fleet-circles', 'scheduled-circles'],
+    });
+    if (hits.length === 0) routeFocus.setFocus(null);
   });
 
   function applyFilters(): void {

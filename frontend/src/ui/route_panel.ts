@@ -78,6 +78,8 @@ export interface RoutePanelOptions {
   // Reset butonunun döndüğü visible set. Genelde polyline + ferry
   // route_id'leri (bus default hidden — Mini Tokyo 3D paterni).
   defaultVisibleIds: readonly string[];
+  // Alt-iş g: hat satırına çift tıklayınca focus + bbox zoom.
+  onRouteDoubleClick?: (routeId: string) => void;
   config?: Partial<RoutePanelConfig>;
 }
 
@@ -403,6 +405,12 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
       // Item gövdesine click → checkbox toggle (UX kolaylığı).
       cb.checked = !cb.checked;
       opts.visibility.toggle(route.route_id);
+    });
+    el.addEventListener('dblclick', (e) => {
+      // Çift tıkla → focus + bbox zoom. Single click toggle'ı geri
+      // al (browser dblclick öncesi 2 click event tetikler).
+      e.stopPropagation();
+      opts.onRouteDoubleClick?.(route.route_id);
     });
     return el;
   }

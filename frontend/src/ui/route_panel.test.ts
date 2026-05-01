@@ -293,6 +293,21 @@ describe('createRoutePanel — destroy', () => {
 
 // ── Item interaction ────────────────────────────────────────────────
 describe('createRoutePanel — item interaction', () => {
+  it('dblclick on a route item invokes onRouteDoubleClick callback (alt-iş g)', () => {
+    const allIds = SAMPLE_ROUTES.map((r) => r.route_id);
+    const rv = new RouteVisibility(allIds, POLYLINE_VISIBLE);
+    const spy = vi.fn();
+    panel = createRoutePanel({
+      visibility: rv,
+      routes: SAMPLE_ROUTES,
+      defaultVisibleIds: POLYLINE_VISIBLE,
+      onRouteDoubleClick: spy,
+    });
+    const m2 = document.querySelector('[data-route-id="public:m2"]') as HTMLElement;
+    m2.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(spy).toHaveBeenCalledWith('public:m2');
+  });
+
   it('checkbox change toggles RouteVisibility', () => {
     const allIds = SAMPLE_ROUTES.map((r) => r.route_id);
     const rv = new RouteVisibility(allIds, POLYLINE_VISIBLE);
