@@ -202,3 +202,131 @@ Faz 3 6h'de "public feed shape cache 496/496" raporlanmıştı (496 distinct sha
 2. `end_date` bypass stratejisi — flag mi, ayar mı, hard-coded mu?
 3. Endpoint response şeması — flat trip listesi mi, route bazında gruplanmış mı?
 4. v0 kapsamına `mode=subway` mi yoksa hepsi mi?
+
+---
+
+## Ek keşif — 2026-05-01 ikinci tur
+
+İlk tur dört bulguyu netleştirdi; iki açık soruyu kapatmak için bu ek tur yapıldı.
+
+### A. Public feed güncellendi mi? — **HAYIR**
+
+`backend/manage.py download_gtfs` çıktısı:
+
+```
+[public] dataset=public-transport-gtfs-data
+  Resolved [agency.csv]      ... SKIP: cached meta matches (sha256=651f34391e06...)
+  Resolved [calendar.csv]    ... SKIP: cached meta matches (sha256=97ec0e730189...)
+  Resolved [frequencies.csv] ... SKIP: cached meta matches (sha256=7f2778f7bcc6...)
+  Resolved [routes.csv]      ... SKIP: cached meta matches (sha256=552adddb25d5...)
+  Resolved [shapes.csv]      ... SKIP: cached meta matches (sha256=30c7b28e8074...)
+  Resolved [stop_times.csv]  ... SKIP: cached meta matches (sha256=dad8249b6179...)
+  Resolved [stops.csv]       ... SKIP: cached meta matches (sha256=7f1f32a945fc...)
+  Resolved [trips.csv]       ... SKIP: cached meta matches (sha256=34e059c18f52...)
+  FEED HASH: dd2696153821...  total=19.73 MB  0/8 files changed
+
+=== Summary ===
+  iett   -> skipped     size=32.54 MB  sha256=a6e5c7c40bc0... (0/6 files changed)
+  public -> skipped     size=19.73 MB  sha256=dd2696153821... (0/8 files changed)
+```
+
+8/8 dosya hash eşleşmesiyle skip. İBB'nin sunduğu public feed bizim elimizdekiyle birebir aynı — `end_date=20241231` İBB tarafında bayat yayınlanıyor, eski kopya değil. Reimport gereksiz.
+
+→ **Sonuç:** Tarih filtresi bypass kararı (Soru 4.2'deki "(a)" seçeneği) geçici değil **kalıcı** bir gereklilik. Endpoint mantığında "today date is in [start_date, end_date]" kontrolü kapatılmalı; haftaiçi/haftasonu flag'i tek başına yetecek. ROADMAP'a "Public feed yenileme — Faz 5 Risk" notu eklenecek (İBB feed'ini güncellemeden bu kod prod'a çıkamaz; veya feed yenilenene kadar bypass dev/demo modu olarak kalır).
+
+### B. Marmaray + metrobüs + extended route_type'lar
+
+#### B.1 Marmaray — `route_type=1` subway, **3 hat × 10 trip**
+
+```
+route_id=public:28188  short='Marmaray2'  long='HALKALI - BAHÇEŞEHİR'       rt=1  trips=4
+route_id=public:26727  short='Marmaray1'  long='SÖĞÜTLÜÇEŞME - ZEYTİNBURNU'  rt=1  trips=2
+route_id=public:26615  short='Marmaray'   long='GEBZE-HALKALI'              rt=1  trips=4
+```
+
+`short_name__istartswith='Marmaray'` ile yakalandı (Faz 4 KM3 frontend convention'ıyla uyumlu — `short_name.startsWith('Marmaray')`). `long_name`'de "Marmaray" geçmiyor — sözleşme `short_name` üzerinden işliyor.
+
+**Marmaray `route_type=1`, M1-M11 metro hatlarıyla aynı.** Ayrım sadece `short_name` prefix'iyle. Endpoint'te `mode=marmaray` parametresi route_type filtreleyemez, ek olarak `short_name LIKE 'Marmaray%'` koşulu gerekir.
+
+#### B.2 Marmaray trip sayısının azlığı — frequencies.csv ile expansion
+
+10 Marmaray trip'i ham GTFS sayısı; gerçek Marmaray günlük frekans 5-10 dk değil. Cross-check:
+
+| Mod | Trip total | frequencies.csv'deki trip_id | Yorum |
+|---|---:|---:|---|
+| subway (rt=1) | 8 001 | 48 | %0.6'sı freq-based |
+| Marmaray (subset) | 10 | **6** | %60'ı freq-based |
+| ferry (rt=4) | 2 373 | 67 | %2.8'i freq-based |
+| tram (rt=0) | 2 498 | 8 | %0.3'ü freq-based |
+| funicular (rt=7) | 401 | 12 | %3.0'ı freq-based |
+| **public toplam** | 14 387 | **1 230 distinct trip_id** | 2 311 freq satır |
+
+Public feed `frequencies.csv` 2 311 satır içeriyor; 1 230 distinct `trip_id` referansı var. Marmaray özelinde 6/10 trip = headway template (örn. `08:00-10:00 her 900sn`); kalan 4 = explicit stop_times. Subway/tram/ferry'nin büyük çoğunluğu explicit; freq-based azınlık.
+
+→ **Sonuç:** Endpoint v0 explicit stop_times üzerinden `MIN(arrival_time)` / `MAX(arrival_time)` ile filtreleyecek; **frequency expansion v1+'a ertelenir.** Marmaray "10 trip görünür" sınırlamasıyla başlar; gerçek frekansı feed'e doğru gelmediği için zaten tam çözülemez (feed yenileme veya frequency expansion karar verilmeden Marmaray seyrek görünür). Bu, tasarım kısıtı değil veri kısıtı — frontend "1 araç" yerine sefer aralığında interpolasyon yapacak, bu Faz 4 KM4-A `polyline.ts` kapsamında zaten çözüldü.
+
+#### B.3 Metrobüs — İETT feed `route_type=3` bus, **public feed'de yok**
+
+99 metrobüs route adayı (`short_name ∈ {34, 34A, 34AS, 34BZ, 34C, 34G, 34Z}`):
+- Hepsi **`route_id` prefix `iett:`**, hepsi **`route_type=3`** (bus).
+- Public feed'de "34*" hat **bulunmadı**.
+- Aktif olanlar (trip>0): `34AS` (~3000 trip toplamı, en yoğun: AVCILAR↔SÖĞÜTLÜÇEŞME), `34BZ` (~3500), `34C` (~2000), `34G` (~4400), `34Z` (~770), `34A` (~111). Inactive 34A/34AS/... varyantlar `trips=0`.
+
+→ **Sonuç:** Metrobüs Faz 4'te canlı feed (İETT realtime) ile zaten hareket ediyor (`route_type=3`, mavi/kırmızı circles). Faz 5 endpoint'i metrobüs döndürmemeli — endpoint sadece `route_id LIKE 'public:%'` filtresi koyacak. (Faz 5 hedefi: canlı veri **olmayan** modlar.)
+
+#### B.4 `route_type=9` ve `route_type=10` örnekleri
+
+**rt=9** (317 route, 880 trip — public feed):
+```
+public:27196  short='PASABAHCE-SOGUKSU-KAVACIK'                long='HEKİMBAŞI-...'           trips=2
+public:28185  short='DARÜŞŞAFAKA-İSTİNYE-...-4.LEVENT METRO'   long='SARIYER BÖLGE ÇALIŞMA'   trips=2
+public:28182  short='Balta Limanı-4. Levent'                  long='SARIYER BÖLGE ÇALIŞMA'   trips=2
+public:27281  short='ÜMRANİYE DEVLET HASTANESİ – ARMAĞANEVLE'  long='ÇAKMAK - ARMAĞANEVLER'   trips=2
+public:7514   short='KİLYOS-SARIYER-H.OSMAN METRO-...(Ring)'   long='KAYMAKAMLIK(Ring)'       trips=2
+```
+
+**rt=10** (58 route, 230 trip — public feed):
+```
+public:3789  short='BAĞLARBAŞI - DR BURHANETTİN ÜSTÜNEL SK-KADIKÖY'  long='BAĞLARBAŞI - KADIKÖY'    trips=4
+public:7077  short='BEŞİKTAŞ - NİSPETİYE METRO'                       long='BEŞİKTAŞ-...-NİSPETİYE'  trips=4
+public:3743  short='ÇEKMEKÖY - ŞAHİNBEY CAD-KADIKÖY'                  long='ÇEKMEKÖY - KADIKÖY'      trips=4
+public:3790  short='EMİNÖNÜ - REFİK SAYDAM CAD-NİŞANTAŞI'              long='EMİNÖNÜ - NİŞANTAŞI'     trips=4
+public:3791  short='BAKIRKÖY -DARULACEZE CAD- ŞİŞLİ'                  long='BAKIRKÖY - ŞİŞLİ'        trips=4
+```
+
+İçerik: dolmuş, mahalle servisi, ring servisi, "BÖLGE ÇALIŞMA GRUBU" (planlama notu görünüyor), ünivers./hastane shuttle. Trip başına 2-4, çoğu unique route_id (317 + 58 = 375 hat × küçük trip = uzun-kuyruk dağılım). GTFS extended kod (700+ "Bus Service" alt kategorileri) muhtemel ama 9/10 raw değer GTFS extended convention'da `0-7` değil — non-standard İBB değeri.
+
+→ **Sonuç:** Endpoint whitelist'e dahil edilmiyor; "metro/Marmaray/vapur" Faz 5 hedefi dışı. Bu 1 110 trip ROADMAP'a "Faz 6 polish kapsamında route_type=9/10 araştırması" notuyla taşınır.
+
+### C. MODE → route_type → trip count tablosu (endpoint MODE_FILTER)
+
+| `mode` parametresi | route_type filter | Ek koşul | Trip count |
+|---|---|---|---:|
+| `metro` | `route_type=1` | `short_name NOT ILIKE 'Marmaray%'` | **7 991** |
+| `marmaray` | `route_type=1` | `short_name ILIKE 'Marmaray%'` | **10** |
+| `tram` | `route_type=0` | — | **2 498** |
+| `funicular` | `route_type=7` | — | **401** |
+| `ferry` | `route_type=4` | — | **2 373** |
+
+**Endpoint pseudo-SQL (MODE_FILTER mantığı):**
+
+```sql
+WHERE route.route_id LIKE 'public:%'
+  AND (
+    (mode = 'metro'     AND route.route_type = 1 AND route.short_name NOT ILIKE 'Marmaray%')
+    OR
+    (mode = 'marmaray'  AND route.route_type = 1 AND route.short_name ILIKE 'Marmaray%')
+    OR
+    (mode = 'tram'      AND route.route_type = 0)
+    OR
+    (mode = 'funicular' AND route.route_type = 7)
+    OR
+    (mode = 'ferry'     AND route.route_type = 4)
+  )
+```
+
+`metro` ve `marmaray` aynı `route_type`'ı paylaşır → composite koşul. Diğer modlar tek `route_type`'ta. `aerial` (rt=6, 4 trip), `rail` (rt=2, 0 public trip), `bus` (rt=3, public'te yok), `rt=9/10` (1 110 trip): hiçbiri Faz 5 v0 kapsamında değil.
+
+**Toplam Faz 5 v0 kapsamı: 7 991 + 10 + 2 498 + 401 + 2 373 = 13 273 trip** (14 387 public toplamın %92'si). Frontend KM3'te zaten bu modların polyline'ları çizili (subway+tram+funicular = always-visible; ferry KM6'ya ertelenmişti — Faz 5 KM6 kapsamına yeniden değerlendirilecek).
+
+→ **Sonuç:** Bu tablo bir sonraki mesajdaki KM1+ endpoint kodunda `MODE_FILTER` sözlüğü olarak yer alacak (mevcut `MODE_TO_ROUTE_TYPE` constant'ını compose-koşul yapısıyla genişleteceğiz). `metro` vs `marmaray` ayrımı backend'e taşınıyor — frontend KM3'teki client-side `startsWith` filtresi tutarsızlık riski (case sensitivity, string ID parlaklık) taşır; sözleşme tek noktaya (backend) kapatılır.
