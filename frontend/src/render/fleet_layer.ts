@@ -20,22 +20,29 @@ interface FleetCollection {
 
 const EMPTY_FC: FleetCollection = { type: 'FeatureCollection', features: [] };
 
+// Pure paint factory — extracted so the expression structure is
+// unit-testable and so per-iteration tweaks (KM1 alt-iş d) don't have
+// to mutate map.addLayer call sites.
+export function buildFleetPaint() {
+  return {
+    'circle-radius': [
+      'interpolate', ['linear'], ['zoom'],
+      10, 3,
+      14, 6,
+    ],
+    'circle-color': ['get', 'color'],
+    'circle-stroke-width': 0.5,
+    'circle-stroke-color': 'rgba(0,0,0,0.3)',
+  } as const;
+}
+
 export function initFleetLayer(map: MapLibreMap): void {
   map.addSource(SOURCE_ID, { type: 'geojson', data: EMPTY_FC });
   map.addLayer({
     id: LAYER_ID,
     type: 'circle',
     source: SOURCE_ID,
-    paint: {
-      'circle-radius': [
-        'interpolate', ['linear'], ['zoom'],
-        10, 3,
-        14, 6,
-      ],
-      'circle-color': ['get', 'color'],
-      'circle-stroke-width': 0.5,
-      'circle-stroke-color': 'rgba(0,0,0,0.3)',
-    },
+    paint: buildFleetPaint() as unknown as Record<string, unknown>,
   });
 }
 
