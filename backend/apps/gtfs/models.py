@@ -153,3 +153,42 @@ class StopTime(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.trip_id} #{self.stop_sequence}"
+
+
+class Calendar(models.Model):
+    """GTFS calendar.txt — weekly service pattern.
+
+    Faz 5 lite scope:
+      - service_id is the raw GTFS value (no feed prefix); İETT and public
+        namespaces are disjoint (verified during import design).
+      - calendar_dates.txt (exception overrides) is intentionally NOT
+        imported — public feed lacks the file and Faz 5 v0 ignores it.
+      - Trip.service_id remains a CharField (not FK upgrade) — that's a
+        Faz 6 polish item.
+    """
+
+    service_id = models.CharField(max_length=64, primary_key=True)
+    monday = models.BooleanField(default=False)
+    tuesday = models.BooleanField(default=False)
+    wednesday = models.BooleanField(default=False)
+    thursday = models.BooleanField(default=False)
+    friday = models.BooleanField(default=False)
+    saturday = models.BooleanField(default=False)
+    sunday = models.BooleanField(default=False)
+    start_date = models.DateField()
+    end_date = models.DateField()
+
+    class Meta:
+        db_table = "gtfs_calendar"
+        indexes = [
+            models.Index(fields=["monday"]),
+            models.Index(fields=["tuesday"]),
+            models.Index(fields=["wednesday"]),
+            models.Index(fields=["thursday"]),
+            models.Index(fields=["friday"]),
+            models.Index(fields=["saturday"]),
+            models.Index(fields=["sunday"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.service_id

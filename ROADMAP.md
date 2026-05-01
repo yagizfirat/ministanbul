@@ -819,13 +819,22 @@ gerçek gecikmeleri yansıtmadığını bilsin.
 
 #### Yapılacak iş
 
-1. `/api/trips/active/` endpoint
+1a. ✅ Calendar/CalendarDate Django modeli (lite — KM1, 2026-05-01)
+1b. ⚪ `/api/trips/active/` endpoint
 2. Client interpolator'a "scheduled" mode (Faz 4'ün "live" mode'una ek)
 3. Simulated badge + UI toggle (canlı / simüle / ikisi birden)
 4. Metro / Marmaray / vapur için mod-bazlı renk farklılığı
 5. OSM Overpass client + `snap_iett_routes` komutu
 6. `pgrouting` extension kurulumu + PostGIS upgrade kontrolü
 7. Snap sonuçlarını `Shape` tablosuna yazma + trip eşleme
+
+#### Faz 5 deferred (Faz 6 polish'e taşındı)
+
+- **CalendarDate import** — public feed'de `calendar_dates.csv` yok; iETT'de varsa şu an okunmuyor. Exception override gerekirse Faz 6'da eklenir.
+- **Trip.service_id `CharField` → `ForeignKey(Calendar)` upgrade** — Faz 5 KM1'de `service_id` CharField olarak korundu, manuel JOIN ile çalışıyor. FK migration veri-uyum riski taşımıyor (49+3 service'in tamamı Calendar'da mevcut, orphan yok).
+- **`route_type=9`** (317 route, 880 trip) ve **`route_type=10`** (58 route, 230 trip) — discovery'de dolmuş/shuttle/ring/hastane servisi gibi görünüyor; GTFS extended kod değil, non-standard İBB değeri. Endpoint whitelist dışı; ne anlama geldikleri Faz 6'da araştırılacak.
+- **`frequencies.csv` expansion** — Public feed 2 311 satır, 1 230 distinct trip_id. Marmaray 6/10 trip headway template; subway/tram/ferry'de azınlık. Endpoint v0 explicit `stop_times` üzerinden çalışıyor — frequency-based trip'ler "tek görünür sefer" sınırlamasıyla görünür. Tam expansion Faz 6.
+- **Public feed `end_date=20241231` (bayat)** — `download_gtfs` Hash match (İBB tarafında değişmemiş). Endpoint `start_date/end_date` filtresini bypass ediyor (sadece `monday/tuesday/...` flag). Feed yenilenince filtre devreye alınır; o zamana kadar dev/demo modu.
 
 #### Bitiş kriteri
 

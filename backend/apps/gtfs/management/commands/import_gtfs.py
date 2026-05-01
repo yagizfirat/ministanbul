@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import re
+import datetime as dt
 from datetime import timedelta
 from pathlib import Path
 from typing import Iterable
@@ -47,7 +48,7 @@ from apps.core.constants import (
     SRID_WGS84,
 )
 from apps.gtfs.models import (
-    Agency, GTFSFeed, Route, Shape, Stop, StopTime, Trip,
+    Agency, Calendar, GTFSFeed, Route, Shape, Stop, StopTime, Trip,
 )
 
 REQUIRED_CSVS = {
@@ -368,7 +369,8 @@ class Command(BaseCommand):
         with connection.cursor() as cur:
             cur.execute(
                 "TRUNCATE gtfs_stoptime, gtfs_trip, gtfs_shape, "
-                "gtfs_stop, gtfs_route, gtfs_agency RESTART IDENTITY CASCADE"
+                "gtfs_stop, gtfs_route, gtfs_agency, gtfs_calendar "
+                "RESTART IDENTITY CASCADE"
             )
 
     # ------------------------------------------------------------------
@@ -402,6 +404,8 @@ class Command(BaseCommand):
 
         st_ins = self._load_stop_times(feed["stop_times"], trip_pk, stop_pk, label)
 
+        cal_ins = self._load_calendar(feed.get("calendar"), label)
+
         counts = {
             "routes_count": len(feed["routes"]),
             "stops_count": len(feed["stops"]),
@@ -411,7 +415,8 @@ class Command(BaseCommand):
         self.stdout.write(
             f"    [{label}] inserted: agencies={len(feed['agency'])}, "
             f"routes={counts['routes_count']}, stops={counts['stops_count']}, "
-            f"trips={counts['trips_count']}, stop_times={counts['stop_times_count']}"
+            f"trips={counts['trips_count']}, stop_times={counts['stop_times_count']}, "
+            f"calendar={cal_ins}"
         )
         return counts
 
@@ -672,6 +677,38 @@ class Command(BaseCommand):
         )
         return len(objs)
 
+    def _load_calendar(self, df, label: str) -> int:
+        # Faz 5 KM1: import calendar.txt rows into Calendar model.
+        # calendar_dates.txt is intentionally not imported — public feed
+        # lacks the file; Faz 5 v0 ignores exception overrides.
+        if df is None or df.empty:
+            return 0
+        weekday_cols = ("monday", "tuesday", "wednesday", "thursday",
+                        "friday", "saturday", "sunday")
+        objs: list[Calendar] = []
+        skipped = 0
+        for r in df.itertuples(index=False):
+            sid = str(getattr(r, "service_id", "") or "").strip()[:64]
+            if not sid:
+                skipped += 1
+                continue
+            sd = _parse_gtfs_date(getattr(r, "start_date", None))
+            ed = _parse_gtfs_date(getattr(r, "end_date", None))
+            if sd is None or ed is None:
+                skipped += 1
+                continue
+            kwargs = {col: _parse_gtfs_bool(getattr(r, col, None))
+                      for col in weekday_cols}
+            objs.append(Calendar(service_id=sid, start_date=sd, end_date=ed,
+                                 **kwargs))
+        if skipped:
+            self.stdout.write(self.style.WARNING(
+                f"    [{label}] {skipped} calendar rows skipped (bad service_id/date)"
+            ))
+        # Post-TRUNCATE: fresh inserts only.
+        Calendar.objects.bulk_create(objs, batch_size=BATCH)
+        return len(objs)
+
     def _load_stop_times(self, df: pd.DataFrame, trip_pk: dict, stop_pk: dict,
                          label: str) -> int:
         if df.empty:
@@ -760,3 +797,21 @@ def _parse_gtfs_time(s) -> timedelta:
         return timedelta(hours=int(h), minutes=int(m), seconds=int(sec))
     except (ValueError, AttributeError):
         return timedelta(0)
+
+
+def _parse_gtfs_date(s):
+    """GTFS dates are YYYYMMDD strings; return date or None on parse failure."""
+    if s is None or (isinstance(s, float) and pd.isna(s)) or s == "":
+        return None
+    try:
+        s = str(s).strip()
+        return dt.date(int(s[0:4]), int(s[4:6]), int(s[6:8]))
+    except (ValueError, IndexError):
+        return None
+
+
+def _parse_gtfs_bool(s) -> bool:
+    """GTFS calendar weekday flags are '0'/'1' strings."""
+    if s is None or (isinstance(s, float) and pd.isna(s)):
+        return False
+    return str(s).strip() == "1"
