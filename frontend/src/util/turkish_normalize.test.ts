@@ -109,4 +109,18 @@ describe('isMojibake', () => {
     expect(isMojibake('')).toBe(false);
     expect(isMojibake('Yenikapi')).toBe(false);
   });
+
+  it('detects D-stroke (Đ) — non-Turkish Latin Extended marker', () => {
+    expect(isMojibake('ATAĐĐEHÄºR TIP MERKEZÄº')).toBe(true);
+  });
+
+  it('detects thorn (Þ) — non-Turkish Latin Extended marker', () => {
+    expect(isMojibake('ÞESATPAÅA')).toBe(true);
+  });
+
+  it('does not flag clean Turkish text without non-Turkish Latin Extended', () => {
+    expect(isMojibake('Şişli Mecidiyeköy')).toBe(false);
+    expect(isMojibake('Üsküdar - Ümraniye')).toBe(false);
+    expect(isMojibake('ATAŞEHİR TIP MERKEZİ - ESATPAŞA')).toBe(false);
+  });
 });

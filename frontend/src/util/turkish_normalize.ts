@@ -31,17 +31,20 @@ export function fuzzyMatch(query: string, target: string): boolean {
   return normalize(target).includes(normalize(query));
 }
 
-// Backend `import_gtfs._demojibake` iETT routes'larının ~%58'ini
-// kurtardı. Kalan ~%42'de ya U+FFFD (replacement char) ya da
-// `Ã/Ä/Å` + diakritik dizilimleri var — kaynakta byte düşmüş veya
-// cp1252 dışı encoding karması, kurtarılamaz.
+// Backend `import_gtfs._demojibake` iETT routes'larının ~%76'sını
+// kurtardı (f-polish-4 hibrit pass). Kalan ~%24'te ya U+FFFD ya da
+// karışık byte sequence (cp1252-undefined + utf-8 karması) — kaynakta
+// kurtarılamaz. Frontend bu kalanları UI'da uyarı ikonuyla işaretler.
 //
-// Frontend bu kalanları UI'da uyarı ikonuyla işaretler — kullanıcı
-// veriyi yine görür ama "bozuk" olduğunu bilir. Türkçe'de Ã/Ä/Å
-// tek başına nadir; "Ã" + sonrasında diakritik benzeri karakter
-// kuvvetli mojibake göstergesidir.
+// Üç indikatör:
+//   1. U+FFFD replacement char doğrudan
+//   2. Ã/Ä/Å + Latin-1 Supplement / General Punctuation: double-encoded UTF-8
+//   3. Türkçe-dışı Latin Extended karakterler (Đ/đ, Þ/þ, Æ/æ) —
+//      Türkçe metinde geçmez, encoding mojibake göstergesi
+//      (latin1↔utf-8 veya iso-8859-9 karması).
 export function isMojibake(s: string): boolean {
   if (!s) return false;
   if (s.includes('�')) return true;
-  return /[ÃÄÅ][-ÿ -⁯]/.test(s);
+  if (/[ÃÄÅ][-ÿ -⁯]/.test(s)) return true;
+  return /[ĐđÞþÆæ]/.test(s);
 }
