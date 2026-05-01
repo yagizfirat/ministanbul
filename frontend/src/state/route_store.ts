@@ -1,7 +1,7 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { fetchRouteShape, type RouteSummary } from '../data/api';
 import { addRouteToMap, removeRouteFromMap } from '../render/route_lines_layer';
-import { colorForMode } from './mode_colors';
+import { getRouteColor } from '../styling/route_colors';
 
 export type AddOutcome = 'added' | 'skipped' | 'no-shape';
 export type RouteListener = (routeId: string) => void;
@@ -52,7 +52,7 @@ export class RouteStore {
       routeId,
       summary.mode,
       summary.short_name,
-      colorForMode(summary.mode),
+      getRouteColor(summary.short_name, summary.mode),
       shape,
     );
     this.entries.set(routeId, { summary, hasShape: true });
