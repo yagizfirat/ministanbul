@@ -823,6 +823,7 @@ gerçek gecikmeleri yansıtmadığını bilsin.
 1b. ✅ `/api/trips/active/` endpoint (KM2, 2026-05-01)
 2a. ✅ Scheduled interpolator metro only (KM3-a, 2026-05-01, direction-bug fix dahil)
 2b. ✅ Çoklu mod genişleme (KM3-b, 2026-05-01)
+2c. ✅ import_gtfs --force idempotency check (KM3-c, 2026-05-01)
 3. Simulated badge + UI toggle (canlı / simüle / ikisi birden)
 4. Metro / Marmaray / vapur için mod-bazlı renk farklılığı
 5. OSM Overpass client + `snap_iett_routes` komutu
