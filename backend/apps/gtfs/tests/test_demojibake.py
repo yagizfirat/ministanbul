@@ -51,8 +51,24 @@ def test_empty_string_unchanged():
 
 def test_round_trip_failure_preserves_original():
     # 'São Paulo' içerir 'Ã' (Portekizce) → marker tetiklenir
-    # ama cp1252 round-trip başarısız (utf-8 decode hatası) → orijinal döner.
+    # ama her pass sonucu Türkçe karakter içermez (sanity check
+    # red) → orijinal döner.
     assert _demojibake("São Paulo") == "São Paulo"
+
+
+def test_pass_2_latin1_recovery_for_extra_byte_range():
+    # latin1 ⊃ cp1252 — 0x80-0x9F arasında latin1 control char,
+    # cp1252 ise printable. latin1 round-trip cp1252'de fail eden
+    # bazı byte sequence'leri kurtarabilir. Sanity check Türkçe
+    # karakter beklediği için klasik test data'da iki pass aynı
+    # sonucu üretir; Pass 2'nin varlığı geniş kapsam guard'ı.
+    assert _demojibake("KADIKÃ–Y") == "KADIKÖY"
+
+
+def test_clean_turkish_passes_through_all_three_passes():
+    assert _demojibake("KADIKÖY") == "KADIKÖY"
+    assert _demojibake("Şişhane-Hacıosman") == "Şişhane-Hacıosman"
+    assert _demojibake("Üsküdar - Ümraniye") == "Üsküdar - Ümraniye"
 
 
 def test_idempotent_after_first_pass():

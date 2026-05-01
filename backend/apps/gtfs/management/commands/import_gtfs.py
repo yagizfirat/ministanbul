@@ -817,25 +817,60 @@ def _parse_gtfs_bool(s) -> bool:
     return str(s).strip() == "1"
 
 
+_TURKISH_LETTERS = "şŞğĞıİçÇöÖüÜ"
+_MOJIBAKE_MARKERS = "ÃÄÅÐĐÞ"
+
+
 def _demojibake(s: str) -> str:
-    """Reverse cp1252→UTF-8 double encoding (e.g. 'KADIKÃ–Y' → 'KADIKÖY').
+    """Reverse encoding mojibake — try multiple round-trip patterns.
 
-    Discovered in iETT GTFS routes.csv (Faz 6 KM1 f-polish madde 1):
-    İBB pipeline UTF-8 baytları cp1252 olarak decode edip tekrar
-    UTF-8 olarak encode etmiş. stops.csv ve agency.csv aynı feed'de
-    temiz — dosya-bazlı tutarsızlık. Heuristic feed-bağımsız +
-    idempotent uygulanır:
+    İBB iETT routes.csv kaynakta cp1252↔UTF-8 ve latin1↔UTF-8
+    karması ile bozulmuş. Tek pass (cp1252) önceki turda %58
+    kurtardı; kalan ~%42 farklı pattern. f-polish-4 hibrit:
 
-      - Mojibake markers (Ã, Ä, Å) string'de yoksa → no-op
-      - Round-trip cp1252.encode + utf-8.decode başarısız ise
-        (Portekizce 'São Paulo' veya zaten temiz Türkçe) → orijinal
-      - Sadece gerçekten double-encoded UTF-8 byte dizisi recover olur
+      Pass 1 (cp1252→UTF-8):    "KADIKÃ–Y" → "KADIKÖY"
+      Pass 2 (latin1→UTF-8):    cp1252 superset, byte 0x80-0x9F farklı eşler
+      Pass 3 (utf-8→iso-8859-9): Türkçe-spesifik ters yön bozulma
 
-    Idempotent: temiz çıktı tekrar çağrılırsa marker bulamaz, no-op.
+    **Sanity check**: round-trip sonucu Türkçe karakter (şğıçöü vb.)
+    içermiyorsa kabul edilmez — yanlış decoding ihtimali. Sadece
+    Türkçe alfabe çıktısı dönerse winning pass kabul.
+
+    Idempotent: temiz Türkçe → marker yok → no-op. U+FFFD içerenler
+    her pass'ta fail eder → orijinal.
     """
-    if not s or not any(c in s for c in "ÃÄÅ"):
+    if not s:
         return s
+
+    # Hızlı yol — marker yoksa ve replacement char yoksa hiç deneme.
+    if not any(c in s for c in _MOJIBAKE_MARKERS) and "�" not in s:
+        return s
+
+    # Pass 1: cp1252→UTF-8 (en yaygın).
     try:
-        return s.encode("cp1252").decode("utf-8")
+        result = s.encode("cp1252").decode("utf-8")
+        if any(c in result for c in _TURKISH_LETTERS):
+            return result
     except (UnicodeEncodeError, UnicodeDecodeError):
-        return s
+        pass
+
+    # Pass 2: latin1→UTF-8 (cp1252 superset; byte 0x80-0x9F'de farklı eşler).
+    try:
+        result = s.encode("latin1").decode("utf-8")
+        if any(c in result for c in _TURKISH_LETTERS):
+            return result
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
+
+    # Pass 3: utf-8→iso-8859-9 (Türkçe — ters yön bozulma).
+    try:
+        result = s.encode("utf-8").decode("iso-8859-9")
+        if any(c in result for c in _TURKISH_LETTERS) and not any(
+            c in result for c in _MOJIBAKE_MARKERS
+        ):
+            return result
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
+
+    # Hepsi fail → orijinal (kurtarılamaz).
+    return s
