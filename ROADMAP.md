@@ -897,6 +897,13 @@ Alt-iş:
   - Panel genişlik 340 → 400px (M2A/M3A uzun adlar için)
   - Commit zinciri: width `c846ddd`, route_focus `7a67e2e`, paint factories `c019aa2`, glow `d0c122d`, bbox `96fc117`, popup `19fbfd7`, integration `8e6c360`, docs (bu commit)
   - **+24 Vitest case** (161 → 185)
+- ✅ **alt-iş g f-polish-3** (5 madde rötuş, 5 commit) — tarayıcı doğrulama bulguları:
+  - **Madde 1**: Collapsed panel layout — buton + dikey "Hatlar" overlap düzeltildi. collapseWidth 40 → 48px, header column flex açık gap, button-styled accent border. (`1a214ee`)
+  - **Madde 2**: Vehicle popup içeriği human-readable — `short_name + long_name + agency_name`. Internal trip_id/route_id gizlendi. RouteStore.getMeta(routeId) lookup, mojibake long_name'de ⚠ uyarı. Unmapped İETT için "Hat bilinmiyor" + KapiNo görünür. (`af57d78`)
+  - **Madde 3**: Bus zoom fallback — polyline yok ise SnapshotStore.getVehicleBBoxForRoute (yeni) ile vehicle konumlarından bbox; vehicle yoksa toast uyarı "Bu hatta şu an aktif araç yok". (`f6ea2cc` helper, `26363b2` toast, `1864bb9` integration)
+  - Commit zinciri: collapsed `1a214ee`, vehicle bbox `f6ea2cc`, toast `26363b2`, popup `af57d78`, integration+docs (bu commit)
+  - **+9 Vitest case** (185 → 194)
+  - **KM1 toplam**: 31 → **194** Vitest, **191** backend, +21 KB JS / +77 KB CSS
 
 Tahmini süre: 3-4 gün → **gerçek: ~1.5 gün**.
 

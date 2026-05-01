@@ -33,6 +33,7 @@ import {
 import { RouteFocus } from './state/route_focus';
 import { createLastUpdateIndicator } from './ui/last_update_indicator';
 import { createRoutePanel, type RoutePanelHandle } from './ui/route_panel';
+import { showToast } from './ui/toast';
 import { showVehiclePopup } from './ui/vehicle_popup';
 
 const ISTANBUL_CENTER: [number, number] = [29.00, 41.04];
@@ -207,9 +208,15 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
     defaultVisibleIds: initialIds, // Reset hedefi (polyline + ferry)
     onRouteDoubleClick: (routeId) => {
       routeFocus.setFocus(routeId);
-      const bbox = getRouteBBox(routeId);
+      // Polyline bbox'ı dene (metro/marmaray/tram/funicular/ferry).
+      // Bus için polyline yok (Faz 5 OSM snapping bekliyor) → vehicle
+      // konumlarından fallback bbox. Hat'a hiç araç yoksa toast uyarı.
+      const bbox =
+        getRouteBBox(routeId) ?? store.getVehicleBBoxForRoute(routeId);
       if (bbox) {
         map.fitBounds(bbox as [number, number, number, number], { padding: 80 });
+      } else {
+        showToast('Bu hatta şu an aktif araç yok, zoom yapılamadı');
       }
     },
   });
