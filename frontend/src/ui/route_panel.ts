@@ -37,7 +37,7 @@ export interface RoutePanelConfig {
 const DEFAULT_CONFIG: RoutePanelConfig = {
   width: '400px',
   position: 'right',
-  collapseWidth: '40px',
+  collapseWidth: '48px',
   itemHeight: 40,
   busVirtualizationOverscan: 5,
 };

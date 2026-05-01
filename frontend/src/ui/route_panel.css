@@ -36,7 +36,7 @@
 }
 
 .route-panel[data-collapsed="true"] {
-  width: var(--route-panel-collapse-width, 40px);
+  width: var(--route-panel-collapse-width, 48px);
 }
 
 .route-panel__header {
@@ -378,12 +378,12 @@
 
 /* Collapsed state */
 .route-panel[data-collapsed="true"] .route-panel__header {
-  /* 40px width — flex satır içi sığmaz; column'a geç + ortala
-     → collapse-btn üstte görünür (geri açma yolu), title altta dikey. */
+  /* 48px width — buton üstte, dikey title altta, açık gap.
+     f-polish-3 madde 1: title + buton overlap'i ortadan kaldır. */
   flex-direction: column;
   align-items: center;
-  padding: 8px 0;
-  gap: 8px;
+  padding: 10px 0;
+  gap: 14px;
 }
 
 .route-panel[data-collapsed="true"] .route-panel__title {
@@ -391,16 +391,20 @@
   transform: rotate(180deg);
   text-align: center;
   flex-grow: 0;
+  font-size: 11px;
+  letter-spacing: 1px;
 }
 
 .route-panel[data-collapsed="true"] .route-panel__collapse-btn {
-  /* explicit visible guard — flex shrink/parent collapse durumunda
-     kaybolmasın diye display + flex baskı yok. */
+  /* Explicit visible guard + button-styled accent (f-polish-3 madde 1). */
   display: block;
   flex: 0 0 auto;
-  margin: 0 auto;
-  padding: 6px 10px;
+  margin: 0;
+  padding: 4px 10px;
   font-size: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
 }
 
 .route-panel[data-collapsed="true"] .route-panel__header-row2,
