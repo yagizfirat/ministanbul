@@ -30,10 +30,10 @@ interface ScheduledCollection {
 
 const EMPTY_FC: ScheduledCollection = { type: 'FeatureCollection', features: [] };
 
-// Pure paint factory — focused null → mevcut paint.
-// focused dolu → o hatın trip'leri opacity 1.0, diğerleri 0.2
-// (alt-iş g focus mode).
-export function buildScheduledLayerPaint(focused: string | null = null) {
+// Pure paint factory — focused null/[] → mevcut paint.
+// focused string[] → o hatların trip'leri opacity 1.0, diğerleri 0.2.
+// f-polish-5: array filter, multi-route focus.
+export function buildScheduledLayerPaint(focused: readonly string[] | null = null) {
   const base = {
     'circle-radius': [
       'interpolate', ['linear'], ['zoom'],
@@ -45,17 +45,17 @@ export function buildScheduledLayerPaint(focused: string | null = null) {
     'circle-stroke-width': 1,
     'circle-stroke-color': ['get', 'strokeColor'],
   } as const;
-  if (focused === null) return base;
+  if (focused === null || focused.length === 0) return base;
   return {
     ...base,
     'circle-opacity': [
       'case',
-      ['==', ['get', 'route_id'], focused], 1.0,
+      ['in', ['get', 'route_id'], ['literal', focused]], 1.0,
       0.2,
     ],
     'circle-stroke-opacity': [
       'case',
-      ['==', ['get', 'route_id'], focused], 1.0,
+      ['in', ['get', 'route_id'], ['literal', focused]], 1.0,
       0.2,
     ],
   } as const;

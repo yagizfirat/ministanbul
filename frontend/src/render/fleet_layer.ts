@@ -34,10 +34,10 @@ interface FleetCollection {
 
 const EMPTY_FC: FleetCollection = { type: 'FeatureCollection', features: [] };
 
-// Pure paint factory — focused null → mevcut paint.
-// focused dolu → o hattaki İETT vehicle'ları opacity 1.0,
-// diğerleri (mapped + unmapped) 0.2 (alt-iş g focus mode).
-export function buildFleetPaint(focused: string | null = null) {
+// Pure paint factory — focused null/[] → mevcut paint.
+// focused string[] → o hatlardaki İETT vehicle'ları opacity 1.0,
+// diğerleri (mapped + unmapped) 0.2. f-polish-5: array filter.
+export function buildFleetPaint(focused: readonly string[] | null = null) {
   const base = {
     'circle-radius': [
       'interpolate', ['linear'], ['zoom'],
@@ -52,17 +52,17 @@ export function buildFleetPaint(focused: string | null = null) {
     ],
     'circle-stroke-color': COLOR_STROKE_MAPPED,
   } as const;
-  if (focused === null) return base;
+  if (focused === null || focused.length === 0) return base;
   return {
     ...base,
     'circle-opacity': [
       'case',
-      ['==', ['get', 'route_id'], focused], 1.0,
+      ['in', ['get', 'route_id'], ['literal', focused]], 1.0,
       0.2,
     ],
     'circle-stroke-opacity': [
       'case',
-      ['==', ['get', 'route_id'], focused], 1.0,
+      ['in', ['get', 'route_id'], ['literal', focused]], 1.0,
       0.2,
     ],
   } as const;

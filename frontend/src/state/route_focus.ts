@@ -1,31 +1,47 @@
-// Faz 6 KM1 alt-iş g — tek hat focus state'i.
+// Faz 6 KM1 alt-iş g — multi-route focus state (f-polish-5).
 //
-// route_visibility (görünür/gizli) ile orthogonal: tüm visible hatlar
-// arasında BİR tane "focus" olabilir. Focus aktifken diğer visible
-// hatlar opacity 0.2 ile sönük render edilir; focused hat parlak +
-// glow halo ile vurgulanır ("ışın kılıcı" efekti).
+// Önce tek route_id idi; varyant gruplama (29B = 7 hat) sonrası grup
+// header çift tıklama tüm variant'ları focus'a almalı, paint expression
+// 'in literal' filter ile aynı anda parlar.
 //
-// null = focus yok (default state, tüm visible hatlar normal renderda).
+// Sözleşme:
+//   null              → focus yok (default render)
+//   readonly string[] → 1 veya N hat focused (tek-variant ve grup
+//                        aynı interface ile çalışır)
 
-export type RouteFocusListener = (focused: string | null) => void;
+export type RouteFocusListener = (focused: readonly string[] | null) => void;
 
 export class RouteFocus {
-  private focused: string | null = null;
+  private focused: readonly string[] | null = null;
   private listeners: RouteFocusListener[] = [];
 
-  setFocus(routeId: string | null): void {
-    if (this.focused === routeId) return; // no-op — listener tetiklenmez
-    this.focused = routeId;
+  setFocus(routeIds: readonly string[] | null): void {
+    if (this.equals(this.focused, routeIds)) return; // no-op
+    this.focused = routeIds === null ? null : [...routeIds];
     for (const fn of this.listeners) fn(this.focused);
   }
 
-  getFocused(): string | null {
+  getFocused(): readonly string[] | null {
     return this.focused;
   }
 
-  // Aynı hat tekrar tıklanırsa focus'u kapat; başka hat → o hatta geç.
-  toggle(routeId: string): void {
-    this.setFocus(this.focused === routeId ? null : routeId);
+  // Toggle: aynı set zaten focused ise null; değilse setFocus(routeIds).
+  toggle(routeIds: readonly string[]): void {
+    if (this.equals(this.focused, routeIds)) {
+      this.setFocus(null);
+    } else {
+      this.setFocus(routeIds);
+    }
+  }
+
+  private equals(
+    a: readonly string[] | null,
+    b: readonly string[] | null,
+  ): boolean {
+    if (a === b) return true;
+    if (a === null || b === null) return false;
+    if (a.length !== b.length) return false;
+    return a.every((id, i) => id === b[i]);
   }
 
   subscribe(fn: RouteFocusListener): void {

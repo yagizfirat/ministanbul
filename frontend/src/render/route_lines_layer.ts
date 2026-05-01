@@ -26,12 +26,12 @@ interface RouteCollection {
 const collection: RouteCollection = { type: 'FeatureCollection', features: [] };
 const shapeIndex = new Map<string, LonLat[]>();
 
-// Pure paint factory — focused null → mevcut paint.
-// focused dolu → focused hat parlak (opacity 1.0, %50 daha kalın),
-// diğerleri sönük (opacity 0.2). Alt-iş g focus mode "ışın kılıcı"
-// efektinin route-lines kısmı.
-export function buildRouteLinePaint(focused: string | null = null) {
-  if (focused === null) {
+// Pure paint factory — focused null/[] → mevcut paint.
+// focused string[] → bu hatlar parlak (opacity 1.0, %50 daha kalın),
+// diğerleri sönük (opacity 0.2). f-polish-5: array filter, varyant
+// grubu tek seferde focus'a alınır.
+export function buildRouteLinePaint(focused: readonly string[] | null = null) {
+  if (focused === null || focused.length === 0) {
     return {
       'line-color': ['get', 'color'],
       'line-opacity': 0.85,
@@ -47,12 +47,12 @@ export function buildRouteLinePaint(focused: string | null = null) {
     'line-color': ['get', 'color'],
     'line-opacity': [
       'case',
-      ['==', ['get', 'route_id'], focused], 1.0,
+      ['in', ['get', 'route_id'], ['literal', focused]], 1.0,
       0.2,
     ],
     'line-width': [
       'case',
-      ['==', ['get', 'route_id'], focused],
+      ['in', ['get', 'route_id'], ['literal', focused]],
       ['interpolate', ['linear'], ['zoom'], 10, 3, 14, 6, 18, 9],
       ['interpolate', ['linear'], ['zoom'], 10, 2, 14, 4, 18, 6],
     ],
@@ -128,12 +128,13 @@ export function initRouteLinesLayer(map: MapLibreMap, beforeId?: string): void {
 }
 
 // Focus state değişiminde main.ts tarafından çağrılır.
-export function setGlowFocus(map: MapLibreMap, focusedRouteId: string | null): void {
+// f-polish-5: array filter, multi-route focus'ta hepsi parlar.
+export function setGlowFocus(map: MapLibreMap, focused: readonly string[] | null): void {
   if (!map.getLayer(GLOW_LAYER_ID)) return;
   map.setFilter(
     GLOW_LAYER_ID,
-    focusedRouteId
-      ? ['==', ['get', 'route_id'], focusedRouteId]
+    focused && focused.length > 0
+      ? ['in', ['get', 'route_id'], ['literal', focused]]
       : ['==', ['get', 'route_id'], '__none__'],
   );
 }

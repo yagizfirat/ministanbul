@@ -113,8 +113,9 @@ let routePanel: RoutePanelHandle | null = null;
 const routeFocus = new RouteFocus();
 
 // Alt-iş g: focus state değişiminde 3 layer paint + glow filter
-// güncellenir. Map.on('load') sonrasında subscribe edilir.
-function applyFocusPaint(focused: string | null): void {
+// güncellenir. f-polish-5: focused readonly string[] | null —
+// multi-route focus (variant grup).
+function applyFocusPaint(focused: readonly string[] | null): void {
   if (map.getLayer('route-lines')) {
     const p = buildRouteLinePaint(focused) as Record<string, unknown>;
     map.setPaintProperty('route-lines', 'line-opacity', p['line-opacity'] as never);
@@ -207,7 +208,7 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
     routes: initialRoutes,
     defaultVisibleIds: initialIds, // Reset hedefi (polyline + ferry)
     onRouteDoubleClick: (routeId) => {
-      routeFocus.setFocus(routeId);
+      routeFocus.setFocus([routeId]);
       // Polyline bbox'ı dene (metro/marmaray/tram/funicular/ferry).
       // Bus için polyline yok (Faz 5 OSM snapping bekliyor) → vehicle
       // konumlarından fallback bbox. Hat'a hiç araç yoksa toast uyarı.
@@ -227,7 +228,7 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
   // Polyline tıkla → focus o hat. Map global click → boş alan ise reset.
   map.on('click', 'route-lines', (e) => {
     const rid = e.features?.[0]?.properties?.route_id as string | undefined;
-    if (rid) routeFocus.setFocus(rid);
+    if (rid) routeFocus.setFocus([rid]);
   });
   map.on('click', 'fleet-circles', (e) => {
     if (!e.features?.[0]) return;

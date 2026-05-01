@@ -28,12 +28,20 @@ describe('buildScheduledLayerPaint', () => {
     expect((paint as Record<string, unknown>)['circle-opacity']).toBeUndefined();
   });
 
-  it('focused dolu → circle-opacity case expression (focused 1.0, others 0.2)', () => {
-    const paint = buildScheduledLayerPaint('public:m2') as Record<string, unknown>;
+  it('focused dolu → circle-opacity case ["in" literal] expression', () => {
+    const paint = buildScheduledLayerPaint(['public:m2']) as Record<string, unknown>;
     const op = paint['circle-opacity'] as readonly unknown[];
     expect(op[0]).toBe('case');
+    expect(op[1]).toEqual(['in', ['get', 'route_id'], ['literal', ['public:m2']]]);
     expect(op[2]).toBe(1.0);
     expect(op[3]).toBe(0.2);
+  });
+
+  it('focused multi-id → "in" literal contains all variant ids', () => {
+    const paint = buildScheduledLayerPaint(['a', 'b', 'c']) as Record<string, unknown>;
+    const op = paint['circle-opacity'] as readonly unknown[];
+    const literal = (op[1] as readonly unknown[])[2] as readonly unknown[];
+    expect(literal[1]).toEqual(['a', 'b', 'c']);
   });
 });
 

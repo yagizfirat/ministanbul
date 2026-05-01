@@ -35,12 +35,21 @@ describe('buildFleetPaint', () => {
     expect((buildFleetPaint(null) as Record<string, unknown>)['circle-opacity']).toBeUndefined();
   });
 
-  it('focused dolu → circle-opacity case expression', () => {
-    const paint = buildFleetPaint('iett:29B') as Record<string, unknown>;
+  it('focused dolu → circle-opacity case ["in" literal] expression', () => {
+    const paint = buildFleetPaint(['iett:29B']) as Record<string, unknown>;
     const op = paint['circle-opacity'] as readonly unknown[];
     expect(op[0]).toBe('case');
+    expect(op[1]).toEqual(['in', ['get', 'route_id'], ['literal', ['iett:29B']]]);
     expect(op[2]).toBe(1.0);
     expect(op[3]).toBe(0.2);
+  });
+
+  it('focused multi-id (variant group) → all 7 variant ids in literal', () => {
+    const ids = ['iett:1562', 'iett:1564', 'iett:1567', 'iett:52301', 'iett:52303', 'iett:55379'];
+    const paint = buildFleetPaint(ids) as Record<string, unknown>;
+    const op = paint['circle-opacity'] as readonly unknown[];
+    const literal = (op[1] as readonly unknown[])[2] as readonly unknown[];
+    expect(literal[1]).toEqual(ids);
   });
 
   it('manually evaluates the stroke-width case for a mapped vs unmapped feature', () => {

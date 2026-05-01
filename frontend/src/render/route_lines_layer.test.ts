@@ -33,17 +33,28 @@ describe('buildRouteLinePaint', () => {
     expect(buildRouteLinePaint(null)['line-opacity']).toBe(0.85);
   });
 
-  it('focused dolu → line-opacity case expression with focused id', () => {
-    const p = buildRouteLinePaint('public:m2');
+  it('focused single id → line-opacity case ["in" literal] expression', () => {
+    const p = buildRouteLinePaint(['public:m2']);
     const op = p['line-opacity'] as readonly unknown[];
     expect(op[0]).toBe('case');
-    expect(op[1]).toEqual(['==', ['get', 'route_id'], 'public:m2']);
-    expect(op[2]).toBe(1.0); // focused
-    expect(op[3]).toBe(0.2); // others
+    expect(op[1]).toEqual(['in', ['get', 'route_id'], ['literal', ['public:m2']]]);
+    expect(op[2]).toBe(1.0);
+    expect(op[3]).toBe(0.2);
+  });
+
+  it('focused multi-id (variant group) → "in" literal contains all ids', () => {
+    const p = buildRouteLinePaint(['iett:1562', 'iett:1564', 'iett:1567']);
+    const op = p['line-opacity'] as readonly unknown[];
+    const literal = (op[1] as readonly unknown[])[2] as readonly unknown[];
+    expect(literal[1]).toEqual(['iett:1562', 'iett:1564', 'iett:1567']);
+  });
+
+  it('focused empty array → base paint (no focus)', () => {
+    expect(buildRouteLinePaint([])['line-opacity']).toBe(0.85);
   });
 
   it('focused dolu → line-width also case-driven (focused thicker)', () => {
-    const w = buildRouteLinePaint('public:m2')['line-width'] as readonly unknown[];
+    const w = buildRouteLinePaint(['public:m2'])['line-width'] as readonly unknown[];
     expect(w[0]).toBe('case');
   });
 });
