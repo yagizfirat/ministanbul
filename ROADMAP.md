@@ -7,8 +7,8 @@ Bu doküman projenin **nihai yol haritasıdır**: ne yapıldı, ne yapılacak,
 her fazda hangi kararlar alındı. Her yeni geliştirme oturumunda ilk
 okunacak doküman budur.
 
-**Durum:** Faz 1-5 tamamlandı (2026-05-01). Faz 2 polish 5j-ii (stale vehicle.timestamp filter) eklendi (2026-05-02). Faz 5.5 (OSM yol snapping) ve Faz 6 (cilalama, kurumsal renk + filtreleme öncelikli) paralel açık. Realtime suite 165/165 yeşil, gtfs suite 25/25 yeşil, frontend 210/210 yeşil. Toplam 400/400.
-**Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md) (v0.7.4 — vehicle.route_id GTFS PK + stale timestamp filter)
+**Durum:** Faz 1-5 tamamlandı (2026-05-01). Faz 2 polish 5j-ii (stale vehicle.timestamp filter) eklendi (2026-05-02). **Faz 5.5 patch turu (2026-05-02): stop_times Excel truncation incident'i çözüldü, IETT bus short_name coverage 139/1095 → 796/1095 (~%72.7), Trip-level coverage %13.96 → %100 (Spec Ek A.17).** Faz 5.5 implementation (durak-bazlı polyline, yeni Plan A) ve Faz 6 (cilalama, kurumsal renk + filtreleme öncelikli) paralel açık. Realtime suite 165/165 yeşil, gtfs suite 38/38 yeşil, frontend 210/210 yeşil. Toplam 413/413.
+**Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md) (v0.7.5 — stop_times Excel truncation patch + Plan A öncelikli)
 
 ---
 
@@ -23,7 +23,7 @@ okunacak doküman budur.
    - [Faz 3 — WebSocket katmanı ✅](#faz-3--websocket-katmanı-)
    - [Faz 4 — 3D frontend ✅](#faz-4--3d-frontend-)
    - [Faz 5 — Raylı sistem ve vapur simülasyonu ✅](#faz-5--raylı-sistem-ve-vapur-simülasyonu-)
-   - [Faz 5.5 — OSM yol snapping ⚪](#faz-55--osm-yol-snapping-)
+   - [Faz 5.5 — Bus polyline türetme ⚪](#faz-55--bus-polyline-türetme-)
    - [Faz 6 — Cilalama ⚪](#faz-6--cilalama-)
 5. [Veri kaynakları](#5-veri-kaynakları)
 6. [Teknoloji seçimleri](#6-teknoloji-seçimleri)
@@ -845,25 +845,39 @@ Discovery raporları daha küçük tahminler vermişti (sadece public feed sayı
 
 ---
 
-### Faz 5.5 — OSM yol snapping ⚪
+### Faz 5.5 — Bus polyline türetme ⚪
 
-**Durum:** Planlı. Faz 5'in "bonus" maddesi olarak kapsamı belirsizdi (pgrouting Windows kurulumu, Overpass rate limit, 270K snap çağrısı ölçeği). Faz 5'i bekletmemek için bağımsız saga'ya taşındı. Faz 6 polish'le paralel yapılabilir veya istenince açılır.
+**2026-05-02 patch turu:** Faz 5.5 ön-keşfinde tespit edilen Excel truncation incident'i (Spec Ek A.17) çözüldü. `download_gtfs.py` ZIP-prefer resolver ile güncellendi, reimport sonrası IETT bus stop_times short_name coverage 139/1095 → 796/1095 (%72.7), Trip-level %100. 29B 126 trip için 3.528 stop_times, metrobüs hatları (34/34A/34BZ/34G/34Z) toplam 334.758 stop_times. 29B durak listesi DB'den 28-durakla okunuyor (4.LEVENT METRO → FATİH SULTAN MEHMET). Commits: `<TBD-patch>` (download_gtfs), `<TBD-docs>` (Spec/ROADMAP).
 
-**Tahmini süre:** 1-2 hafta (Windows pgrouting kurulumu + Overpass rate limit keşifleri sonrası netleşir).
+**Sonuç olarak Faz 5.5'in kapsamı yeniden tanımlandı:**
+
+- **Plan A (durak-bazlı, yeni öncelikli yol)** — GTFS `stop_times` DB'den her trip için durak sırası okunur, durak koordinatları arasından polyline türetilir (önce basit straight-line, sonra opsiyonel snap). 29B için hemen denenebilir, B-1823/B-1827 spatial doğrulaması yapılır. Trip.shape_id zaten boş; bu polyline'lar `Shape` tablosuna yazılır ve `Trip.shape_id` doldurulur.
+- **Plan B (OSM Overpass + pgrouting, yedek)** — durak-bazlı çözüm yetersiz kalırsa (örn. Beşiktaş kavşağı gibi kıvrımlı yollarda iki ardışık durak arasında düz çizgi binaların içinden geçerse) snap quality için ek katman. pgrouting kurulumu, Overpass cache, 270K dijkstra artık zorunlu değil; sadece snap-quality regresyonu durumunda etkinleşir.
+
+**Durum:** Plan A ile başlanacak. Faz 5'in "bonus" maddesi olarak kapsamı belirsizdi (pgrouting Windows kurulumu, Overpass rate limit, 270K snap çağrısı ölçeği) — patch sonrası bunların hiçbiri **gerekmez**. Plan A için PoC (29B Overpass+networkx, 119-nokta polyline, B-1823 1354m, B-1827 1679m) `_research/2026-05-02-faz55-29b-poc.md`'de duruyor; Plan A bu polyline'ı OSM'den değil GTFS'ten türetir.
+
+**Tahmini süre:** 4-5 gün (Plan A kapsamında).
 
 #### Hedef
 
-İETT otobüslerinin tarayıcıda yoldan çıkarak hareket etme problemini çözmek. Faz 4 KM1'deki `bus_interpolator.ts` iki GPS snapshot arasını düz çizgi yürütüyor — kıvrımlı yollarda otobüs binaların içinden geçiyor görünüyor. Çözüm: OSM yol ağından gerçek güzergah polyline'ı, `pgr_dijkstra` ile her stop pair için shortest path, snap sonucunu `Shape` tablosuna yaz, frontend bu shape üzerinde yürüsün.
+İETT otobüslerinin tarayıcıda yoldan çıkarak hareket etme problemini çözmek. Faz 4 KM1'deki `bus_interpolator.ts` iki GPS snapshot arasını düz çizgi yürütüyor — kıvrımlı yollarda otobüs binaların içinden geçiyor görünüyor. Çözüm: GTFS `stop_times`'tan trip-bazlı durak sırasını çek, ardışık duraklar arası segment'leri `Shape` olarak kaydet, frontend bu shape üzerinde yürüsün.
 
-#### Yapılacak iş (alt-fazlar)
+#### Yapılacak iş (alt-fazlar — Plan A öncelikli)
 
-- **KM5-a** — pgrouting kurulum + smoke (PostGIS 3.6 + PostgreSQL 15 + Windows uyumu)
-- **KM5-b** — Overpass API client (`apps/gtfs/osm_client.py` — rate limit, retry, cache)
-- **KM5-c** — OSM yol ağı extraction (İstanbul bbox bölünmesi, `osm_ways` tablosu)
-- **KM5-d** — `pgr_dijkstra` proof of concept (1 İETT hatla end-to-end snap, "yol bağlantısı yok" edge case'i)
-- **KM5-e** — `python manage.py snap_iett_routes` komutu (batch + progress save + resume)
-- **KM5-f** — Snap sonuçlarını `Shape` tablosuna yazma + Trip eşleme
-- **KM5-g** — Frontend tarafı: snap'lenmiş shape'leri kullanarak `bus_interpolator.ts` refactor'ü
+- **KM5-a** ⏭️ Plan B'ye taşındı: pgrouting Windows kurulumu (sadece snap-quality gerekirse)
+- **KM5-b** ⏭️ Plan B'ye taşındı: Overpass API client
+- **KM5-c** ⏭️ Plan B'ye taşındı: OSM yol ağı extraction
+- **KM5-d** ⏭️ Plan B'ye taşındı: pgr_dijkstra PoC
+- **KM5-e (yeni)** — `python manage.py build_stop_polylines` komutu: her IETT bus trip için stop_times'tan straight-line LineString üret, `Shape` tablosuna kaydet, `Trip.shape_id` doldur (batch + progress save + resume)
+- **KM5-f (revize)** — Sanity test: 29B PoC referans noktalarıyla (B-1823, B-1827) yeni polyline'ın spatial uyumu
+- **KM5-g** — Frontend tarafı: `Trip.shape_id` artık dolu, mevcut shape lazy-fetch path'i (Faz 5 KM3-a-fix) İETT bus trip'leri için de devreye girer; `bus_interpolator.ts` shape üzerinde yürür
+
+#### Riskler
+
+- ~~Windows pgrouting kurulum~~ — Plan B'ye taşındı, başlangıçta gerekmez
+- ~~Overpass API rate limit~~ — Plan B'ye taşındı
+- 299 short_name'in hâlâ trip'siz olması (servisi durmuş history PK'lar) — etkilenen vehicle'lar `route_id=None` ile görünür, bu mevcut davranış
+- Ardışık duraklar arası düz çizgi kıvrımlı yollarda görsel bozukluk yaratır — eğer Beşiktaş kavşağı testi başarısız olursa Plan B'ye geç (snap-quality ek katmanı)
 
 #### Riskler
 

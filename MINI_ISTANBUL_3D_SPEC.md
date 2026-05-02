@@ -1470,7 +1470,7 @@ Toplamda 118 çakışma. Bunların 7'si metro hattı (M1A, M1B, M2, M3, M4, T4, 
 
 ### A.5 İBB CKAN dataset şeması
 
-Her iki dataset de 6-8 loose CSV olarak sunuluyor. İETT dataset'inde `stop_times.zip` adlı bir resource var — bu tam GTFS bundle **değil**, sadece büyük stop_times.csv'nin gzip'li halidir. Yanıltıcı.
+Her iki dataset de 6-8 loose CSV olarak sunuluyor. İETT dataset'inde `stop_times.zip` adlı bir resource var. Faz 1'de bu "yanıltıcı redundant gzip" olarak yorumlanıp atlandı; 2026-05-02 keşfinde tam tersi olduğu anlaşıldı (bkz. Ek A.17): ZIP canonical GTFS standard içeriği taşıyor (6.155.692 satır), yan yana duran `stop_times.csv` ise Excel'in 2^20 row limit'inde 1.048.575 satıra kesilmiş truncated dosya. `download_gtfs` Faz 5.5 patch turunda ZIP-prefer davranışına geçirildi.
 
 ### A.6 Küçük veri kalitesi sorunları
 
@@ -1624,6 +1624,53 @@ Ampirik bulgu (2026-05-02): Spec Ek A.4 İETT'nin `shapes.csv`'sinin yayınlanma
 
 **Sonuç:** İETT için kapsamlı spatial doğrulama yapısal olarak GTFS verisinden yapılamaz. Faz 5.5 (OSM Overpass + pgrouting) tek tam çözüm. Ara çözüm olarak 5j-ii drift filter denendi ve "vehicle.timestamp eski → eski interval'i bulup stamp ediyor" sınıfını eledi (~150 vehicle/tick), ama yapısal arşiv stale'liği (mapping geçen iş gününün görevini bugüne uyguluyor) için OSM yine zorunlu.
 
+*Not: Bu ölçüm 2026-05-02 patch öncesi snapshot'tır. Excel truncation incident'i Ek A.17'de belgelenmiştir; patch sonrası IETT bus short_name coverage 139/1095 → 796/1095 (~%72.7) seviyesine çıkmış, Trip-level coverage %100 olmuştur. A.16 patch'in öncesindeki yapısal sorunun kayıt değeri için korunur.*
+
+---
+
+### A.17 Excel 2^20 row truncation — İBB stop_times incident
+
+Ampirik bulgu (2026-05-02): İBB CKAN portalında İETT GTFS dataset'inde iki stop_times resource'u yan yana duruyordu:
+
+- `stop_times.zip` — 6.155.692 satır, GTFS standard (UTF-8 + virgül), canonical
+- `stop_times.csv` — 1.048.575 satır = **2^20 - 1** (Excel header dahil row limit), Excel-export artifact'i
+
+Mekanizma: birisi (İBB tarafı veya bir aracı) ZIP içindeki gerçek `stop_times.txt`'yi Excel'de açmış, "Save As CSV" yapmış, Türkçe locale ile noktalı virgül + UTF-8 BOM eklemiş. Excel sessizce 5.107.117 satırı kesmiş. Hata uyarısı çıkmadığı için ne İBB'de ne bizim tarafımızda fark edilmedi.
+
+Bizim `download_gtfs` komutu CKAN resource'larını tararken `format=="CSV"` filtresi kullanıyordu (Faz 1, line 202), ZIP'i "redundant gzip" diye atlıyordu. Bu yorum Spec Ek A.5'te belgeliydi ama yorumun kendisi yanılgıya dayalıydı — Faz 5.5 ön-keşfine kadar dosya boyutları karşılaştırılmamıştı.
+
+**Etki (patch öncesi):**
+
+- StopTime tablosu: 1.048.485 satır (5.1M eksik)
+- IETT bus stop_times short_name coverage: 139/1095 (~%12.7)
+- IETT Trip-level coverage: %13.96 (18.934/135.625)
+- Metrobüs hatları (34, 34A, 34BZ, 34G, 34Z): coverage yok
+- 29B, 15B, 500T, 28T (popüler hatlar): coverage yok
+- Faz 5.5 OSM Overpass + pgrouting tek tam çözüm sanılıyordu
+
+**Patch (Faz 5.5 patch turu, 2026-05-02):**
+
+- `download_gtfs.py`: `_resolve_resource_for(fname)` ZIP-prefer resolver eklendi, sadece stop_times.csv için ZIP variant tercih edilir
+- `_extract_single_file_zip()` helper: tek-üyeli ZIP'i temp dir'e açar, içerik canonical filename'e move edilir (tek-dosya invariant'ı korunur)
+- ZIP hash manifest'e kaydedilir; ZIP değişmezse re-extract atlanır
+- Mevcut import autodetect canonical UTF-8 + virgül formatını **dokunulmadan** tanıdı (`_detect_encoding` BOM yokluğu → utf-8, `_detect_sep` virgül çoğunluğu → `,`)
+- Diğer 5 dosya (agency, calendar, routes, stops, trips) eski CSV path'inde kaldı
+
+**Etki (patch sonrası):**
+
+- StopTime tablosu: 6.354.672 satır (+5.1M, +%410)
+- IETT StopTime: 6.154.703 satır
+- IETT Trip-level coverage: %100 (135.625/135.625)
+- IETT bus short_name coverage: **796/1095 (~%72.7)** — kalan 299 short_name DB'de var ama hiç trip içermiyor (servisi durmuş history PK'lar)
+- 29B 126 trip için 3.528 stop_times mevcut, 28-durakli güzergah DB'den okunabiliyor
+- Metrobüs (34/34A/34BZ/34G/34Z): toplam 334.758 stop_times
+- Faz 5.5 için durak-bazlı polyline türetme **yapısal olarak mümkün**
+- OSM Overpass artık **Plan B** (snap quality için gerekli olabilir, ama başlangıç/bitiş ve ara duraklar GTFS'ten gelir)
+
+**Mühendislik dersi:** Public dataset'lerden indirilen CSV'ler Excel'in 1.048.575 satır limitinde takılı olabilir. Boyut kontrolü `wc -l` ile basit, ama hatırlanmazsa pahalı — bu bug 6 ay açıkta kaldı. Yeni dataset adapter'ları için checklist: indirme sonrası eğer ZIP ve CSV yan yana ise ZIP'i tercih, CSV satır sayısı 2^20 ± 100'e yakınsa kırmızı bayrak.
+
+A.16 patch öncesi yapısal sorunun kayıt değeri için korunur. A.17 patch hikâyesini, post-patch sayılar Spec §14 v0.7.5 ve ROADMAP Faz 5.5 yeniden tanımı bölümünde belgelenir.
+
 ---
 
 ## 14. Doküman Versiyon Geçmişi
@@ -1642,3 +1689,4 @@ Ampirik bulgu (2026-05-02): Spec Ek A.4 İETT'nin `shapes.csv`'sinin yayınlanma
 | 0.7.2 | 2026-04-24 | **§5.7 mapping ↔ DB alignment sonucu eklendi** (Faz 2 Adım 5b-ii). 55.682 kayıtlık dump üzerinde ölçüldü: intersection %95.6 (754 hat hem mapping'de hem DB'de). Orphan 35 hat — tümü Türkçe karakterli sub-variant kodları (`11CÜ`, `15ÇK`, `AND1S` gibi), normalization %0 kurtarma verdi; mapping formatı değişmedi. DB-only 833 hat kategorize edildi: raylı/vapur (121) + opt-in henüz servise girmemiş (710) + 2 metrobüs (`34T`, `34U` — dün aktif olmamış). 10 inverted interval dropped. `build_mapping()` çıktısı Redis'e yazılacak final şema. |
 | 0.7.3 | 2026-04-27 | **Faz 3 tamamlandı + spatial sanity check eklendi** (Adım 6h-i/ii/iii). `apps/realtime/spatial.py` modülü: lazy-load shape cache, numpy vectorized haversine, 500m threshold ile mapped vehicle'ın GTFS shape geometrisinden uzaklaşmış olanlarını `route_id=None`'a degrade eder. Canlı smoke İETT GTFS feed shape coverage **0/1096** short_name, public feed **496/496** olduğunu ortaya çıkardı (§10 Risk tablosu güncellendi). Cache miss durumunda graceful skip davranışı: mapping korunur, defansif null yok. Public feed'in 496 shape'i cache'te kalır, Faz 5+ trip simülasyonunda etkin olur. 7 commit zinciri: 6h-i `fcf1451`/`bc0d5f4`/`b8603d5`/`a07026b` (modül + entegrasyon + 7 test, 147 → 154), 6h-ii `2224e9e`/`c04d01e`/`a316df9` (graceful skip fix + docs + regression test, 154 → 155). Smoke 3 tick: `mapped_count≈1850`, `spatial_check.skipped_no_shape≈input` (beklenen, İETT shape'siz), `nullified_off_route=0`. Realtime suite 155/155 yeşil. |
 | 0.7.4 | 2026-05-02 | **Yol B (vehicle.route_id GTFS PK semantics) + stale vehicle.timestamp filter** eklendi. Backend `enrich_with_route_id` artık SHATKODU short_name yerine canonical Route.route_id PK'sını stamp ediyor (`build_mapping` `route_id_by_short_name` index'i β filtresi `agency=IETT, route_type=3` + alfabetik tie-breaker ile üretir). Frontend RouteStore'a bus PK'ları `registerSummaries` ile yüklendi (Faz 6 KM1 reliquat). 5j-ii: out-of-interval-but-mapped vakası teşhisi, drift hipotezi cross-check ile A doğrulandı, `STALE_VEHICLE_TIMESTAMP_THRESHOLD_S=180` filter ve `stats:stale_vehicle_dropped_count` heartbeat counter eklendi. 5j-ii ön-keşfinde İETT stop_times coverage 139/9274 ölçüldü (Ek A.16). Yeni Ek A.15 (fleet endpoint stale konum davranışı) ve Ek A.16 (stop_times coverage). Realtime suite 165/165, frontend 210/210 yeşil. |
+| 0.7.5 | 2026-05-02 | **Faz 5.5 stop_times patch turu**: İBB CKAN'da yan yana duran `stop_times.zip` (canonical, 6.155.692 satır) ve `stop_times.csv` (Excel-truncated, 1.048.575 satır = 2^20 - 1) arasındaki Faz 1 yanlış tercihinin (`format=="CSV"` filter) düzeltilmesi. `download_gtfs.py` yeni `_resolve_resource_for(fname)` ZIP-prefer resolver, `_extract_single_file_zip()` helper, ZIP hash manifest kaydı; sadece stop_times için ZIP variant tercih edilir, diğer 5 dosya eski CSV path'inde kaldı. `import_gtfs.py` autodetect canonical UTF-8 + virgül formatını dokunulmadan tanıdı (`_detect_encoding` BOM yokluğu → utf-8, `_detect_sep` virgül çoğunluğu → `,`). Reimport sonrası IETT StopTime 1.048.485 → 6.154.703 (+5.1M, ×5.87), Trip-level coverage %13.96 → %100 (135.625/135.625), bus short_name coverage 139/1095 → 796/1095 (~%72.7). 29B 126 trip için 3.528 stop_times. Metrobüs (34/34A/34BZ/34G/34Z) toplam 334.758 stop_times. Yeni Ek A.17 (Excel truncation incident), Ek A.5 revize, Ek A.16'ya "patch öncesi snapshot" notu. Faz 5.5 implementation Plan A (durak-bazlı polyline) önceliklendi, OSM Overpass+pgrouting Plan B'ye düştü. Realtime suite 165/165, gtfs 38/38, frontend 210/210 yeşil korundu. |
