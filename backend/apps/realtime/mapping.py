@@ -28,6 +28,58 @@ from apps.realtime.schemas import IettArsivGorev
 logger = logging.getLogger(__name__)
 
 
+def _build_route_id_by_short_name(active_routes: set[str]) -> dict[str, str]:
+    """Return ``{short_name: canonical Route.route_id}`` for the active SHATKODU set.
+
+    Yol B (frontend route_id contract): vehicle.route_id must carry the
+    GTFS Route.route_id (e.g. ``"iett:1562"``), not the SHATKODU short_name
+    (``"29B"``). Frontend RouteStore is keyed by route_id; without this
+    translation, panel filter / focus / popup silent-fail for buses.
+
+    Selection policy (β filter): IETT agency only (name lookup, since
+    agency.id is environment-dependent) AND ``route_type=3`` (bus, excludes
+    metrobus-shaped trams etc. that share short_names). Among the resulting
+    1:N rows, ``ORDER BY route_id ASC`` gives the deterministic canonical
+    pick — recon report 2026-05-01 confirmed this matches the existing
+    panel ``iett:1562`` choice for 29B.
+
+    Defensive fallback: if the IETT Agency row is missing (clean test DB,
+    pre-import state) OR DB access fails (pytest-django blocker without
+    ``django_db`` marker, transient connection error), we return an empty
+    dict. The mapping payload still serialises; ``enrich_with_route_id``
+    consumers handle the lookup miss as ``route_id=None`` per spec.
+    """
+    if not active_routes:
+        return {}
+
+    try:
+        from apps.gtfs.models import Agency, Route
+
+        iett_agency_id = Agency.objects.values_list("id", flat=True).get(name="IETT")
+        rows = (
+            Route.objects
+            .filter(
+                short_name__in=active_routes,
+                agency_id=iett_agency_id,
+                route_type=Route.ROUTE_TYPE_BUS,
+            )
+            .values_list("short_name", "route_id")
+            .order_by("route_id")
+        )
+        canonical: dict[str, str] = {}
+        for short_name, route_id in rows:
+            # First row per short_name wins — query is ORDER BY route_id ASC.
+            canonical.setdefault(short_name, route_id)
+        return canonical
+    except Exception as exc:  # noqa: BLE001 — graceful degrade
+        logger.warning(
+            "build_mapping: route_id_by_short_name disabled (%s: %s); "
+            "vehicles will resolve route_id=None until DB is reachable",
+            type(exc).__name__, exc,
+        )
+        return {}
+
+
 def _seconds_of_day(dt_local: datetime.datetime) -> int:
     """Wall-clock seconds since midnight (0..86399) for a local-aware datetime."""
     return dt_local.hour * 3600 + dt_local.minute * 60 + dt_local.second
@@ -69,7 +121,10 @@ def build_mapping(
             "routes_by_mode": {
                 "metrobus": [...],         # METROBUS_ROUTES ∩ active
                 "bus":      [...],         # active - METROBUS_ROUTES
-            }
+            },
+            "route_id_by_short_name": {    # SHATKODU → GTFS Route.route_id
+                "29B": "iett:1562", ...    # canonical PK per active short_name
+            },
         }
 
     Skip rules:
@@ -161,4 +216,5 @@ def build_mapping(
             "metrobus": metrobus_active,
             "bus": bus_active,
         },
+        "route_id_by_short_name": _build_route_id_by_short_name(active_routes),
     }
