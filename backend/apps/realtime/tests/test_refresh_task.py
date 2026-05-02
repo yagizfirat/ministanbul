@@ -123,6 +123,7 @@ def test_refresh_success_end_to_end(fake_redis, arsiv_ok_body, requests_mock):
         assert set(payload) == {
             "snapshot_date", "snapshot_day_type",
             "by_kapi", "active_routes", "routes_by_mode",
+            "route_id_by_short_name",
         }
         assert set(payload["routes_by_mode"]) == {"metrobus", "bus"}
         assert len(payload["active_routes"]) == result["active_routes_count"]

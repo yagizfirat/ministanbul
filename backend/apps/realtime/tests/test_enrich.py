@@ -16,6 +16,7 @@ from datetime import date, datetime, time, timedelta
 from apps.realtime.calendar import ISTANBUL_TZ
 from apps.realtime.enrich import enrich_with_route_id
 from apps.realtime.schemas import VehiclePosition
+from apps.realtime.tests._helpers import EXPECTED_PK_FOR_HAT
 
 TEST_DATE = date(2026, 4, 22)  # Wednesday → weekday
 TEST_DAY_TYPE = "weekday"
@@ -78,14 +79,31 @@ def _mapping_with(
     by_kapi: dict | None = None,
     snapshot_date: str | None = None,
     snapshot_day_type: str | None = None,
+    route_id_by_short_name: dict | None = None,
 ) -> dict:
-    """Mapping with overridable snapshot_date / snapshot_day_type."""
+    """Mapping with overridable snapshot_date / snapshot_day_type.
+
+    Yol B: ``route_id_by_short_name`` is auto-derived from the SHATKODU
+    values in ``by_kapi`` using ``EXPECTED_PK_FOR_HAT``. Tests assert
+    against PK literals (``"iett:1562"``) rather than short_names.
+    Defensive tests can pass ``route_id_by_short_name={}`` explicitly to
+    simulate an old-format snapshot.
+    """
+    by_kapi = by_kapi or {}
+    if route_id_by_short_name is None:
+        active = {iv["hat"] for ivs in by_kapi.values() for iv in ivs}
+        route_id_by_short_name = {
+            sn: EXPECTED_PK_FOR_HAT[sn]
+            for sn in active
+            if sn in EXPECTED_PK_FOR_HAT
+        }
     return {
         "snapshot_date": snapshot_date or TEST_DATE.isoformat(),
         "snapshot_day_type": snapshot_day_type or TEST_DAY_TYPE,
-        "by_kapi": by_kapi or {},
+        "by_kapi": by_kapi,
         "active_routes": [],
         "routes_by_mode": {"metrobus": [], "bus": []},
+        "route_id_by_short_name": route_id_by_short_name,
     }
 
 
@@ -93,21 +111,21 @@ def test_exact_match_inside_interval():
     mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
     vehicles = [_make_vehicle("A-231", 1500)]
     out = enrich_with_route_id(vehicles, mapping)
-    assert out[0].route_id == "29B"
+    assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
 
 
 def test_timestamp_equals_start_inclusive():
     mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
     vehicles = [_make_vehicle("A-231", 1000)]
     out = enrich_with_route_id(vehicles, mapping)
-    assert out[0].route_id == "29B"
+    assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
 
 
 def test_timestamp_equals_end_inclusive():
     mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
     vehicles = [_make_vehicle("A-231", 2000)]
     out = enrich_with_route_id(vehicles, mapping)
-    assert out[0].route_id == "29B"
+    assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
 
 
 def test_timestamp_one_sec_after_end_unmapped():
@@ -156,7 +174,7 @@ def test_overlap_picks_later_start():
     )
     vehicles = [_make_vehicle("A-231", 4000)]
     out = enrich_with_route_id(vehicles, mapping)
-    assert out[0].route_id == "15B"
+    assert out[0].route_id == EXPECTED_PK_FOR_HAT["15B"]
 
 
 def test_empty_vehicles_list():
@@ -174,7 +192,7 @@ def test_input_vehicles_not_mutated():
     out = enrich_with_route_id(vehicles, mapping)
 
     assert vehicles[0].route_id == "PRESET"
-    assert out[0].route_id == "29B"
+    assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
     assert id(vehicles[0]) != id(out[0])
 
 
@@ -203,7 +221,7 @@ def test_overnight_continuation_uses_extended_seconds():
     )
     vehicles = [_make_vehicle_local("A-231", "2026-04-25T00:30:00+03:00")]
     out = enrich_with_route_id(vehicles, mapping)
-    assert out[0].route_id == "500T"
+    assert out[0].route_id == EXPECTED_PK_FOR_HAT["500T"]
 
 
 def test_next_day_after_4am_no_overnight_bump():
@@ -224,11 +242,12 @@ def test_snapshot_date_missing_defensive():
     bisect still works on base_sec."""
     mapping = {
         "by_kapi": {"A-231": [_interval(1000, 2000, "29B")]},
+        "route_id_by_short_name": {"29B": EXPECTED_PK_FOR_HAT["29B"]},
         # no snapshot_date, no snapshot_day_type
     }
     vehicles = [_make_vehicle("A-231", 1500)]
     out = enrich_with_route_id(vehicles, mapping)
-    assert out[0].route_id == "29B"
+    assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
 
 
 def test_snapshot_day_type_missing_defensive():
@@ -237,7 +256,8 @@ def test_snapshot_day_type_missing_defensive():
     mapping = {
         "snapshot_date": TEST_DATE.isoformat(),
         "by_kapi": {"A-231": [_interval(1000, 2000, "29B")]},
+        "route_id_by_short_name": {"29B": EXPECTED_PK_FOR_HAT["29B"]},
     }
     vehicles = [_make_vehicle("A-231", 1500)]
     out = enrich_with_route_id(vehicles, mapping)
-    assert out[0].route_id == "29B"
+    assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]

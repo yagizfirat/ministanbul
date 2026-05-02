@@ -43,6 +43,7 @@ from apps.realtime.tasks import (
     VEHICLES_ALL_KEY,
     fetch_iett_positions,
 )
+from apps.realtime.tests._helpers import EXPECTED_PK_FOR_HAT
 
 CASSETTE_DIR = Path(__file__).parent / "cassettes"
 BIG_END_SEC = 86399  # 23:59:59 — covers any same-day wall-clock vehicle timestamp
@@ -139,14 +140,22 @@ def _interval(start_sec: int, end_sec: int, hat: str) -> dict:
 
 def _seed_mapping(redis_client, by_kapi: dict[str, list[dict]]) -> None:
     """Write mapping payload to ``iett:mapping:current`` (post-5i-i shape:
-    snapshot_date + snapshot_day_type + start_sec/end_sec)."""
+    snapshot_date + snapshot_day_type + start_sec/end_sec).
+
+    Yol B: ``route_id_by_short_name`` is auto-derived from the SHATKODU
+    set via ``EXPECTED_PK_FOR_HAT``. M2 (a public-feed metro short_name
+    that lies outside production's IETT bus β-filter) is included in the
+    helper dict so end-to-end tests can simulate a mixed fleet.
+    """
     active = sorted({iv["hat"] for ivs in by_kapi.values() for iv in ivs})
+    pk_index = {sn: EXPECTED_PK_FOR_HAT[sn] for sn in active if sn in EXPECTED_PK_FOR_HAT}
     payload = {
         "snapshot_date": "2026-04-25",   # Saturday (matches cassette ts day-type)
         "snapshot_day_type": "saturday",  # cassette vehicles fall in 15:50-20:29 IST
         "by_kapi": by_kapi,
         "active_routes": active,
         "routes_by_mode": {"metrobus": [], "bus": active},
+        "route_id_by_short_name": pk_index,
     }
     redis_client.set(MAPPING_CACHE_KEY, json.dumps(payload).encode("utf-8"))
 
@@ -234,10 +243,15 @@ def test_end_to_end_chain_with_real_fleet_cassette(
     for v in snapshot["vehicles"]:
         by_route.setdefault(v["route_id"], []).append(v["id"])
 
-    assert {r for r in by_route if r is not None} == {"29B", "34BZ", "M2"}
-    assert len(by_route["29B"]) == 4
-    assert len(by_route["34BZ"]) == 3
-    assert len(by_route["M2"]) == 1
+    expected_route_pks = {
+        EXPECTED_PK_FOR_HAT["29B"],
+        EXPECTED_PK_FOR_HAT["34BZ"],
+        EXPECTED_PK_FOR_HAT["M2"],
+    }
+    assert {r for r in by_route if r is not None} == expected_route_pks
+    assert len(by_route[EXPECTED_PK_FOR_HAT["29B"]]) == 4
+    assert len(by_route[EXPECTED_PK_FOR_HAT["34BZ"]]) == 3
+    assert len(by_route[EXPECTED_PK_FOR_HAT["M2"]]) == 1
 
     expected_unmapped = len(vehicles) - 8
     assert len(by_route.get(None, [])) == expected_unmapped
@@ -348,7 +362,11 @@ def test_mapping_miss_then_present_recovery(
     snapshot_t2 = _read_snapshot(fake_redis)
 
     by_kapi = {v["id"]: v["route_id"] for v in snapshot_t2["vehicles"]}
-    assert by_kapi == {"A-231": "29B", "B-100": "29B", "C-50": "34BZ"}
+    assert by_kapi == {
+        "A-231": EXPECTED_PK_FOR_HAT["29B"],
+        "B-100": EXPECTED_PK_FOR_HAT["29B"],
+        "C-50": EXPECTED_PK_FOR_HAT["34BZ"],
+    }
     assert snapshot_t2["mapped_count"] == 3
 
     # Second broadcast fired (total = 2).
@@ -395,7 +413,7 @@ def test_same_kapi_different_routes_across_ticks(
 
     assert len(snapshot_t1["vehicles"]) == 1
     assert snapshot_t1["vehicles"][0]["id"] == "A-231"
-    assert snapshot_t1["vehicles"][0]["route_id"] == "29B"
+    assert snapshot_t1["vehicles"][0]["route_id"] == EXPECTED_PK_FOR_HAT["29B"]
 
     # --- Tick 2: afternoon timestamp → 15B interval (later-starting wins) ---
     _patch_adapter_returning(
@@ -407,12 +425,18 @@ def test_same_kapi_different_routes_across_ticks(
     # Same key, content overwritten — route_id flipped on the same kapı.
     assert len(snapshot_t2["vehicles"]) == 1
     assert snapshot_t2["vehicles"][0]["id"] == "A-231"
-    assert snapshot_t2["vehicles"][0]["route_id"] == "15B"
+    assert snapshot_t2["vehicles"][0]["route_id"] == EXPECTED_PK_FOR_HAT["15B"]
 
     # Two broadcasts fired (one per tick), each with the tick's payload.
     assert len(captured_group_sends) == 2
-    assert captured_group_sends[0][1]["data"]["vehicles"][0]["route_id"] == "29B"
-    assert captured_group_sends[1][1]["data"]["vehicles"][0]["route_id"] == "15B"
+    assert (
+        captured_group_sends[0][1]["data"]["vehicles"][0]["route_id"]
+        == EXPECTED_PK_FOR_HAT["29B"]
+    )
+    assert (
+        captured_group_sends[1][1]["data"]["vehicles"][0]["route_id"]
+        == EXPECTED_PK_FOR_HAT["15B"]
+    )
 
 
 # --- 5. fetch task → consumer end-to-end (real InMemoryChannelLayer) ------
@@ -495,10 +519,15 @@ async def test_fetch_task_broadcast_reaches_websocket_consumer(
     by_route: dict = {}
     for v in msg["vehicles"]:
         by_route.setdefault(v["route_id"], []).append(v["id"])
-    assert {r for r in by_route if r is not None} == {"29B", "34BZ", "M2"}
-    assert len(by_route["29B"]) == 4
-    assert len(by_route["34BZ"]) == 3
-    assert len(by_route["M2"]) == 1
+    expected_route_pks = {
+        EXPECTED_PK_FOR_HAT["29B"],
+        EXPECTED_PK_FOR_HAT["34BZ"],
+        EXPECTED_PK_FOR_HAT["M2"],
+    }
+    assert {r for r in by_route if r is not None} == expected_route_pks
+    assert len(by_route[EXPECTED_PK_FOR_HAT["29B"]]) == 4
+    assert len(by_route[EXPECTED_PK_FOR_HAT["34BZ"]]) == 3
+    assert len(by_route[EXPECTED_PK_FOR_HAT["M2"]]) == 1
     assert len(by_route.get(None, [])) == len(vehicles) - 8
 
     await communicator.disconnect()

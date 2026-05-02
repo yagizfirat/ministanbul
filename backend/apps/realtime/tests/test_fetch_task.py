@@ -36,6 +36,7 @@ from apps.realtime.tasks import (
     VEHICLES_CACHE_TTL_SECONDS,
     fetch_iett_positions,
 )
+from apps.realtime.tests._helpers import EXPECTED_PK_FOR_HAT
 
 ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
 LOGGER_NAME = "apps.realtime.tasks"
@@ -169,14 +170,21 @@ def _seed_mapping(
 ) -> None:
     """See test_fetch_task.py history: snapshot_date 1970-01-01 + day_type
     'sunday' is the default that keeps the 5i-iv mismatch detection silent
-    against ``_make_vehicle(ts_ms=...)``-derived timestamps."""
+    against ``_make_vehicle(ts_ms=...)``-derived timestamps.
+
+    Yol B: ``route_id_by_short_name`` is auto-derived from ``by_kapi``'s
+    SHATKODU set using ``EXPECTED_PK_FOR_HAT`` so the enrich PK lookup
+    succeeds. Tests assert PK literals downstream.
+    """
     active = sorted({iv["hat"] for ivs in by_kapi.values() for iv in ivs})
+    pk_index = {sn: EXPECTED_PK_FOR_HAT[sn] for sn in active if sn in EXPECTED_PK_FOR_HAT}
     payload = {
         "snapshot_date": snapshot_date,
         "snapshot_day_type": snapshot_day_type,
         "by_kapi": by_kapi,
         "active_routes": active,
         "routes_by_mode": {"metrobus": [], "bus": active},
+        "route_id_by_short_name": pk_index,
     }
     client.set(MAPPING_CACHE_KEY, json.dumps(payload).encode("utf-8"))
 
@@ -202,7 +210,7 @@ def test_happy_path_single_vehicle(fake_redis, patch_adapter, captured_group_sen
     assert snapshot["mapped_count"] == 1
     assert len(snapshot["vehicles"]) == 1
     assert snapshot["vehicles"][0]["id"] == "A-231"
-    assert snapshot["vehicles"][0]["route_id"] == "29B"
+    assert snapshot["vehicles"][0]["route_id"] == EXPECTED_PK_FOR_HAT["29B"]
 
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 0
     assert fake_redis.get(LAST_FETCH_TS_KEY).endswith(b"Z")
@@ -238,7 +246,7 @@ def test_unmapped_vehicle_included_with_null_route_id(
     snapshot = _read_snapshot(fake_redis)
 
     by_id = {v["id"]: v for v in snapshot["vehicles"]}
-    assert by_id["A-231"]["route_id"] == "29B"
+    assert by_id["A-231"]["route_id"] == EXPECTED_PK_FOR_HAT["29B"]
     assert by_id["X-999"]["route_id"] is None
 
     assert snapshot["vehicle_count"] == 2
@@ -418,7 +426,7 @@ def test_payload_format_matches_vehicles_all_spec(
     assert veh["speed"] == 24.0
     assert veh["lat"] == 41.04885
     assert veh["lon"] == 29.10322
-    assert veh["route_id"] == "29B"
+    assert veh["route_id"] == EXPECTED_PK_FOR_HAT["29B"]
 
 
 # --- 7. SET vehicles:all + group_send both happen (atomic invariant) ------
@@ -546,9 +554,11 @@ def test_fetch_task_spatial_check_keeps_near_vehicle(
         tasks_module, "is_vehicle_near_route",
         spatial_module.is_vehicle_near_route,
     )
+    # Spatial cache is keyed by route_id PK now (Yol B); enrich stamps
+    # PK on the vehicle so cache.get(v.route_id) must use the same key.
     monkeypatch.setattr(
         tasks_module, "get_route_shape_cache",
-        lambda: {"29B": np.array([[41.0, 29.0]])},
+        lambda: {EXPECTED_PK_FOR_HAT["29B"]: np.array([[41.0, 29.0]])},
     )
 
     result = fetch_iett_positions()
@@ -559,7 +569,7 @@ def test_fetch_task_spatial_check_keeps_near_vehicle(
     raw = fake_redis.get(VEHICLES_ALL_KEY)
     payload = json.loads(raw)
     target = next(v for v in payload["vehicles"] if v["id"] == "A-100")
-    assert target["route_id"] == "29B"
+    assert target["route_id"] == EXPECTED_PK_FOR_HAT["29B"]
 
 
 def test_fetch_task_spatial_check_nullifies_far_vehicle(
@@ -579,7 +589,7 @@ def test_fetch_task_spatial_check_nullifies_far_vehicle(
     )
     monkeypatch.setattr(
         tasks_module, "get_route_shape_cache",
-        lambda: {"34BZ": np.array([[39.7, 29.0]])},
+        lambda: {EXPECTED_PK_FOR_HAT["34BZ"]: np.array([[39.7, 29.0]])},
     )
 
     result = fetch_iett_positions()
@@ -623,4 +633,4 @@ def test_fetch_task_spatial_check_skips_when_no_shape_cached(
     raw = fake_redis.get(VEHICLES_ALL_KEY)
     payload = json.loads(raw)
     target = next(v for v in payload["vehicles"] if v["id"] == "A-300")
-    assert target["route_id"] == "29B"
+    assert target["route_id"] == EXPECTED_PK_FOR_HAT["29B"]

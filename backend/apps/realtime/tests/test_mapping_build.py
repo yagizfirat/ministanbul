@@ -60,6 +60,10 @@ def test_build_empty():
         "by_kapi": {},
         "active_routes": [],
         "routes_by_mode": {"metrobus": [], "bus": []},
+        # Yol B: empty active_routes short-circuits to an empty PK index
+        # (no DB query needed); enrich consumers handle a missing entry
+        # as route_id=None.
+        "route_id_by_short_name": {},
     }
 
 
