@@ -270,6 +270,7 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
   fetchAllBusRoutes()
     .then((busRoutes) => {
       console.log(`[bus] loaded ${busRoutes.length} routes`);
+      routeStore.registerSummaries(busRoutes);
       routeVisibility?.expandTotalCount(busRoutes.length);
       routePanel?.setRoutes([...initialRoutes, ...busRoutes]);
     })
