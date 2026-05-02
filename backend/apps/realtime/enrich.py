@@ -53,6 +53,7 @@ def enrich_with_route_id(
         return []
 
     by_kapi = mapping.get("by_kapi", {})
+    pk_index = mapping.get("route_id_by_short_name", {})
     snapshot_date_str = mapping.get("snapshot_date")
     snapshot_next_date: date | None = None
     if snapshot_date_str is not None:
@@ -86,6 +87,9 @@ def enrich_with_route_id(
             starts = [iv["start_sec"] for iv in intervals]
             idx = bisect_right(starts, now_sec) - 1
             if idx >= 0 and now_sec <= intervals[idx]["end_sec"]:
-                route_id = intervals[idx]["hat"]
+                # Yol B: translate SHATKODU → GTFS Route.route_id PK so the
+                # frontend's RouteStore (keyed by route_id) matches. Lookup
+                # miss → None (orphan SHATKODU stays unmapped, graceful).
+                route_id = pk_index.get(intervals[idx]["hat"])
         out.append(v.model_copy(update={"route_id": route_id}))
     return out
