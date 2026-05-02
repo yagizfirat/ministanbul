@@ -7,8 +7,8 @@ Bu doküman projenin **nihai yol haritasıdır**: ne yapıldı, ne yapılacak,
 her fazda hangi kararlar alındı. Her yeni geliştirme oturumunda ilk
 okunacak doküman budur.
 
-**Durum:** Faz 1-5 tamamlandı (2026-05-01). Faz 5.5 (OSM yol snapping) ve Faz 6 (cilalama, kurumsal renk + filtreleme öncelikli) paralel açık. Realtime suite 155/155 yeşil, gtfs suite 25/25 yeşil. Toplam 180/180.
-**Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md) (v0.8 — `vehicles:all` pivot)
+**Durum:** Faz 1-5 tamamlandı (2026-05-01). Faz 2 polish 5j-ii (stale vehicle.timestamp filter) eklendi (2026-05-02). Faz 5.5 (OSM yol snapping) ve Faz 6 (cilalama, kurumsal renk + filtreleme öncelikli) paralel açık. Realtime suite 165/165 yeşil, gtfs suite 25/25 yeşil, frontend 210/210 yeşil. Toplam 400/400.
+**Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md) (v0.7.4 — vehicle.route_id GTFS PK + stale timestamp filter)
 
 ---
 
@@ -458,6 +458,32 @@ Bu UX'te %52 unmapped artık görsel sürekliliği bozmaz — popup'ta sessiz "h
 **5j-i. Race-free mismatch counter** ⏭️ v1.x'e ertelendi (5i-iv polish backlog)
 
 Mevcut 5i-iv `redis.set(DAY_TYPE_MISMATCH_COUNT_KEY, 0)` refresh success path'te race window (~1-2sn) içinde fetch tick'inin INCR'ını sıfırlayabilir. Worst case 1-2 mismatch info kaybı, operasyonel etki yok. Race-free alternatif: `last_refresh_ts` + `total_count` - `cached_baseline` pattern. v1.x veya production'da gerçek bir mismatch flow gözleminden sonra ele alınır.
+
+**5j-ii. Stale vehicle.timestamp filter ✅ (2026-05-02)**
+
+Diagnostic: out-of-interval-but-mapped vehicles (56-92/tick) drift hipotezi 56/56 cross-check ile A doğrulandı (median drift 587s, %92.9 >60s, %87.5 >180s). Patch: enrich tuple (vehicles, stale_dropped) + reference_now param, threshold 180s (3× nominal tick), abs() iki yönlü, `_utcnow()` test seam, heartbeat counter `stats:stale_vehicle_dropped_count`.
+
+Live measurements (3 tick avg): mapped 2589 (baseline 2591, fark stat noise), out-of-interval 56→8 (%85+ düşüş), counter 143-150/tick. Counter > out-of-interval olması beklenen — drift > 180s ⊃ out-of-interval (interval içi ama bayatlamış vehicle'lar da yakalanır, asıl 29B-uzakta gözleminin kaynağı).
+
+Commits: `9506bf9` (enrich filter), `98bc3e2` (counter wiring), `40ab32e` (diagnostic ts cleanup). Test 165/165 yeşil.
+
+**Açık kalan problem:** Yapısal arşiv stale'liği (Kaynak 1 — geçen Cumartesi'nin görevi bugün uymayabilir) bu patch'le çözülmedi. Spatial motor / OSM kararı bu sınıf için açık duruyor.
+
+**5j-ii ön-keşfi — İETT GTFS stop_times coverage ölçümü (2026-05-02):** Spatial motor opsiyonu değerlendirilirken 4 SQL ile İETT için trip+stop_times kapsamı ölçüldü (`agency_id='1' AND route_type=3` filtresiyle). Bulgular:
+
+- 9.274 İETT otobüs hattından sadece **139 unique short_name** (~%1.5) için trip+stop_times verisi var (Sorgu 6: `total_with_coverage=139`)
+- Sorgu 1'in `routes_with_stoptimes=516` çıktısı DB row sayısıydı, fiziksel hat sayısı değil — `route_id`-prefix sebebiyle her short_name için ortalama ~8 row mevcut
+- Metrobüs hatlarının (34, 34A, 34BZ, ...) **hiçbiri kapsamda değil** (`metrobus_covered=0`); 29B, 15B, 500T, 28T gibi popüler hatlar da ilk 20'de yok
+- Coverage'lı hatlar bölgesel kümelenmiş (130-134, 140-142 prefix'li, Avrupa yakası kuzey-batı tahmini); rastgele dağılım değil, yapısal feed eksikliği
+- Sorgu 2 (trip-içi stop dolgu): 135.625 İETT trip'in 116.691'i (~%86) boş, 17.923'ü (%13) 20+ stop'a sahip — kapsam dahilindeki trip'ler kaliteli ama küçük bir set
+- Sorgu 3 (stop koordinatları): kapsam dahilindeki 5.909 stop'un %100'ü geçerli ve İstanbul bbox içinde — veri olduğunda temiz, bozuk değil
+
+Sonuç: spatial motor için doğrudan B senaryosu (durak yakınlık + polyline kontrolü) ekonomik değil — mapping günlük ~530-790 aktif hat üretirken kapsam sadece 139, en iyi ihtimalle %20'sini doğrulayabilir. C senaryosu (OSM Overpass + pgrouting, Faz 5.5) tek tam çözüm. Bu keşif spatial motor kararını ertelemeye dayanak oluşturdu, sırada drift filter denendi (5j-ii); yapısal arşiv stale'liği için Faz 5.5 hâlâ asıl yol.
+
+**Polish takipleri (opsiyonel, blocking değil):**
+
+- `_disable_stale_check` autouse fixture'ı `test_fetch_task.py` ve `test_integration.py`'da duplicate. `conftest.py`'a çıkarılabilir.
+- Stale-drop counter şu an `memurai-cli` ile manuel okunuyor. Admin metrics paneline (5i-iv ile aynı UI yüzeyi) eklenebilir; tipik tick değeri 143-150 üzerinden grafikleme.
 
 #### Bitiş kriteri
 

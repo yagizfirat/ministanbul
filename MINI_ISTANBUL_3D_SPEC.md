@@ -3,10 +3,12 @@
 > İstanbul'un toplu taşıma ağının gerçek zamanlı 3D dijital haritası.
 > [Mini Tokyo 3D](https://github.com/nagix/mini-tokyo-3d)'den ilham alınmıştır.
 
-**Versiyon:** 0.8 (Faz 2 tamamlandı, Faz 3 Adım 6a başlıyor — `vehicles:all` pivot)
+**Versiyon:** 0.7.4 (Yol B + stale vehicle.timestamp filter, 2026-05-02)
 **Hedef:** Antigravity agent ile geliştirilecek, Python Django tabanlı bir web uygulaması
 **Lisans:** MIT (planlanıyor)
-**Statü:** Faz 1 ve Faz 2 tamamlandı. Faz 3 Adım 6a başlıyor (WebSocket katmanı, `vehicles:all` model).
+**Statü:** Faz 1-5 tamamlandı (2026-05-01). Faz 2 polish 5j-ii eklendi (2026-05-02). Faz 5.5 (OSM yol snapping) ve Faz 6 (cilalama) paralel açık.
+
+> **v0.7.4 değişiklikleri (2026-05-02):** Yol B (vehicle.route_id semantiği SHATKODU short_name'den canonical Route.route_id PK'sına geçti, β filtre `agency=IETT, route_type=3` + alfabetik tie-breaker) ve stale vehicle.timestamp filter (5j-ii, 180s threshold + heartbeat counter) eklendi. Yeni Ek A.15 (fleet endpoint stale konum davranışı) ve Ek A.16 (İETT GTFS stop_times coverage 139/9274). Realtime suite 165/165, frontend 210/210 yeşil.
 
 > **v0.8 değişiklikleri (2026-04-26):** Faz 2 (canlı veri adaptörü) `d52024a` commit'iyle tamamlandı (realtime suite 121/121 yeşil). Faz 2 Adım 5i smoke test'i sırasında UX yön değişikliği yapıldı: tüm 6911 araç haritada ham nokta olarak gösterilecek, hat filtresi frontend'de görsel katman olarak işlenecek. Bu pivot WebSocket modelini de sadeleştirdi: tek `vehicles:all` Channels group'u, hat-bazlı kanallar Faz 5'e (metro/marmaray/vapur simülasyonu) ertelendi. Değişen bölümler:
 > - §5.7 sonu — yeni alt-bölüm "v0.8 pivot" (rationale, hat-bazlı yapının Faz 5'te geri dönüşü, bandwidth karşılaştırması)
@@ -1588,6 +1590,42 @@ iett:mapping:{KapiNo} → [
 
 ---
 
+### A.15 Vehicle.timestamp drift — fleet endpoint stale konum davranışı
+
+Ampirik bulgu (2026-05-02): İETT `GetFiloAracKonum_json` idle/parked vehicle'lar için multi-hour-old `DTGUNCELLEMESAATI` dönüyor. Diagnostic histogram (n=56 out-of-interval-but-mapped, snap_sec=45844): bimodal dağılım, %7 taze (0-30s), %62 uç drift (>600s), gri bant 121-300s pratik olarak boş (1 vaka). Max gap 25618s (~7 saat).
+
+**Mekanizma:** `enrich_with_route_id` `v.timestamp` ile bisect yapıyor. Stale timestamp eski interval'i buluyor → out-of-date PK stamp. Bisect kodu doğru, girdisi (`v.timestamp`) güvenilmez. Cross-check: 56/56 vakada `v.timestamp` ile bisect aktif interval buluyor, enrich'te branch sürprizi yok.
+
+**Karşı-tedbir:** enrich'e `reference_now` opsiyonel param + 180s `abs` threshold. Fetch task `_utcnow()` ile besler, drift > 180s ise `route_id=None` + heartbeat counter `stats:stale_vehicle_dropped_count` incr. Threshold 180s = 3× nominal 60s tick, 0-180s mikro band'ı koruma altında.
+
+**Live measurement** (Faz 2 5j-ii): tick başına ~150 vehicle drop. Yağız'ın gözleminin görünmez kısmı buradaydı — out-of-interval (56) sadece bayatlamış yarısı, interval-içi-ama-bayatlamış (~90) ek olarak temizlendi.
+
+**Yapısal sınır:** bu filter "vehicle.timestamp drift" sınıfını eler, "arşiv stale'liği" (mapping geçen Cumartesi'nin görevini bugüne uyguluyor) sınıfını elemez. İkincisi için spatial doğrulama gerekir; İETT GTFS shape 0/1096 ve stop_times coverage 139/9274 olduğundan OSM Overpass + pgrouting gereklidir (Faz 5.5 planlı).
+
+---
+
+### A.16 İETT GTFS stop_times coverage — 139/9274 (~%1.5)
+
+Ampirik bulgu (2026-05-02): Spec Ek A.4 İETT'nin `shapes.csv`'sinin yayınlanmadığını not ediyordu (shape coverage 0/1096). Ama 5j-ii ön-keşfinde mekansal motor için alternatif veri kaynağı (durak-bazlı polyline türetme) değerlendirildi. Sonuç: **stop_times coverage da büyük ölçüde eksik.**
+
+Ölçüm: 4 SQL sorgusuyla `agency_id='1' AND route_type=3` filtresinde DB durumu çıkarıldı.
+
+**Sorgu 1 (route coverage):** 9.274 İETT otobüs hattının 516 `route_id` kaydı için en az bir StopTime mevcut. İlk bakışta %5.56 görünür ama bu **DB row sayısıdır, fiziksel hat sayısı değil** — Faz 1'de feed-bazlı `route_id` prefix politikası gereği her short_name için ortalama ~8 row var.
+
+**Sorgu 6 (unique short_name coverage):** Coverage'lı hatların unique short_name kümesi **139** (Sorgu 6 `total_with_coverage`). Yani 9.274 fiziksel hattan sadece ~%1.5'i için stop_times verisi var. Metrobüs hatlarının (34, 34A, 34BZ, 34G, vb.) **hiçbiri** kapsamda değil (`metrobus_covered=0`); 29B, 15B, 500T, 28T gibi popüler hatlar da kapsam dışı. Sorgu 5'in ilk 20'sinde 132M, 130Ş, 12A, 10, 142F, 131T, 142, 131YS, 11H, 133KT pattern'i — **130-134 ve 140-142 prefix'li bölgesel küme**. Coğrafi olarak Avrupa yakası kuzey-batı tahmini (Eyüp/Alibeyköy/Sultangazi); rastgele dağılım değil, yapısal feed eksikliği.
+
+**Sorgu 2 (trip-içi stop dolgu):** 135.625 İETT trip'in 116.691'i (~%86) boş, 1.009'u 6-20 stop arası, 17.923'ü (~%13) 20+ stop'a sahip. Yani kapsam dahilindeki trip'ler kalitesiz değil — 18 bin trip 20+ durakla doldurulmuş, mediyan o kümede 30-40 civarı tahmini.
+
+**Sorgu 3 (stop koordinatları):** Kapsam dahilindeki 5.909 unique stop'un %100'ü geçerli ve İstanbul bbox içinde. NULL veya out-of-bbox sıfır. Veri olduğunda temiz, bozuk değil.
+
+**Sorgu 4 (trip dizilimi tutarlılığı):** Top 20 hat-direction çiftinde `variation_pct` %0.3-3.1 — hatların trip'leri tutarlı stop dizilimine sahip. Polyline cache'i hat-direction granülerliğinde yapılabilir, variant patlaması yok.
+
+**Spatial motor değerlendirmesi:** Mapping günlük ~530-790 aktif hat üretirken kapsam sadece 139 — en iyi ihtimalle aktif setin %20'si spatial check ile doğrulanabilir. Üstelik metrobüs ve popüler otobüsler kapsam dışı, yani kullanıcının en çok dikkatini çeken araçlar için spatial doğrulama yok. B senaryosu (durak yakınlık + polyline kontrolü) maliyet/fayda dengesi zayıf.
+
+**Sonuç:** İETT için kapsamlı spatial doğrulama yapısal olarak GTFS verisinden yapılamaz. Faz 5.5 (OSM Overpass + pgrouting) tek tam çözüm. Ara çözüm olarak 5j-ii drift filter denendi ve "vehicle.timestamp eski → eski interval'i bulup stamp ediyor" sınıfını eledi (~150 vehicle/tick), ama yapısal arşiv stale'liği (mapping geçen iş gününün görevini bugüne uyguluyor) için OSM yine zorunlu.
+
+---
+
 ## 14. Doküman Versiyon Geçmişi
 
 | Versiyon | Tarih | Değişiklik |
@@ -1603,3 +1641,4 @@ iett:mapping:{KapiNo} → [
 | 0.7.1 | 2026-04-24 | **§3.3 tablosu ampirik verilerle dolduruldu** (Faz 2 Adım 5a discovery query, 9.773 Route snapshot). Unique short_name sayıları: Metro 12, Tram 4, Fun 3, Marmaray 3, Metrobüs 10, Vapur ~99, Normal otobüs 1.080. Toplam sürekli görünür 131 unique hat. T5 ve F4 feed'de yok (İstanbul'da servis veriyor ama İBB yayınlamıyor) — belgelendi. Marmaray tespit filter'ı `agency_id=2 AND route_type=2` olarak netleşti (long_name match yanlış pozitif veriyordu). Route_type 9 (Minibus, 317 row) ve route_type 10 (Taksi Dolmus, 58 row) MVP kapsam dışı — v1.3'e ertelendi. **Kanal granülerliği `short_name` olarak sabitlendi** (`route_id` değil): Redis channel `vehicles:route:{short_name}`, `VehiclePosition.route_id` field'ı şema olarak korundu ama değeri artık `SHATKODU=short_name`. §5.7 mapping ↔ DB hizalama riski (SHATKODU set ∩ Route.short_name set) 5b'de doğrulanacak. |
 | 0.7.2 | 2026-04-24 | **§5.7 mapping ↔ DB alignment sonucu eklendi** (Faz 2 Adım 5b-ii). 55.682 kayıtlık dump üzerinde ölçüldü: intersection %95.6 (754 hat hem mapping'de hem DB'de). Orphan 35 hat — tümü Türkçe karakterli sub-variant kodları (`11CÜ`, `15ÇK`, `AND1S` gibi), normalization %0 kurtarma verdi; mapping formatı değişmedi. DB-only 833 hat kategorize edildi: raylı/vapur (121) + opt-in henüz servise girmemiş (710) + 2 metrobüs (`34T`, `34U` — dün aktif olmamış). 10 inverted interval dropped. `build_mapping()` çıktısı Redis'e yazılacak final şema. |
 | 0.7.3 | 2026-04-27 | **Faz 3 tamamlandı + spatial sanity check eklendi** (Adım 6h-i/ii/iii). `apps/realtime/spatial.py` modülü: lazy-load shape cache, numpy vectorized haversine, 500m threshold ile mapped vehicle'ın GTFS shape geometrisinden uzaklaşmış olanlarını `route_id=None`'a degrade eder. Canlı smoke İETT GTFS feed shape coverage **0/1096** short_name, public feed **496/496** olduğunu ortaya çıkardı (§10 Risk tablosu güncellendi). Cache miss durumunda graceful skip davranışı: mapping korunur, defansif null yok. Public feed'in 496 shape'i cache'te kalır, Faz 5+ trip simülasyonunda etkin olur. 7 commit zinciri: 6h-i `fcf1451`/`bc0d5f4`/`b8603d5`/`a07026b` (modül + entegrasyon + 7 test, 147 → 154), 6h-ii `2224e9e`/`c04d01e`/`a316df9` (graceful skip fix + docs + regression test, 154 → 155). Smoke 3 tick: `mapped_count≈1850`, `spatial_check.skipped_no_shape≈input` (beklenen, İETT shape'siz), `nullified_off_route=0`. Realtime suite 155/155 yeşil. |
+| 0.7.4 | 2026-05-02 | **Yol B (vehicle.route_id GTFS PK semantics) + stale vehicle.timestamp filter** eklendi. Backend `enrich_with_route_id` artık SHATKODU short_name yerine canonical Route.route_id PK'sını stamp ediyor (`build_mapping` `route_id_by_short_name` index'i β filtresi `agency=IETT, route_type=3` + alfabetik tie-breaker ile üretir). Frontend RouteStore'a bus PK'ları `registerSummaries` ile yüklendi (Faz 6 KM1 reliquat). 5j-ii: out-of-interval-but-mapped vakası teşhisi, drift hipotezi cross-check ile A doğrulandı, `STALE_VEHICLE_TIMESTAMP_THRESHOLD_S=180` filter ve `stats:stale_vehicle_dropped_count` heartbeat counter eklendi. 5j-ii ön-keşfinde İETT stop_times coverage 139/9274 ölçüldü (Ek A.16). Yeni Ek A.15 (fleet endpoint stale konum davranışı) ve Ek A.16 (stop_times coverage). Realtime suite 165/165, frontend 210/210 yeşil. |
