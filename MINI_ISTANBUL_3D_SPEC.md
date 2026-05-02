@@ -1610,7 +1610,7 @@ Ampirik bulgu (2026-05-02): Spec Ek A.4 İETT'nin `shapes.csv`'sinin yayınlanma
 
 Ölçüm: 4 SQL sorgusuyla `agency_id='1' AND route_type=3` filtresinde DB durumu çıkarıldı.
 
-**Sorgu 1 (route coverage):** 9.274 İETT otobüs hattının 516 `route_id` kaydı için en az bir StopTime mevcut. İlk bakışta %5.56 görünür ama bu **DB row sayısıdır, fiziksel hat sayısı değil** — Faz 1'de feed-bazlı `route_id` prefix politikası gereği her short_name için ortalama ~8 row var.
+**Sorgu 1 (route coverage):** 9.274 İETT otobüs `route_id` PK kaydının (1.095 unique short_name'e karşılık gelir; Faz 1 feed-prefix politikası gereği her short_name için ortalama ~8.5 PK var) 516'sı için en az bir StopTime mevcut. Bu **PK sayısıdır, fiziksel hat sayısı değil** — fiziksel hat ölçümü Sorgu 6'da unique short_name granülerliğinde yapılır.
 
 **Sorgu 6 (unique short_name coverage):** Coverage'lı hatların unique short_name kümesi **139** (Sorgu 6 `total_with_coverage`). Yani 9.274 fiziksel hattan sadece ~%1.5'i için stop_times verisi var. Metrobüs hatlarının (34, 34A, 34BZ, 34G, vb.) **hiçbiri** kapsamda değil (`metrobus_covered=0`); 29B, 15B, 500T, 28T gibi popüler hatlar da kapsam dışı. Sorgu 5'in ilk 20'sinde 132M, 130Ş, 12A, 10, 142F, 131T, 142, 131YS, 11H, 133KT pattern'i — **130-134 ve 140-142 prefix'li bölgesel küme**. Coğrafi olarak Avrupa yakası kuzey-batı tahmini (Eyüp/Alibeyköy/Sultangazi); rastgele dağılım değil, yapısal feed eksikliği.
 
@@ -1632,8 +1632,8 @@ Ampirik bulgu (2026-05-02): Spec Ek A.4 İETT'nin `shapes.csv`'sinin yayınlanma
 
 Ampirik bulgu (2026-05-02): İBB CKAN portalında İETT GTFS dataset'inde iki stop_times resource'u yan yana duruyordu:
 
-- `stop_times.zip` — 6.155.692 satır, GTFS standard (UTF-8 + virgül), canonical
-- `stop_times.csv` — 1.048.575 satır = **2^20 - 1** (Excel header dahil row limit), Excel-export artifact'i
+- `stop_times.zip` — içindeki canonical `stop_times.txt`: 6.155.692 data satır + 1 header = 6.155.693 toplam (`wc -l` çıktısı), GTFS standard (UTF-8 + virgül)
+- `stop_times.csv` — 1.048.574 data satır + 1 header = 1.048.575 toplam (`wc -l`); **Excel'in 2^20 = 1.048.576 row limit'inde header dahil 2^20 - 1**, Excel-export artifact'i
 
 Mekanizma: birisi (İBB tarafı veya bir aracı) ZIP içindeki gerçek `stop_times.txt`'yi Excel'de açmış, "Save As CSV" yapmış, Türkçe locale ile noktalı virgül + UTF-8 BOM eklemiş. Excel sessizce 5.107.117 satırı kesmiş. Hata uyarısı çıkmadığı için ne İBB'de ne bizim tarafımızda fark edilmedi.
 

@@ -990,6 +990,7 @@ Faz 5 deferred'tan gelen iş:
 - Trip.service_id FK upgrade
 - frequencies.csv expansion (Marmaray görünürlüğü için)
 - route_type=9/10 araştırması
+- **299 trip'siz IETT short_name PK temizliği** — Faz 5.5 patch turu sonrası ortaya çıktı (Spec Ek A.17): IETT bus short_name kümesinde 299/1095 (%27.3) short_name DB'de Route satırı olarak var ama hiç Trip içermiyor — servisi durmuş history PK'lar veya feed gürültüsü. Karar gerekli: (a) Route satırı silinsin mi, (b) `is_active=False` flag eklensin mi, (c) mapping davranışı nasıl ayarlanmalı (route_id stamp'leniyorsa downstream'de Trip yokluğu sorun yaratır mı). Patch'in yaratmadığı, görünür kıldığı mevcut bir borç. Faz 5.5 Plan A implementation'ından önce aciliyeti yok ama implementation sırasında bu 299 hat için graceful skip pattern gerekir.
 - Mod toggle UI (KM1'de yapıldı, satır kaldırılır)
 - Production deployment dokümanı (Nginx + Daphne + systemd + SSL)
 - E2E testler (Playwright)
