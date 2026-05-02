@@ -56,6 +56,7 @@ VEHICLES_CACHE_TTL_SECONDS = 120             # spec §5.7
 UNMAPPED_COUNT_KEY = "stats:unmapped_count"
 LAST_FETCH_TS_KEY = "stats:last_fetch_ts"
 DAY_TYPE_MISMATCH_COUNT_KEY = "stats:day_type_mismatch_count"  # 5i-iv
+STALE_VEHICLE_DROPPED_COUNT_KEY = "stats:stale_vehicle_dropped_count"  # 2026-05-02
 
 
 def _make_adapter(redis_client) -> IettSoapAdapter:
@@ -193,10 +194,17 @@ def refresh_iett_mapping(self) -> dict:
     return result
 
 
+def _utcnow() -> datetime:
+    """Indirection seam for tests — patch ``tasks_module._utcnow`` to
+    pin the wall clock and exercise the stale-vehicle-timestamp filter
+    deterministically."""
+    return datetime.now(tz=dt_timezone.utc)
+
+
 def _now_iso_z() -> str:
     """UTC now as ``YYYY-MM-DDTHH:MM:SSZ`` (spec §5.3 example format)."""
     return (
-        datetime.now(tz=dt_timezone.utc)
+        _utcnow()
         .isoformat(timespec="seconds")
         .replace("+00:00", "Z")
     )
@@ -306,7 +314,15 @@ def fetch_iett_positions() -> dict:
             )
             redis_client.incr(DAY_TYPE_MISMATCH_COUNT_KEY)
 
-    enriched, _stale_dropped = enrich_with_route_id(vehicles, mapping)
+    # 2026-05-02 stale-fleet-timestamp filter: enrich demotes route_id to
+    # None when v.timestamp drifts beyond STALE_VEHICLE_TIMESTAMP_THRESHOLD_S
+    # (180s) from reference_now in either direction. The same _utcnow seam
+    # feeds _now_iso_z below for the snapshot top-level timestamp, so the
+    # filter's reference and the snapshot's recorded enrich-time agree.
+    reference_now = _utcnow()
+    enriched, stale_dropped = enrich_with_route_id(
+        vehicles, mapping, reference_now=reference_now,
+    )
 
     # Spatial sanity check (6h-i): mapping kapı→hat zaman bazlıdır,
     # gerçek konum bilgisi içermez. Sefer bitiminde garaja dönen ya
@@ -354,6 +370,9 @@ def fetch_iett_positions() -> dict:
     unmapped = len(enriched) - mapped_count
 
     redis_client.set(UNMAPPED_COUNT_KEY, unmapped)
+    # Heartbeat semantics: every tick overwrites with the per-tick drop
+    # count (not cumulative). Mirrors UNMAPPED_COUNT_KEY pattern.
+    redis_client.set(STALE_VEHICLE_DROPPED_COUNT_KEY, stale_dropped)
 
     # Heartbeat: only success paths reach here (any adapter exception
     # returned early). Cache miss still counts as success — the upstream

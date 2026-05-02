@@ -94,6 +94,25 @@ class _PermissiveCache(dict):
 
 
 @pytest.fixture(autouse=True)
+def _disable_stale_check(monkeypatch):
+    """Mirror of test_fetch_task.py's fixture — drops reference_now from
+    enrich so cassette / synthetic vehicle timestamps don't trip the
+    2026-05-02 stale-fleet-timestamp filter. Integration tests assert
+    on stamping behavior; the filter is unit-tested in test_enrich.py
+    and test_fetch_task.py separately.
+    """
+    from apps.realtime.enrich import enrich_with_route_id as _real_enrich
+
+    def _no_stale_check(vehicles, mapping, **kwargs):
+        kwargs.pop("reference_now", None)
+        return _real_enrich(vehicles, mapping)
+
+    monkeypatch.setattr(
+        tasks_module, "enrich_with_route_id", _no_stale_check,
+    )
+
+
+@pytest.fixture(autouse=True)
 def _permissive_spatial_cache(monkeypatch):
     """Mevcut testler spatial check'e karşı duyarsız — her vehicle
     her route'a "yakın" sayılır. Spatial-specific testler bu fixture'ı

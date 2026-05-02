@@ -30,6 +30,7 @@ from apps.realtime.tasks import (
     DAY_TYPE_MISMATCH_COUNT_KEY,
     LAST_FETCH_TS_KEY,
     MAPPING_CACHE_KEY,
+    STALE_VEHICLE_DROPPED_COUNT_KEY,
     UNMAPPED_COUNT_KEY,
     VEHICLES_ALL_GROUP,
     VEHICLES_ALL_KEY,
@@ -105,6 +106,29 @@ class _PermissiveCache(dict):
 
     def get(self, key, default=None):
         return self._DUMMY
+
+
+@pytest.fixture(autouse=True)
+def _disable_stale_check(monkeypatch):
+    """2026-05-02 stale-fleet-timestamp filter is unconditionally active in
+    production (tasks.py passes ``reference_now=_utcnow()`` to enrich).
+    Existing tests use ``_make_vehicle(ts_ms=5000)`` (1970 epoch), so
+    against a real ``datetime.now()`` reference every vehicle drifts by
+    decades and gets demoted. This fixture wraps tasks_module's enrich
+    binding to drop the ``reference_now`` kwarg, making the stale check
+    inert by default — same opt-in pattern as ``_permissive_spatial_cache``.
+    Tests that need to exercise the filter (test_stale_vehicle_dropped_
+    counter_set) restore the real binding via ``monkeypatch.setattr``.
+    """
+    from apps.realtime.enrich import enrich_with_route_id as _real_enrich
+
+    def _no_stale_check(vehicles, mapping, **kwargs):
+        kwargs.pop("reference_now", None)
+        return _real_enrich(vehicles, mapping)
+
+    monkeypatch.setattr(
+        tasks_module, "enrich_with_route_id", _no_stale_check,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -421,12 +445,17 @@ def test_payload_format_matches_vehicles_all_spec(
     datetime.fromisoformat(snapshot["timestamp"].replace("Z", "+00:00"))
 
     veh = snapshot["vehicles"][0]
-    assert set(veh) == {"id", "lat", "lon", "bearing", "speed", "route_id"}
+    assert set(veh) == {"id", "lat", "lon", "bearing", "speed", "route_id", "ts"}
     assert veh["bearing"] is None
     assert veh["speed"] == 24.0
     assert veh["lat"] == 41.04885
     assert veh["lon"] == 29.10322
     assert veh["route_id"] == EXPECTED_PK_FOR_HAT["29B"]
+    # Diagnostic ts: per-vehicle timestamp from the upstream fleet
+    # response, Z-suffixed ISO. Used to measure vehicle.timestamp drift
+    # against the snapshot enrich-time (out-of-interval-but-mapped
+    # vakası, 2026-05-02). Removed once the diagnosis is closed.
+    assert veh["ts"].endswith("Z")
 
 
 # --- 7. SET vehicles:all + group_send both happen (atomic invariant) ------
@@ -634,3 +663,57 @@ def test_fetch_task_spatial_check_skips_when_no_shape_cached(
     payload = json.loads(raw)
     target = next(v for v in payload["vehicles"] if v["id"] == "A-300")
     assert target["route_id"] == EXPECTED_PK_FOR_HAT["29B"]
+
+
+# --- 2026-05-02 stale vehicle.timestamp counter ---------------------------
+
+
+def test_stale_vehicle_dropped_counter_set(
+    fake_redis, patch_adapter, captured_group_sends, monkeypatch,
+):
+    """fetch_iett_positions wires _utcnow() → enrich's reference_now and
+    SETs stats:stale_vehicle_dropped_count with the per-tick drop count.
+
+    Heartbeat semantics: every tick overwrites (mirrors
+    stats:unmapped_count). Vehicle drifts >180s from enrich-time get
+    demoted; fresh ones keep their PK.
+    """
+    # Restore the real enrich binding (autouse _disable_stale_check
+    # wraps it to drop reference_now); only this test exercises the filter.
+    from apps.realtime.enrich import enrich_with_route_id as _real_enrich
+    monkeypatch.setattr(tasks_module, "enrich_with_route_id", _real_enrich)
+
+    fixed_now = datetime(2026, 4, 25, 12, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(tasks_module, "_utcnow", lambda: fixed_now)
+
+    fixed_now_ms = int(fixed_now.timestamp() * 1000)
+    stale_ms = fixed_now_ms - 200_000  # 200s old → over 180s threshold
+    fresh_ms = fixed_now_ms - 30_000   # 30s old → under threshold
+
+    # Saturday match against vehicle date — keeps day-type mismatch silent.
+    _seed_mapping(
+        fake_redis,
+        {
+            "S-1": [_interval(0, 86399, "29B")],
+            "F-1": [_interval(0, 86399, "29B")],
+        },
+        snapshot_date="2026-04-25",
+        snapshot_day_type="saturday",
+    )
+    patch_adapter(fetch_return=[
+        _make_vehicle("S-1", ts_ms=stale_ms),
+        _make_vehicle("F-1", ts_ms=fresh_ms),
+    ])
+
+    fetch_iett_positions()
+    snapshot = _read_snapshot(fake_redis)
+
+    by_id = {v["id"]: v for v in snapshot["vehicles"]}
+    assert by_id["S-1"]["route_id"] is None
+    assert by_id["F-1"]["route_id"] == EXPECTED_PK_FOR_HAT["29B"]
+
+    assert int(fake_redis.get(STALE_VEHICLE_DROPPED_COUNT_KEY)) == 1
+    assert snapshot["mapped_count"] == 1
+    assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 1
+    # day-type mismatch must not fire (snapshot saturday + vehicle saturday)
+    assert fake_redis.get(DAY_TYPE_MISMATCH_COUNT_KEY) is None
