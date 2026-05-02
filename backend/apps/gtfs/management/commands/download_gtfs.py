@@ -6,8 +6,16 @@ Spec §4.1 — two CKAN datasets, both structured as loose CSV resources
   - ``iett-gtfs-verisi``            → 6 CSVs: agency, calendar, routes,
     stops, trips, stop_times. No shapes.csv — İETT does not publish route
     geometry (spec §7.1 fallback: straight-line or OSM snap in Phase 5+).
-    A redundant ``stop_times.zip`` resource exists (gzip of stop_times.csv
-    only, not a full GTFS bundle) — we ignore it and pull the raw CSV.
+
+    Note (2026-05-02, Faz 5.5 patch turu): the dataset also publishes a
+    ``stop_times.zip`` resource alongside ``stop_times.csv``. Pre-patch
+    code dismissed it as "redundant gzip" and pulled the CSV — but the
+    CSV was Excel-truncated to 2^20 - 1 rows, while the ZIP carries the
+    canonical 6.155.691-row GTFS-standard ``stop_times.txt`` (UTF-8 +
+    comma, no BOM). We now prefer the ZIP for stop_times via
+    ``_resolve_resource_for``, extract its single member, and write it
+    over ``stop_times.csv`` so the import layer sees the full feed. See
+    Spec Ek A.17 for the full incident.
 
   - ``public-transport-gtfs-data``  → 8 CSVs: above 6 + shapes + frequencies.
 
@@ -22,6 +30,7 @@ import hashlib
 import json
 import shutil
 import tempfile
+import zipfile
 from pathlib import Path
 
 import requests
@@ -95,35 +104,41 @@ class Command(BaseCommand):
             f"\n[{feed}] dataset={cfg['dataset_id']}"
         ))
 
-        resources = self._resolve_ckan_csvs(cfg["dataset_id"])
-        found_names = {self._url_filename(r["url"]) for r in resources}
-        missing = cfg["expected_files"] - found_names
-        if missing:
-            raise CommandError(
-                f"[{feed}] dataset missing expected CSVs: {sorted(missing)}. "
-                f"Present: {sorted(found_names)}"
-            )
-        extra = found_names - cfg["expected_files"]
-        if extra:
-            self.stdout.write(self.style.WARNING(
-                f"  Unexpected CSVs (will still be fetched): {sorted(extra)}"
-            ))
+        resources = self._resolve_ckan_resources(cfg["dataset_id"])
+        # Per-expected-file resolver (ZIP-prefer for stop_times — see
+        # module docstring). Falls back to CSV variant for everything else.
+        resource_by_file: dict[str, dict] = {}
+        for fname in sorted(cfg["expected_files"]):
+            res = self._resolve_resource_for(fname, resources)
+            if res is None:
+                raise CommandError(
+                    f"[{feed}] no canonical resource for expected file "
+                    f"{fname!r}. Available URL filenames: "
+                    f"{sorted(self._url_filename(r['url']) for r in resources)}"
+                )
+            resource_by_file[fname] = res
 
         old_manifest = self._load_json(manifest_path) or {}
         old_files = old_manifest.get("files", {})
         new_files: dict[str, dict] = {}
         files_changed = 0
 
-        for res in resources:
-            fname = self._url_filename(res["url"])
+        for fname, res in resource_by_file.items():
             url = res["url"]
-            self.stdout.write(f"  Resolved [{fname}] URL: {url}")
+            url_name = self._url_filename(url)
+            fmt = (res.get("format") or "").upper()
+            label = f"{fname} via {url_name}" if url_name != fname else fname
+            self.stdout.write(f"  Resolved [{label}] URL: {url}")
             dest = feed_dir / fname
             server_meta = self._server_meta(url)
 
             old_entry = old_files.get(fname)
+            # Cache hit: same URL, same server-side metadata. The hash we
+            # store for ZIP downloads is the ZIP's hash (see below) — that
+            # is what the next run's _meta_matches will line up against.
             if (
                 not force and dest.exists() and old_entry
+                and old_entry.get("url") == url
                 and self._meta_matches(old_entry, server_meta)
             ):
                 self.stdout.write(self.style.WARNING(
@@ -132,30 +147,59 @@ class Command(BaseCommand):
                 new_files[fname] = old_entry
                 continue
 
-            tmp_path = self._temp_file(feed_dir, fname)
+            # Download to a temp file under the feed dir. We keep the
+            # remote URL filename as the temp prefix so a stop_times.zip
+            # download lands as ``.stop_times.zip.dl-XXX.tmp``.
+            tmp_path = self._temp_file(feed_dir, url_name)
             try:
                 sha256 = self._download_with_progress(
-                    url, tmp_path, f"    [{fname}] download"
+                    url, tmp_path, f"    [{label}] download"
                 )
             except Exception:
                 tmp_path.unlink(missing_ok=True)
                 raise
 
-            if dest.exists() and self._sha256(dest) == sha256:
-                tmp_path.unlink(missing_ok=True)
-                self.stdout.write(self.style.WARNING(
-                    f"    UNCHANGED: server bytes identical "
-                    f"(sha256={sha256[:12]}...). Local file preserved."
-                ))
+            if fmt == "ZIP":
+                # Single-file ZIP → extract to a temp dir, move the inner
+                # file over ``dest`` (canonical name, e.g. stop_times.csv).
+                # The recorded sha256 is the ZIP's hash, not the inner
+                # file's — that is what we re-hash next run to detect
+                # server changes via _meta_matches fallback.
+                extract_dir = self._temp_extract_dir(feed_dir, url_name)
+                try:
+                    extracted = self._extract_single_file_zip(tmp_path, extract_dir)
+                    if dest.exists() and self._sha256(dest) == self._sha256(extracted):
+                        self.stdout.write(self.style.WARNING(
+                            f"    UNCHANGED: ZIP inner bytes identical to local "
+                            f"{fname} (sha256={sha256[:12]}...)."
+                        ))
+                    else:
+                        shutil.move(str(extracted), str(dest))
+                        files_changed += 1
+                        self.stdout.write(self.style.SUCCESS(
+                            f"    DOWNLOADED+EXTRACTED: {url_name} -> {fname} "
+                            f"({dest.stat().st_size/1024/1024:.1f} MB, "
+                            f"zip_sha256={sha256[:12]}...)"
+                        ))
+                finally:
+                    tmp_path.unlink(missing_ok=True)
+                    shutil.rmtree(extract_dir, ignore_errors=True)
             else:
-                shutil.move(str(tmp_path), str(dest))
-                files_changed += 1
-                self.stdout.write(self.style.SUCCESS(
-                    f"    DOWNLOADED: {fname} "
-                    f"({dest.stat().st_size/1024:.1f} KB, sha256={sha256[:12]}...)"
-                ))
+                if dest.exists() and self._sha256(dest) == sha256:
+                    tmp_path.unlink(missing_ok=True)
+                    self.stdout.write(self.style.WARNING(
+                        f"    UNCHANGED: server bytes identical "
+                        f"(sha256={sha256[:12]}...). Local file preserved."
+                    ))
+                else:
+                    shutil.move(str(tmp_path), str(dest))
+                    files_changed += 1
+                    self.stdout.write(self.style.SUCCESS(
+                        f"    DOWNLOADED: {fname} "
+                        f"({dest.stat().st_size/1024:.1f} KB, sha256={sha256[:12]}...)"
+                    ))
             new_files[fname] = {
-                "url": url, "sha256": sha256,
+                "url": url, "sha256": sha256, "format": fmt,
                 "etag": server_meta.get("etag"),
                 "last_modified": server_meta.get("last_modified"),
                 "content_length": server_meta.get("content_length"),
@@ -186,7 +230,10 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------
     # CKAN resolution
     # ------------------------------------------------------------------
-    def _resolve_ckan_csvs(self, dataset_id: str) -> list[dict]:
+    def _resolve_ckan_resources(self, dataset_id: str) -> list[dict]:
+        """Return CSV + ZIP resources from the dataset. Pre-patch this
+        was CSV-only, which silently dismissed the canonical
+        ``stop_times.zip`` (see module docstring + Spec Ek A.17)."""
         resp = requests.get(
             CKAN_BASE, params={"id": dataset_id},
             headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT,
@@ -199,17 +246,61 @@ class Command(BaseCommand):
         if not data.get("success"):
             raise CommandError(f"CKAN response not successful: {data}")
         all_res = data["result"].get("resources", [])
-        csvs = [r for r in all_res if (r.get("format") or "").upper() == "CSV"]
-        if not csvs:
+        accepted = [
+            r for r in all_res
+            if (r.get("format") or "").upper() in ("CSV", "ZIP")
+        ]
+        if not accepted:
             raise CommandError(
-                f"No CSV resources in dataset {dataset_id!r}. "
+                f"No CSV/ZIP resources in dataset {dataset_id!r}. "
                 f"Formats present: {[r.get('format') for r in all_res]}"
             )
-        return csvs
+        return accepted
+
+    def _resolve_resource_for(self, fname: str, resources: list[dict]) -> dict | None:
+        """Pick the canonical resource for an expected filename.
+
+        For ``stop_times.csv`` we prefer a ``stop_times.zip`` variant if
+        the dataset offers one (see module docstring): the ZIP carries
+        the full GTFS-standard ``stop_times.txt`` while the CSV is an
+        Excel-truncated artefact. Other expected files keep the original
+        "match by URL filename, format=CSV" rule.
+        """
+        if fname == "stop_times.csv":
+            for r in resources:
+                if (
+                    self._url_filename(r["url"]) == "stop_times.zip"
+                    and (r.get("format") or "").upper() == "ZIP"
+                ):
+                    return r
+        for r in resources:
+            if (
+                self._url_filename(r["url"]) == fname
+                and (r.get("format") or "").upper() == "CSV"
+            ):
+                return r
+        return None
 
     @staticmethod
     def _url_filename(url: str) -> str:
         return url.rstrip("/").rsplit("/", 1)[-1]
+
+    @staticmethod
+    def _extract_single_file_zip(zip_path: Path, dest_dir: Path) -> Path:
+        """Extract the single member of a ZIP into ``dest_dir`` and return
+        the extracted path. Raises if the archive does not contain exactly
+        one member (we never want to silently merge / overwrite multiple
+        files with the same name)."""
+        with zipfile.ZipFile(zip_path) as zf:
+            members = zf.namelist()
+            if len(members) != 1:
+                raise CommandError(
+                    f"Expected single-file ZIP at {zip_path}, "
+                    f"got {len(members)} members: {members}"
+                )
+            member = members[0]
+            zf.extract(member, path=dest_dir)
+            return dest_dir / member
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -256,6 +347,12 @@ class Command(BaseCommand):
             dir=directory, prefix=f".{prefix}.dl-", suffix=".tmp", delete=False
         ) as tmp:
             return Path(tmp.name)
+
+    @staticmethod
+    def _temp_extract_dir(directory: Path, prefix: str) -> Path:
+        return Path(tempfile.mkdtemp(
+            dir=directory, prefix=f".{prefix}.extract-",
+        ))
 
     @staticmethod
     def _sha256(path: Path) -> str:
