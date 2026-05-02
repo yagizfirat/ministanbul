@@ -393,16 +393,6 @@ def fetch_iett_positions() -> dict:
                 "bearing": v.bearing,
                 "speed": v.speed,
                 "route_id": v.route_id,
-                # Diagnostic field (out-of-interval-but-mapped vakası
-                # araştırması, 2026-05-02). Pure observability — frontend
-                # bu alanı bilmiyor, sadece v.timestamp drift'i ölçmek
-                # için snapshot'a ekleniyor. Kalıcı API parçası DEĞİL,
-                # tanı bittikten sonra geri alınabilir.
-                "ts": (
-                    v.timestamp.astimezone(dt_timezone.utc)
-                    .isoformat(timespec="seconds")
-                    .replace("+00:00", "Z")
-                ),
             }
             for v in enriched
         ],

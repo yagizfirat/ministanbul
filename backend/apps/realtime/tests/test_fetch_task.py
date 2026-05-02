@@ -445,17 +445,12 @@ def test_payload_format_matches_vehicles_all_spec(
     datetime.fromisoformat(snapshot["timestamp"].replace("Z", "+00:00"))
 
     veh = snapshot["vehicles"][0]
-    assert set(veh) == {"id", "lat", "lon", "bearing", "speed", "route_id", "ts"}
+    assert set(veh) == {"id", "lat", "lon", "bearing", "speed", "route_id"}
     assert veh["bearing"] is None
     assert veh["speed"] == 24.0
     assert veh["lat"] == 41.04885
     assert veh["lon"] == 29.10322
     assert veh["route_id"] == EXPECTED_PK_FOR_HAT["29B"]
-    # Diagnostic ts: per-vehicle timestamp from the upstream fleet
-    # response, Z-suffixed ISO. Used to measure vehicle.timestamp drift
-    # against the snapshot enrich-time (out-of-interval-but-mapped
-    # vakası, 2026-05-02). Removed once the diagnosis is closed.
-    assert veh["ts"].endswith("Z")
 
 
 # --- 7. SET vehicles:all + group_send both happen (atomic invariant) ------
