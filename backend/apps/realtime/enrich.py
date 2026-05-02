@@ -24,21 +24,35 @@ the same instant the later-starting one wins, which is what
 Mismatch detection (today_dt != snapshot_day_type AND not overnight)
 lives in ``tasks.py::fetch_iett_positions`` — this function stays a
 pure best-effort lookup and never short-circuits the loop.
+
+Stale vehicle.timestamp filter (2026-05-02): when ``reference_now`` is
+supplied, vehicles whose ``timestamp`` drifts more than
+``STALE_VEHICLE_TIMESTAMP_THRESHOLD_S`` from it (in either direction)
+are demoted to ``route_id=None`` even if the bisect found a matching
+interval. Empirical motivation: İETT fleet endpoint can return a
+multi-hour-old ``DTGUNCELLEMESAATI`` for idle/parked vehicles — bisect
+lands on the OLD active interval and stamps an outdated PK. Threshold
+180s sits 3× the nominal 60 s tick, comfortably above the 0–60 s
+mikro-tick band observed in the diagnostic histogram.
 """
 from __future__ import annotations
 
 from bisect import bisect_right
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from apps.realtime.calendar import ISTANBUL_TZ
 from apps.realtime.schemas import VehiclePosition
+
+STALE_VEHICLE_TIMESTAMP_THRESHOLD_S = 180
 
 
 def enrich_with_route_id(
     vehicles: list[VehiclePosition],
     mapping: dict,
-) -> list[VehiclePosition]:
-    """Return new ``VehiclePosition`` objects with ``route_id`` resolved.
+    *,
+    reference_now: datetime | None = None,
+) -> tuple[list[VehiclePosition], int]:
+    """Return ``(enriched_vehicles, stale_dropped_count)``.
 
     Pure function: input list and elements are not mutated. Each output
     element is a pydantic v2 ``model_copy(update={"route_id": ...})`` of
@@ -48,9 +62,18 @@ def enrich_with_route_id(
     timestamp lies outside every cached interval pass through with
     ``route_id=None``. Counting unmapped vehicles is the caller's job
     (the fetch task records it as a stat).
+
+    When ``reference_now`` is supplied, an extra stale-timestamp check
+    runs after the bisect: any vehicle that *would* have been stamped
+    but whose timestamp drifts more than
+    ``STALE_VEHICLE_TIMESTAMP_THRESHOLD_S`` (abs, two-sided) from
+    ``reference_now`` is demoted to ``route_id=None`` and counted in
+    ``stale_dropped_count``. ``reference_now=None`` (default) disables
+    the check and always returns ``stale_dropped_count=0`` — preserves
+    the pre-2026-05-02 contract for existing callers and tests.
     """
     if not vehicles:
-        return []
+        return [], 0
 
     by_kapi = mapping.get("by_kapi", {})
     pk_index = mapping.get("route_id_by_short_name", {})
@@ -65,6 +88,7 @@ def enrich_with_route_id(
             snapshot_next_date = None
 
     out: list[VehiclePosition] = []
+    stale_dropped = 0
     for v in vehicles:
         intervals = by_kapi.get(v.vehicle_id)
         route_id: str | None = None
@@ -91,5 +115,12 @@ def enrich_with_route_id(
                 # frontend's RouteStore (keyed by route_id) matches. Lookup
                 # miss → None (orphan SHATKODU stays unmapped, graceful).
                 route_id = pk_index.get(intervals[idx]["hat"])
+
+        if route_id is not None and reference_now is not None:
+            drift = abs((reference_now - v.timestamp).total_seconds())
+            if drift > STALE_VEHICLE_TIMESTAMP_THRESHOLD_S:
+                route_id = None
+                stale_dropped += 1
+
         out.append(v.model_copy(update={"route_id": route_id}))
-    return out
+    return out, stale_dropped

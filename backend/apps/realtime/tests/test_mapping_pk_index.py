@@ -148,7 +148,7 @@ def test_route_id_by_short_name_orphan_returns_none_in_enrich(iett_agency):
         timestamp=datetime(2026, 4, 22, 5, 30, tzinfo=ISTANBUL_TZ),
         source="iett-soap", mode="bus",
     )
-    enriched = enrich_with_route_id([vehicle], mapping)
+    enriched, _ = enrich_with_route_id([vehicle], mapping)
     assert enriched[0].route_id is None
 
 

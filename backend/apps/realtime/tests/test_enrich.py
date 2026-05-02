@@ -110,56 +110,56 @@ def _mapping_with(
 def test_exact_match_inside_interval():
     mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
     vehicles = [_make_vehicle("A-231", 1500)]
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
     assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
 
 
 def test_timestamp_equals_start_inclusive():
     mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
     vehicles = [_make_vehicle("A-231", 1000)]
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
     assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
 
 
 def test_timestamp_equals_end_inclusive():
     mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
     vehicles = [_make_vehicle("A-231", 2000)]
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
     assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
 
 
 def test_timestamp_one_sec_after_end_unmapped():
     mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
     vehicles = [_make_vehicle("A-231", 2001)]
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
     assert out[0].route_id is None
 
 
 def test_timestamp_before_first_interval_unmapped():
     mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
     vehicles = [_make_vehicle("A-231", 500)]
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
     assert out[0].route_id is None
 
 
 def test_timestamp_after_last_interval_unmapped():
     mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
     vehicles = [_make_vehicle("A-231", 5000)]
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
     assert out[0].route_id is None
 
 
 def test_kapi_not_in_mapping_unmapped():
     mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
     vehicles = [_make_vehicle("X-999", 1500)]
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
     assert out[0].route_id is None
 
 
 def test_empty_intervals_list_defensive():
     mapping = _mapping(**{"A-231": []})
     vehicles = [_make_vehicle("A-231", 1500)]
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
     assert out[0].route_id is None
 
 
@@ -173,14 +173,15 @@ def test_overlap_picks_later_start():
         }
     )
     vehicles = [_make_vehicle("A-231", 4000)]
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
     assert out[0].route_id == EXPECTED_PK_FOR_HAT["15B"]
 
 
 def test_empty_vehicles_list():
     mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
-    out = enrich_with_route_id([], mapping)
+    out, dropped = enrich_with_route_id([], mapping)
     assert out == []
+    assert dropped == 0
 
 
 def test_input_vehicles_not_mutated():
@@ -189,7 +190,7 @@ def test_input_vehicles_not_mutated():
     original = original.model_copy(update={"route_id": "PRESET"})
     vehicles = [original]
 
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
 
     assert vehicles[0].route_id == "PRESET"
     assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
@@ -202,7 +203,7 @@ def test_corrupt_mapping_missing_by_kapi_key():
         _make_vehicle("A-231", 1500),
         _make_vehicle("X-999", 1500),
     ]
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
     assert [v.route_id for v in out] == [None, None]
 
 
@@ -220,7 +221,7 @@ def test_overnight_continuation_uses_extended_seconds():
         by_kapi={"A-231": [_interval(82800, 90000, "500T")]},
     )
     vehicles = [_make_vehicle_local("A-231", "2026-04-25T00:30:00+03:00")]
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
     assert out[0].route_id == EXPECTED_PK_FOR_HAT["500T"]
 
 
@@ -233,7 +234,7 @@ def test_next_day_after_4am_no_overnight_bump():
         by_kapi={"A-231": [_interval(82800, 90000, "500T")]},
     )
     vehicles = [_make_vehicle_local("A-231", "2026-04-25T05:00:00+03:00")]
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
     assert out[0].route_id is None
 
 
@@ -246,7 +247,7 @@ def test_snapshot_date_missing_defensive():
         # no snapshot_date, no snapshot_day_type
     }
     vehicles = [_make_vehicle("A-231", 1500)]
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
     assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
 
 
@@ -259,5 +260,56 @@ def test_snapshot_day_type_missing_defensive():
         "route_id_by_short_name": {"29B": EXPECTED_PK_FOR_HAT["29B"]},
     }
     vehicles = [_make_vehicle("A-231", 1500)]
-    out = enrich_with_route_id(vehicles, mapping)
+    out, _ = enrich_with_route_id(vehicles, mapping)
     assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
+
+
+# --- 2026-05-02 stale vehicle.timestamp filter -----------------------------
+
+
+def test_stale_vehicle_timestamp_returns_none():
+    """drift > 180s → mapped vehicle demoted to None, counter increments."""
+    mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
+    vehicle = _make_vehicle("A-231", 1500)
+    # vehicle.timestamp = TEST midnight + 1500s; reference 200s ahead → drift=200s.
+    reference_now = vehicle.timestamp + timedelta(seconds=200)
+    out, dropped = enrich_with_route_id(
+        [vehicle], mapping, reference_now=reference_now,
+    )
+    assert out[0].route_id is None
+    assert dropped == 1
+
+
+def test_fresh_vehicle_timestamp_normal_mapping():
+    """drift < 180s → bisect result preserved, counter stays 0."""
+    mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
+    vehicle = _make_vehicle("A-231", 1500)
+    reference_now = vehicle.timestamp + timedelta(seconds=30)
+    out, dropped = enrich_with_route_id(
+        [vehicle], mapping, reference_now=reference_now,
+    )
+    assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
+    assert dropped == 0
+
+
+def test_future_drift_also_dropped():
+    """vehicle.timestamp 200s in the future of reference_now → abs() catches
+    it. Real-world case: İETT clock-sync errors (~%5 of fleet)."""
+    mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
+    vehicle = _make_vehicle("A-231", 1500)
+    reference_now = vehicle.timestamp - timedelta(seconds=200)
+    out, dropped = enrich_with_route_id(
+        [vehicle], mapping, reference_now=reference_now,
+    )
+    assert out[0].route_id is None
+    assert dropped == 1
+
+
+def test_reference_now_none_disables_stale_check():
+    """Backward-compat: pre-2026-05-02 callers (default kw) keep old behavior,
+    no drop even when the timestamp is years off."""
+    mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
+    vehicle = _make_vehicle("A-231", 1500)
+    out, dropped = enrich_with_route_id([vehicle], mapping)
+    assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
+    assert dropped == 0
