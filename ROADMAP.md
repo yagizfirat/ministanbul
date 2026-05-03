@@ -7,8 +7,8 @@ Bu doküman projenin **nihai yol haritasıdır**: ne yapıldı, ne yapılacak,
 her fazda hangi kararlar alındı. Her yeni geliştirme oturumunda ilk
 okunacak doküman budur.
 
-**Durum:** Faz 1-5 tamamlandı (2026-05-01). Faz 2 polish 5j-ii (stale vehicle.timestamp filter) eklendi (2026-05-02). **Faz 5.5 patch turu (2026-05-02): stop_times Excel truncation incident'i çözüldü, IETT bus short_name coverage 139/1095 → 796/1095 (~%72.7), Trip-level coverage %13.96 → %100 (Spec Ek A.17).** Faz 5.5 implementation (durak-bazlı polyline, yeni Plan A) ve Faz 6 (cilalama, kurumsal renk + filtreleme öncelikli) paralel açık. Realtime suite 165/165 yeşil, gtfs suite 38/38 yeşil, frontend 210/210 yeşil. Toplam 413/413.
-**Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md) (v0.7.5 — stop_times Excel truncation patch + Plan A öncelikli)
+**Durum:** Faz 1-5 tamamlandı (2026-05-01). Faz 5.5 üç turlu yolculuk: (a) stop_times Excel truncation patch (2026-05-02, v0.7.5) → IETT bus stop_times coverage 139/1095 → 796/1095 (Spec Ek A.17). (b) Üç günlük mapping yapısal teşhis turu (2026-05-01..03, 11 `_research/` raporu) → mevcut SOAP arşivi mapping'inin %53 yanlış olduğu, alternatif veri kaynağının yokluğu kanıtlandı (Spec Ek A.18). (c) **Faz 5.5 "Public Transit Refresh" kapsam tanımı (2026-05-03, v0.8.0)** — Otobüs için mapping retire (kütle gösterim, sarı), metrobüs de mapping retire (kütle gösterime dahil, sadece görsel kategori antrasit gri — Ek A.18 Rapor 12 ölçümü sonrası whitelist exception iptal edildi: %22 yanlış, p90=8273m), sonraki durak özelliği metro/Marmaray/tramvay/füniküler/vapur için (Mini Tokyo 3D paritesi, §5.8). Implementation v0.8.0 release'inde ardışık. Faz 6 (cilalama) paralel açık. Realtime suite 165/165 yeşil, gtfs 38/38 yeşil, frontend 210/210 yeşil. Toplam 413/413.
+**Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md) (v0.8.0 — Public Transit Refresh kapsam tanımı)
 
 ---
 
@@ -23,7 +23,7 @@ okunacak doküman budur.
    - [Faz 3 — WebSocket katmanı ✅](#faz-3--websocket-katmanı-)
    - [Faz 4 — 3D frontend ✅](#faz-4--3d-frontend-)
    - [Faz 5 — Raylı sistem ve vapur simülasyonu ✅](#faz-5--raylı-sistem-ve-vapur-simülasyonu-)
-   - [Faz 5.5 — Bus polyline türetme ⚪](#faz-55--bus-polyline-türetme-)
+   - [Faz 5.5 — Public Transit Refresh ⚪](#faz-55--public-transit-refresh-)
    - [Faz 6 — Cilalama ⚪](#faz-6--cilalama-)
 5. [Veri kaynakları](#5-veri-kaynakları)
 6. [Teknoloji seçimleri](#6-teknoloji-seçimleri)
@@ -845,51 +845,89 @@ Discovery raporları daha küçük tahminler vermişti (sadece public feed sayı
 
 ---
 
-### Faz 5.5 — Bus polyline türetme ⚪
+### Faz 5.5 — Public Transit Refresh ⚪
 
-**2026-05-02 patch turu:** Faz 5.5 ön-keşfinde tespit edilen Excel truncation incident'i (Spec Ek A.17) çözüldü. `download_gtfs.py` ZIP-prefer resolver ile güncellendi, reimport sonrası IETT bus stop_times short_name coverage 139/1095 → 796/1095 (%72.7), Trip-level %100. 29B 126 trip için 3.528 stop_times, metrobüs hatları (34/34A/34BZ/34G/34Z) toplam 334.758 stop_times. 29B durak listesi DB'den 28-durakla okunuyor (4.LEVENT METRO → FATİH SULTAN MEHMET). Commits: `<TBD-patch>` (download_gtfs), `<TBD-docs>` (Spec/ROADMAP).
+**Tarihçe (üç turlu yolculuk):**
 
-**Sonuç olarak Faz 5.5'in kapsamı yeniden tanımlandı:**
+1. **Patch turu (2026-05-02, v0.7.5)** — stop_times Excel truncation incident'i çözüldü (Spec Ek A.17). `download_gtfs.py` ZIP-prefer resolver, IETT bus stop_times short_name coverage 139/1095 → 796/1095 (%72.7), Trip-level %100. 29B 126 trip için 3.528 stop_times, metrobüs hatları toplam 334.758 stop_times.
 
-- **Plan A (durak-bazlı, yeni öncelikli yol)** — GTFS `stop_times` DB'den her trip için durak sırası okunur, durak koordinatları arasından polyline türetilir (önce basit straight-line, sonra opsiyonel snap). 29B için hemen denenebilir, B-1823/B-1827 spatial doğrulaması yapılır. Trip.shape_id zaten boş; bu polyline'lar `Shape` tablosuna yazılır ve `Trip.shape_id` doldurulur.
-- **Plan B (OSM Overpass + pgrouting, yedek)** — durak-bazlı çözüm yetersiz kalırsa (örn. Beşiktaş kavşağı gibi kıvrımlı yollarda iki ardışık durak arasında düz çizgi binaların içinden geçerse) snap quality için ek katman. pgrouting kurulumu, Overpass cache, 270K dijkstra artık zorunlu değil; sadece snap-quality regresyonu durumunda etkinleşir.
+2. **Mapping yapısal teşhis turu (2026-05-01..03)** — Üç gün, 11 `_research/` raporu (Spec Ek A.18). Yağız'ın "29B mapped araç güzergahından kilometrelerce uzakta" gözleminden yola çıkarak: (a) 29B koridor ters sorgusu — koridorda 0 mapped 29B, 39 unmapped (β senaryo), (b) GetHatOtoKonum_json kesin kapalı (HTTP 500), (c) canlı veri kaynağı araştırması — İBB'nin GTFS-RT yayınlamadığı, 2 hafta önce başka bir akademik tez sahibinin aynı talebinin reddedildiği, iettnext (Rednexie) projesinin İBB tarafından kapatıldığı kanıtlandı. (d) Spatial inference PoC — mevcut SOAP arşivinin **%53 yanlış** olduğu, B-184'ün Yağız'ın gözlemlediği şekilde 98B'ye atanmış ama 14.5km uzakta olduğu formal olarak doğrulandı. Top 10 worst: C-311 → 500L, 37.8km uzakta; O3274 → 130E, 31.9km.
 
-**Durum:** Plan A ile başlanacak. Faz 5'in "bonus" maddesi olarak kapsamı belirsizdi (pgrouting Windows kurulumu, Overpass rate limit, 270K snap çağrısı ölçeği) — patch sonrası bunların hiçbiri **gerekmez**. Plan A için PoC (29B Overpass+networkx, 119-nokta polyline, B-1823 1354m, B-1827 1679m) `_research/2026-05-02-faz55-29b-poc.md`'de duruyor; Plan A bu polyline'ı OSM'den değil GTFS'ten türetir.
+3. **Kapsam tanımı (2026-05-03, v0.8.0, Rapor 12 ile revize)** — Faz 5.5'in eski Plan A (durak-bazlı polyline) ve Plan B (OSM Overpass) kapsamları **iptal edildi**. Yerine Mini Tokyo 3D paritesi yönünde "Public Transit Refresh" konuldu: otobüs için mapping retire (kütle gösterim, sarı), metrobüs de mapping retire (görsel kategori antrasit gri, davranış aynı — Ek A.18 Rapor 12), sonraki durak özelliği metro/Marmaray/tramvay/füniküler/vapur için.
 
-**Tahmini süre:** 4-5 gün (Plan A kapsamında).
+**Durum:** v0.8.0 kapsam tanımı SPEC'te yazıldı (§3.3 + §5.7 + §5.8 + Ek A.18). Implementation v0.8.0 release'inde ardışık alt-fazlar (KM5*) olarak çıkar.
+
+**Tahmini süre:** 7-9 gün (3 paralel iş kalemi: bus retire + metrobüs exception + sonraki durak özelliği).
 
 #### Hedef
 
-İETT otobüslerinin tarayıcıda yoldan çıkarak hareket etme problemini çözmek. Faz 4 KM1'deki `bus_interpolator.ts` iki GPS snapshot arasını düz çizgi yürütüyor — kıvrımlı yollarda otobüs binaların içinden geçiyor görünüyor. Çözüm: GTFS `stop_times`'tan trip-bazlı durak sırasını çek, ardışık duraklar arası segment'leri `Shape` olarak kaydet, frontend bu shape üzerinde yürüsün.
+Mevcut hat-bazlı UI'nin %53 yanlış mapping üzerinde kurulu olduğu kanıtlandı. Kullanıcıya yanlış bilgi vermek (B-184 → "98B" ama 14.5km uzakta) UX olarak kabul edilemez. Çözüm:
 
-#### Yapılacak iş (alt-fazlar — Plan A öncelikli)
+- **Otobüs için dürüst kütle gösterim:** "İstanbul'da 6.900 İETT otobüsü canlı hareket halinde" doğru bilgi, hat etiketi yok
+- **Metrobüs için metro paritesi:** Koridoru sabit, mapping yapısal olarak doğru, davranışı metro gibi → tam metro UX (renk, sonraki durak, filtre kategorisi)
+- **Raylı/vapur için Mini Tokyo 3D zenginliği:** Tıkla → "Sonraki durak Şişli-Mecidiyeköy 2 dk, sonra Gayrettepe 4 dk" listesi
 
-- **KM5-a** ⏭️ Plan B'ye taşındı: pgrouting Windows kurulumu (sadece snap-quality gerekirse)
-- **KM5-b** ⏭️ Plan B'ye taşındı: Overpass API client
-- **KM5-c** ⏭️ Plan B'ye taşındı: OSM yol ağı extraction
-- **KM5-d** ⏭️ Plan B'ye taşındı: pgr_dijkstra PoC
-- **KM5-e (yeni)** — `python manage.py build_stop_polylines` komutu: her IETT bus trip için stop_times'tan straight-line LineString üret, `Shape` tablosuna kaydet, `Trip.shape_id` doldur (batch + progress save + resume)
-- **KM5-f (revize)** — Sanity test: 29B PoC referans noktalarıyla (B-1823, B-1827) yeni polyline'ın spatial uyumu
-- **KM5-g** — Frontend tarafı: `Trip.shape_id` artık dolu, mevcut shape lazy-fetch path'i (Faz 5 KM3-a-fix) İETT bus trip'leri için de devreye girer; `bus_interpolator.ts` shape üzerinde yürür
+#### Yapılacak iş (alt-fazlar — KM5)
+
+- **KM5-a — Otobüs mapping retire (backend, 1 gün)**
+  - Settings flag: `IETT_BUS_MAPPING_ENABLED = False` (default)
+  - `enrich_with_route_id` path'inde flag kontrolü; route_type=3 + agency=İETT + short_name NOT IN METROBUS_WHITELIST için route_id=None bırak
+  - Drift filter (5j-ii) İETT bus için devre dışı; metrobüs için aktif kalır
+  - WebSocket payload: bus için `route_id: null`, metrobüs için route_id stamped
+  - Suite update: yeni davranışı kapsayan testler
+
+- **KM5-b — Metrobüs kategorize (backend, çeyrek gün)**
+  - `config/settings/base.py`: `METROBUS_SHORT_NAMES = frozenset({"34", "34A", "34AS", "34B", "34BZ", "34C", "34G", "34T", "34U", "34Z"})` — sadece kategorize için (görsel ayrım), mapping davranışı için değil
+  - Mapping pipeline'ında özel bir davranış yok; tüm İETT bus aynı path'ten geçer (route_id=None) — KM5-a kapsamında
+  - Frontend için endpoint: `/api/routes/active/`'te metrobüs hatlarını `is_metrobus: true` ile işaretle (frontend antrasit gri rendering için)
+  - Spot kontrolü 2026-05-03 yapıldı (Ek A.18 Rapor 12); %22 yanlış sonucu metrobüs için exception modelini iptal etti
+
+- **KM5-c — Sonraki durak özelliği backend (2 gün)**
+  - `apps/realtime/next_stops.py` yeni modül: vehicle koordinat + Trip.id → next_stops listesi (sequence-bearing tahmini ile)
+  - Trip ↔ stop_times JOIN, en yakın durak bulma, k+1...k+5 (veya bearing'e göre k-1...k-5)
+  - WebSocket payload genişletme: `next_stops: [{stop_name, scheduled, eta_seconds, sequence}, ...]`
+  - ETA: ilk versiyon `stop_times.arrival_time` planlı saat (real-time ETA v0.9'a)
+  - Cache: Trip → stop_times Redis 24h TTL (DB yükünü azalt)
+  - Hangi modlar için aktif: metro/Marmaray/tramvay/füniküler/vapur (metrobüs hariç — Ek A.18 Rapor 12, mapping kapalı). route_id null değilse + Trip atanmışsa
+
+- **KM5-d — Frontend kütle gösterim + popup ayrımı (1.5 gün)**
+  - Otobüsler: tek renk sarı (kurumsal İETT sarı, `#FFD200` civarı), filtre paneli "🟡 İETT Otobüs (n)" tek satır toggle
+  - Metrobüs: antrasit gri (`#3A3D40` civarı, kurumsal renk), filtre paneli ayrı kategori (sadece görsel ayrım)
+  - Popup minimal versiyon (otobüs + metrobüs): "İETT Otobüs, KapiNo {id}" / "Metrobüs, KapiNo {id}" — hat satırı yok
+  - Popup zengin versiyon (metro/Marmaray/tram/fun/vapur): hat adı + güzergah + sonraki 5 durak listesi + ETA (metrobüs hariç — Ek A.18 Rapor 12)
+  - Mobil scroll uyumu
+
+- **KM5-e — Filtre paneli yeniden düzenleme (yarım gün)**
+  - Mevcut "Hatlar" paneli grupları: Metro / Marmaray / Tramvay / Füniküler / Vapur / **Metrobüs (tek satır toggle, antrasit gri)** / **İETT Otobüs (tek satır toggle, sarı)**
+  - 121 hat görünür sayısı kalır (raylı + vapur hat-bazlı seçim aynı)
+  - Metrobüs ve İETT Otobüs her ikisi de tek toggle açık/kapalı, hat-bazlı seçim yok (mapping kapalı, hat etiketi güvenilir değil)
+
+- **KM5-f — Docs + suite + commit (yarım gün)**
+  - Suite'ler güncellenir, davranış değişikliklerini test eder
+  - 165/165 + 38/38 + 210/210 yeşil korunur
+  - Release commit + tag `v0.8.0`
 
 #### Riskler
 
-- ~~Windows pgrouting kurulum~~ — Plan B'ye taşındı, başlangıçta gerekmez
-- ~~Overpass API rate limit~~ — Plan B'ye taşındı
-- 299 short_name'in hâlâ trip'siz olması (servisi durmuş history PK'lar) — etkilenen vehicle'lar `route_id=None` ile görünür, bu mevcut davranış
-- Ardışık duraklar arası düz çizgi kıvrımlı yollarda görsel bozukluk yaratır — eğer Beşiktaş kavşağı testi başarısız olursa Plan B'ye geç (snap-quality ek katmanı)
-
-#### Riskler
-
-- Windows pgrouting kurulum sıkıntılı olabilir (Linux'ta `apt-get install postgresql-15-pgrouting` tek satır, Windows'ta OSGeo4W veya manuel build)
-- Overpass API rate limit (10K query/gün IP bazlı) — 270K snap çağrısı için yol ağı önceden cache'lenmeli, snap aşamasında Overpass'a gitmemeli
-- 270K dijkstra sorgusu PostgreSQL'de saatler sürer; gerekirse overnight batch + Celery task
+- **Metrobüs mapping spot kontrolü ✅ tamamlandı (2026-05-03):** Ek A.18 Rapor 12, β-lite metodoloji. Sonuç: %22 yanlış, p90=8273m, sınır vaka. Karar: metrobüs de kütleye dahil, vizyon sadeleşti — whitelist exception modeli iptal edildi, KM5-a/b/c/d/e blokları yukarıda revize.
+- **Trip.direction_id eksikliği:** Sonraki durak yön tahmini için Trip'in hangi yönde gittiği bilgisi gerek. Faz 5'te public-transport feed'de bu doğru yansıdı, ama vapur ve metrobüs trip'lerinde direction_id NULL olabilir. KM5-c başında DB sorgusu kontrol.
+- **ETA planlı saat yetersiz:** Metrobüs ve vapur gerçek hayatta 5-15 dk gecikebilir. Planlı saat popup'ta "14:32 (2 dk)" derken vehicle gerçekte 5 dk geç → kullanıcı yanılır. v0.9'da real-time ETA eklenir, ilk sürümde planlı saat yeter.
+- **Performans:** Her tick (60sn) ~500-800 araç için stop_times sorgusu. PostgreSQL indexli, <500ms toplam overhead hedef. Cache layer ile düşürülebilir.
+- **Frontend test impact:** 210/210 testin bir kısmı popup içeriği ve filtre panelini test ediyor, davranış değişikliği yansıyacak. Test güncelleme zamanı KM5-d/e'ye dahil.
 
 #### Bitiş kriteri
 
-- İETT otobüs hareket smoke'ında Beşiktaş kavşak gibi karmaşık geometrili noktalarda otobüs yoldan çıkmıyor
-- `Trip.shape_id` İETT trip'lerinin %90+'unda dolu (eskiden NULL'du)
-- Performans: snap shape'i lazy fetch + cache (KM3-a-fix pattern'i reuse)
+- v0.8.0 release'i: Otobüsler kütle sarı + metrobüs kütle antrasit gri (ikisi de mapping kapalı, popup minimal), raylı/vapur sonraki durak çalışıyor
+- Suite 165+/38+/210+ yeşil
+- Yağız haritada İETT mavisi/sarısının kayıp olduğunu, B-184 popup'ında "98B" yazmadığını teyit eder
+- Bir M2 vehicle'ına tıklayınca "Sonraki durak Şişli-Mecidiyeköy, 2 dk" görünür
+- Spec §3.3 + §5.7 + §5.8 + Ek A.18 (Rapor 12 dahil) implementation ile uyumlu
+
+#### v0.9+ açık seçenekler (Faz 5.5 dışında, ileride)
+
+- **Spatial inference algoritması:** Otobüs için bile mapping türetilebilir (vehicle hareket geçmişinden hat çıkarımı, %53 yanlışlığı %5'e düşürebilir). PoC pozitif (Spec Ek A.18); production-grade implementation 2-3 haftalık ayrı tur.
+- **Real-time ETA:** Vehicle hızı + mesafe ile gecikme tahmini (v0.8.0'ın planlı saat'inin üstüne)
+- **İBB bilateral data sharing:** Yağız akademik kanaldan başvuru (idari süreç, belirsiz vade)
 
 ---
 

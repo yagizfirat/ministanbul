@@ -138,10 +138,12 @@ Kullanıcı müdahalesi olmadan haritada görünen, kapasitesi yönetilebilir ve
 | **Tramvay** | `short_name` regex `^T\d+$` | **4** | 5 | T1, T2, T3, T4 | Yok | Tarife simülasyonu (Faz 5) |
 | **Füniküler** | `short_name` regex `^F\d+$` | **3** | 12 | F1, F2, F3 | Yok | Tarife simülasyonu (Faz 5) |
 | **Marmaray** | `agency_id=2 AND route_type=2` | **3** | 3 | Marmaray, Marmaray1, Marmaray2 | Yok | Tarife simülasyonu (Faz 5) |
-| **Metrobüs** | `short_name` whitelist (aşağıda) | **10** | 113 | 34, 34A, 34AS, 34B, 34BZ, 34C, 34G, 34T, 34U, 34Z | **Var (İETT SOAP)** | Canlı GPS |
+| **Metrobüs** | `short_name` whitelist (aşağıda) | **10** | 113 | 34, 34A, 34AS, 34B, 34BZ, 34C, 34G, 34T, 34U, 34Z | **Var (İETT SOAP, konum)** | Canlı GPS (hat etiketi yok, Ek A.18 Rapor 12) |
 | **Vapur** | `agency_id=1 AND route_type=4` | **~99** | 100 | (kısaltma isimler, "BOSTANCI-B.KÖY" vs.) | Yok | Tarife simülasyonu (Faz 5) |
 
 **Toplam sürekli görünür:** 131 unique short_name. Fiziksel dünya karşılığı ~131 polyline, ~500-800 hareketli araç/obje anlık ekranda (metrobüs canlı filosu + raylı/vapur aktif trip simülasyonları).
+
+**v0.8.0 güncellemesi (2026-05-03, Rapor 12 ile revize):** Yukarıdaki tabloda **Metrobüs** kategorisinin "sürekli görünür, antrasit gri renk" olarak konumlandığı korunur; ancak "hat-bazlı" ve "sonraki durak özellikli" nitelikleri **kaldırıldı**. Faz 5.5 patch turundan sonra İETT bus mapping yapısal olarak terk edildi (Ek A.18, %53 yanlış). İlk hipotez "metrobüs koridoru sabit, mapping yapısal olarak doğru olmalı" idi; ölçüldü (Ek A.18 Rapor 12, 2026-05-03): metrobüs için %22 yanlış, p90=8273m, dağılım bimodal. Hat etiketi UX olarak savunulamaz (vehicle bazen 8 km uzakta gösteriliyor). Sonuç: **metrobüs de kütle gösterime dahil**, mapping kapalı. Whitelist tamamen kalmadı — sadece **kategorize için** kullanılıyor: frontend antrasit gri renkle metrobüs vehicle'larını sarı kütleden ayırıyor (kullanıcı haritada koridor üstündeki vehicle'ları "bunlar metrobüs" diye gözle tanır), ama popup minimal ve hat etiketi yok. Davranış normal İETT bus ile aynı, **fark sadece görsel kategori**.
 
 **Feed eksikleri (gözlemden):** T5 tramvay ve F4 füniküler İstanbul'da gerçekten servis veriyor ancak İBB GTFS feed'inde şu anda yoklar. Faz 1 import'unda DB'ye girmediler. Spec bu iki hattı "dahil ama henüz feed'de yok" olarak belgeliyor — İBB feed'i güncellenirse otomatik dahil olacaklar, kod tarafında özel bir iş gerekmez.
 
@@ -164,16 +166,31 @@ METROBUS_ROUTES = {
 
 Whitelist neden regex değil: `^34[A-Z]*$` pattern'i `340`, `341` gibi normal İETT otobüs hatlarını ve gelecekte eklenebilecek `34D`, `34X` gibi değişiklikleri yanlış pozitif/negatif yakalar. Sabit liste, yılda 1-2 kez elle güncellenen bir veri. Discovery query (Adım 5a) whitelist'teki 10 hat için tam match doğruladı, 34-prefix'li başka short_name DB'de yok.
 
-#### Opt-in (varsayılan kapalı)
+#### Opt-in (varsayılan kapalı) — **v0.8.0 güncelleme: kütle gösterim**
 
-**1.080 unique short_name** (~8.885 DB row), sürekli-görünür kategorilerinin dışında kalan `agency_id=9` (İETT) `route_type=3` hatları. Normal İETT otobüs hatları bu grupta. Kullanıcı akışı:
+**1.080 unique short_name** (~8.885 DB row), sürekli-görünür kategorilerinin dışında kalan `agency_id=9` (İETT) `route_type=3` hatları. Normal İETT otobüs hatları bu grupta.
+
+**v0.8.0 öncesi (Faz 5.5'e kadar) UI modeli:**
 
 1. Açılışta haritada görünmezler
 2. Sağda "Hatlar" paneli: arama kutusu + hat listesi (short_name + long_name)
 3. Kullanıcı hat seçer → haritaya polyline + araçları eklenir, WebSocket subscribe gönderilir
 4. Seçimden çıkarır → haritadan temizlenir
 
-**Neden opt-in?** 1.080 hat × ortalama ~6 araç/hat = ~6.900 otobüs anlık render; hem GPU baskısı hem "her şey renkli çizgi" kirliliği. Kullanıcı gerçekten ilgilendiği 1-5 hattı izliyor, geri kalan arka plan gürültü.
+**v0.8.0 itibariyle UI modeli (Ek A.18'deki mapping yapısal teşhis sonrası):**
+
+Otobüsler **kütle olarak** gösterilir; hat-bazlı filtreleme ve hat-bazlı subscribe normal otobüs için **kapatıldı**:
+
+1. Açılışta tüm aktif İETT otobüsleri (~6.900 araç) tek renkte (sarı kütle) haritada görünür
+2. Filtre paneli normal otobüs için sadece tek satır toggle: "🟡 İETT Otobüs (n araç)" — hep birlikte göster/gizle
+3. Bir otobüse tıklandığında popup minimal: "İETT Otobüs, KapiNo {kapi_no}". Hat satırı gösterilmez (yanlış olduğu için, Ek A.18)
+4. Sonraki durak özelliği (§5.8) **otobüs için yok** — vehicle ↔ trip eşleştirmesi mapping üzerinden gelirdi, mapping kapalı
+
+**Neden kütle?** Faz 5.5 patch turunda mapping katmanının yapısal olarak %53'ünün yanlış olduğu kanıtlandı (Ek A.18): İBB SOAP arşivi vehicle ↔ HatKodu eşleşmesini 1 günlük lag ile veriyor, gerçek günün servisini yansıtmıyor. Hat-bazlı UI bu kanıt karşısında kullanıcıya yanlış bilgi verir. Kütle gösterim **dürüst**: "İstanbul'da 6.900 İETT otobüsü canlı hareket halinde" doğru bilgi, "B-184 = 98B" yanlış bilgi. Mini Tokyo 3D'nin orijinal "şehrin nabzı" felsefesiyle de örtüşür.
+
+**Metrobüs ayrı görsel kategori (kütleye dahil, davranış aynı):** Whitelist'teki 10 metrobüs hattı (§3.3 sürekli görünür tablosunda, agency=İETT, route_type=3) bu kütle gruba **dahildir** — mapping kapalı, popup minimal, hat-bazlı seçim yok. Tek fark görsel: antrasit gri renk (sarı kütleden ayırt etmek için). Popup'ta "Metrobüs, KapiNo {kapi_no}" — hat etiketi gösterilmez. Sonraki durak özelliği (§5.8) metrobüs için de **yok**. Bu karar Ek A.18 Rapor 12 ölçümü sonrası alındı (metrobüs %22 yanlış mapping, p90=8273m): koridor sabitliği varsayımı kısmen geçerli (median 96m iyi) ama uzak kuyruk normal otobüsünkiyle aynı mertebede (8 km), hat etiketi UX olarak savunulamaz. Görsel ayrım yapısal değil estetik — kullanıcı koridor üstündeki gri noktaları "bunlar metrobüs" diye gözle ayırt edebilir.
+
+**Mapping katmanı geçici hibernation'da:** Settings flag `IETT_BUS_MAPPING_ENABLED = False` ile devre dışı. Kod silinmedi, gelecekte İBB veri kalitesi düzelirse veya GTFS-RT feed'i yayınlanırsa flag ile aktive edilebilir. Drift filter (5j-ii) tüm İETT bus için anlamsızlaştı, devre dışı (metrobüs dahil — Rapor 12).
 
 #### Kapsam dışı (MVP'ye dahil değil)
 
@@ -592,6 +609,8 @@ server: {
 
 ### 5.7. Hat-Merkezli Pipeline
 
+**v0.8.0 değişikliği (2026-05-03, Rapor 12 ile revize):** Bu bölüm Faz 2'de (2026-04-24, v0.7.x) tasarlandı, mapping katmanı pipeline'ın merkeziydi. Faz 5.5 patch turunda yapılan ampirik ölçümler (Ek A.18) mevcut SOAP arşivi mapping'inin **%53 yanlış** olduğunu, yapısal arşiv stale'liğinin sistemik olduğunu ve İBB tarafında alternatif bir canlı veri kaynağının olmadığını kanıtladı. İlk hipotez metrobüs whitelist (10 hat) için exception yapmaktı — koridor sabitliği nedeniyle mapping doğru olmalıydı. Ek A.18 Rapor 12 ölçümü (2026-05-03) bu hipotezi yalanladı (%22 yanlış, p90=8273m, dağılım bimodal). Sonuç: **tüm İETT otobüsleri (normal + metrobüs) için mapping pipeline'ı devre dışı bırakıldı.** Aşağıdaki mapping mantığı **raylı sistem + vapur (Faz 5'te ayrıca işlenen kategoriler)** için aktif kalır; tüm İETT bus hatları (~1.080 normal + 10 metrobüs) kütle olarak (route_id=None) yayınlanır. Settings flag: `IETT_BUS_MAPPING_ENABLED = False` (default, tek flag, metrobüs istisnası yok — Rapor 12). Pipeline kodu silinmedi, hibernation'da; gelecekte İBB veri kalitesi düzelirse veya GTFS-RT feed'i açılırsa flag ile yeniden aktive edilebilir.
+
 UI modeli hat-merkezli olduğu için (§3.3), pipeline'ın son aşaması veriyi araç bazlıdan hat bazlına dönüştürür. Upstream'den gelen ham veri hâlâ araç granülerliğinde (her araç ayrı kayıt) — bu değişmedi, değişmiyor. Değişen tek şey fetch task'ının son adımı.
 
 **Not: `route_id` semantikleri.** `VehiclePosition.route_id` field'ı (bkz. §5.3) şema seviyesinde değişmedi, ama içine atanan değer artık GTFS'in `routes.route_id` primary key'i değil, hattın **`short_name` değeridir** (ör. `"29B"`, `"M2"`, `"34BZ"`). Kanal isimlendirmesi, Redis key'leri ve WebSocket subscribe'ı hepsi bu değere bağlı. Gerekçe §3.3'te (DB row ≠ fiziksel hat, kullanıcı short_name ile mental model kuruyor).
@@ -634,7 +653,7 @@ Günlük refresh task (`refresh_iett_mapping`) `GetIettArsivGorev_json(yesterday
 }
 ```
 
-`hat` ve `active_routes` değerleri `SHATKODU`'dan gelir ve `short_name` namespace'iyle eşleştirilir. `routes_by_mode` kategorileri §3.3'teki tespit mekanizmasına göre hesaplanır (metrobüs whitelist match'i, kalan İETT hatları "bus"). Raylı sistem ve vapur kategorileri İETT feed'inde olmadığından bu mapping'de görünmez — onların routes listesi GTFS DB'den doğrudan okunur (`/api/routes/active/` endpoint'i iki kaynağı birleştirir).
+`hat` ve `active_routes` değerleri `SHATKODU`'dan gelir ve `short_name` namespace'iyle eşleştirilir. `routes_by_mode` kategorileri §3.3'teki tespit mekanizmasına göre hesaplanır (metrobüs whitelist match'i — sadece kategorize için, mapping davranışı normal bus ile aynı; kalan İETT hatları "bus"). v0.8.0'da `IETT_BUS_MAPPING_ENABLED=False` olduğundan bu kategoriler runtime'da boş bir cache'e işaret eder; pipeline reaktive edilirse otomatik dolar. Raylı sistem ve vapur kategorileri İETT feed'inde olmadığından bu mapping'de görünmez — onların routes listesi GTFS DB'den doğrudan okunur (`/api/routes/active/` endpoint'i iki kaynağı birleştirir).
 
 Tek key (~2-3 MB JSON), her fetch task'ında bir `GET` + bir parse, ~10-30ms overhead. Tüm fetch worker'ları aynı cache'i okur, `refresh_iett_mapping` task günde bir kez güncelleyip atomik `SET` yapar (tutarlılık sorunu yok).
 
@@ -712,7 +731,56 @@ sonrası sınırda ama yönetilebilir (~200KB/60sn/client).
 
 ---
 
-## 6. Django Uygulama Yapısı
+### 5.8. Sonraki Durak Özelliği (v0.8.0+, Mini Tokyo 3D paritesi)
+
+Kullanıcı bir araca tıkladığında popup'ta sadece "şu an buradayım" değil, "sonraki 5 durağa varış zamanları" gösterilir. Mini Tokyo 3D'nin imza özelliklerinden biri; biz benzer UX kuruyoruz.
+
+**Hangi modlar için aktif:**
+
+| Mod | Sonraki durak | Gerekçe |
+|---|---|---|
+| Metro (M1A...M9 vb.) | ✅ | Trip ↔ vehicle eşleşmesi sağlam, shape coverage 496/496 |
+| Marmaray | ✅ | Aynı |
+| Tramvay (T1, T3, T4) | ✅ | Aynı |
+| Füniküler (F1, F2, F3) | ✅ | Aynı (kısa hatlar, çoğunlukla tek sonraki) |
+| Vapur | ✅ | İskele bazlı, "sonraki iskele 12 dk" formatı |
+| **Metrobüs (10 hat)** ve normal İETT otobüsü | ❌ | Mapping kapalı (Ek A.18 + Rapor 12); vehicle ↔ trip eşleşmesi yok |
+
+**Veri kaynağı:** Faz 5.5 patch turu sonrası DB'de tüm `Trip.stop_times` ilişkisi tam (6.155.692 satır). Bir vehicle için canlı pipeline'ın bağladığı `route_id` üzerinden Trip seçilir, Trip'in stop_times'ı `stop_sequence` ile sıralı okunur, vehicle koordinatına en yakın olan `seq=k` bulunur, `seq=k+1...k+5` sonraki duraklardır (bearing'e göre yön tahmini ile k-1 olabilir).
+
+**ETA hesaplama — ilk versiyon (planlı saat):** `stop_times.arrival_time` field'ı kullanılır. "Sonraki durak Şişli-Mecidiyeköy, 14:32 (2 dk sonra)". Avantaj: trivial, DB'den direkt okunur. Dezavantaj: gerçek gecikme yansımaz; vehicle 5 dk geç kalmışsa popup yine planlı saati gösterir. Kullanıcı feedback'ine göre v0.9+ için real-time ETA (vehicle hızı + mesafe) eklenir.
+
+**Yön tahmini:** Vehicle bearing field'ı + en yakın iki durağın koordinatları karşılaştırılır. Vehicle'ın gittiği yön sıraya göre ileri (k+1) veya geri (k-1) belirlenir. Çift yönlü hatta (örn. M2 hem Yenikapı→Hacıosman hem Hacıosman→Yenikapı) hangi trip'in stop_times'ı kullanılacak — bu Trip'in `direction_id` field'ı ile eşleşir.
+
+**WebSocket payload genişletmesi:** Mevcut `VehiclePosition` formatına opsiyonel field'lar eklenir:
+
+```json
+{
+  "id": "B-1234",
+  "lat": 41.04,
+  "lon": 28.95,
+  "bearing": 45,
+  "speed": 32,
+  "route_id": "iett:1296",
+  "next_stops": [
+    {"stop_name": "Şişli-Mecidiyeköy", "scheduled": "14:32", "eta_seconds": 120, "sequence": 8},
+    {"stop_name": "Gayrettepe",        "scheduled": "14:34", "eta_seconds": 240, "sequence": 9},
+    ...
+  ]
+}
+```
+
+`next_stops` sadece sonraki durak özelliği aktif olan modlar için doldurulur, normal otobüsler için `null` veya `[]`.
+
+**Performans:** Her tick'te ~500-800 araç için stop_times sorgusu çalışır. PostgreSQL üzerinde indexed, `Trip.id` + `stop_sequence` BTREE indeksi yeterli. Ortalama tek sorgu <5ms; toplam tick overhead <500ms hedef. Cache'leme opsiyonu var (Trip → stop_times listesi 24 saat TTL ile Redis'te) ama ilk sürümde DB direkt okuma yeterli.
+
+**UX detayları:**
+
+- Popup'ta scroll'lanabilir liste (mobile için 3 stops görünür, scroll ile devamı)
+- Her durak satırında ikon: yaklaşan (sarı), uzakta (gri), geçildi (yeşil — eğer bunu izlemeye gerek görülürse)
+- Tıkla durak adı → harita o duraka pan eder
+
+---
 
 ### 6.1. Proje Dizin Yapısı
 
@@ -1673,6 +1741,78 @@ A.16 patch öncesi yapısal sorunun kayıt değeri için korunur. A.17 patch hik
 
 ---
 
+### A.18 İETT Bus mapping yapısal teşhis turu — 3 günlük araştırma sonucu
+
+**Tarih:** 2026-05-01 ÷ 2026-05-03 (üç gün, 11 commit, hepsi `_research/` altında)
+
+**Tetikleyici:** Yağız 2026-05-02'de bir gözlem paylaştı: "29B mapped araç güzergahından kilometrelerce uzakta görünüyor." Sonra 2026-05-03'te ekran görüntüsü ile pekiştirdi: B-184 KapiNo'lu araç popup'ta "98B BAKIRKÖY-KUYUMCUKENT" diyor ama harita üzerinde Sultanahmet/Beyazıt civarında — 98B koridorunun ~14.5 km dışında. Bu sadece 29B'ye veya 98B'ye özel bir tuhaflık değil, sistemik bir teşhise götürdü.
+
+**Araştırma kronolojisi:**
+
+1. **5j-ii drift filter (2026-05-02, v0.7.4)** — `STALE_VEHICLE_TIMESTAMP_THRESHOLD_S=180` filtresi eklendi, vehicle.timestamp 180sn'den eskiyse `route_id=None`. Tick başına ~150 vehicle drop, "out-of-interval mapped" %85+ temizlendi. Ama Yağız'ın gözlemi devam etti: temizlemediği şüpheli vakalar var.
+
+2. **29B PoC (2026-05-02)** — Overpass + networkx + Dijkstra ile 29B için yol-snap polyline türetildi. B-1823 polyline'a 1354m, B-1827 1679m uzakta. Yağız'ın gözlemi sayısal olarak doğrulandı.
+
+3. **stop_times patch (2026-05-02, v0.7.5)** — Excel truncation incident'i (Ek A.17) çözüldü, IETT bus stop_times coverage 139/1095 → 796/1095 (%72.7).
+
+4. **29B koridor ters sorgu (2026-05-02)** — "29B'ye mapped" değil, "29B koridorunda" sorusu. 200m buffer içinde 62 vehicle, **0'ı 29B'ye mapped**, 23'ü başka hatlara mapped (en çok 500T - 7 araç), 39'u unmapped. β senaryo (mapping coverage zayıf) teyit.
+
+5. **GetHatOtoKonum_json probe (2026-05-02 + 2026-05-03)** — Faz 1.5'te reddedilen alternatif endpoint test edildi. Hem `<HatNo>29B</HatNo>` hem `<SHATKODU>29B</SHATKODU>` parametrelerinde HTTP 500 NullReferenceException döndü (rate limit değil, server-side bug). Endpoint kesin kapalı.
+
+6. **Canlı veri kaynağı araştırması (2026-05-03)** — İBB CKAN, developer.ibb.gov.tr, transit.land, Mobility Database, GitHub community projeleri, Otobüsüm Nerede uygulamasının public bilgileri. **Kritik bulgu:** 2 hafta önce bir akademik tez sahibi tam bizim aradığımız şeyi (GTFS-RT) talep etmiş, İBB "mevcut SOAP servisini kullanın" diye reddetmiş. Aynı turda iettnext (Rednexie) projesinin "İBB tarafından idari baskıyla kapatıldığı" tespit edildi. Veri kaynağı politik olarak kapalı, teknik olarak da yok.
+
+7. **Spatial inference PoC (2026-05-03)** — Mevcut SOAP arşivi yerine vehicle hareket geçmişinden hat çıkarımı yaklaşımı denendi. **Karar verici sonuçlar:**
+
+   | Mesafe (mapped vehicle ↔ atandığı hattın en yakın durağı) | Sayı | Yüzde |
+   |---|---|---|
+   | <500m (kabul edilebilir) | 1049 | %46.8 |
+   | 500m–3km (şüpheli) | 562 | %25.1 |
+   | 3–10km (yapısal hata) | 500 | %22.3 |
+   | >10km (komik düzeyde yanlış) | 129 | %5.8 |
+
+   Mevcut mapping'in **%53'ü fiziksel olarak yanlış**. Top 10 worst: C-311 (500L'e atanmış, 37.8km uzakta), O3274 (130E, 31.9km), B-184 (98B, 14.5km — Yağız'ın gözlemi formal olarak doğrulandı). Spatial inference'ın "98B" dediği 40 vehicle gerçekten 98B koridorunda; mapping'in "98B" dediği 1 vehicle 98B'ye yakın değil. **Intersection sıfır.**
+
+**Kök neden:** İETT'nin SOAP arşivi (`GetIettArsivGorev_json`) "dünün" görev planını veriyor ve bu plan **bugünün gerçek servisini yansıtmıyor**. İBB tarafında günlük operasyonel değişiklikler (vehicle değişimi, hat değişikliği, parkır/garaj) arşive yansımıyor; yansımanın gecikmesi 1+ gün. Sonuç olarak mapping katmanı her gün tutarsız ama ölçülebilir bir tutarsızlıkla çalışıyor — ölçüldüğünde gerçeklikle %53 sapma var.
+
+**Karar matrisi sonrası seçilen yol (v0.8.0 kapsam):**
+
+| Seçenek | Karar | Gerekçe |
+|---|---|---|
+| Yol B — Plan A polyline + spatial filter | ❌ | %53 yanlış mapping'i %50 oranında elemek "yarım yamalak", hâlâ %25 yanlış kalır |
+| Yol C — Alternatif veri kaynağı | ❌ | Hiçbiri yok (ne resmi, ne 3rd-party, ne community) |
+| **Yol D — Otobüs için mapping retire, kütle gösterim** | ✅ | Dürüst UX, "İBB'nin yanlış hat etiketini kullanıcıya yansıtmıyoruz" |
+| Yol E — Spatial inference (algoritma) | 🟡 | PoC çalışıyor ama 2-3 haftalık iş; ileride değerlendirilir, v0.9+ |
+
+**v0.8.0 kapsam (Faz 5.5 "Public Transit Refresh"):**
+
+- Normal İETT otobüsleri: kütle gösterim, sarı renk, hat-bazlı UI kapatıldı, popup'ta sadece KapiNo (§3.3, §5.7)
+- Metrobüs (10 hat whitelist): kütleye dahil (mapping kapalı, popup minimal, sonraki durak yok), tek fark antrasit gri renk (görsel kategori) — Rapor 12 sonucu (§3.3)
+- Raylı sistem + vapur + füniküler: değişmez, mevcut (§5.4) Faz 5 simülasyon yapısı korunur
+- Sonraki durak özelliği (§5.8): metro/Marmaray/tramvay/füniküler/vapur için Mini Tokyo 3D paritesi (metrobüs hariç, Rapor 12)
+- Settings flag: `IETT_BUS_MAPPING_ENABLED = False` (default), pipeline kodu hibernation'da
+- 5j-ii drift filter tüm İETT bus için anlamsızlaştı, devre dışı (metrobüs dahil — Rapor 12)
+
+**İleride (v0.9+) açık seçenekler:**
+- Spatial inference algoritmasını production'a entegre et (vehicle hareket geçmişinden hat türetme)
+- İBB politikası değişirse veya GTFS-RT yayınlanırsa flag ile mapping reaktive et
+- İBB'ye bilateral data sharing başvurusu (Yağız tarafından akademik kanaldan)
+
+**Mühendislik dersi:** Veri kaynağının doğru olduğunu varsaymadan önce ampirik doğrulama. Üç günlük araştırma turu eski bir bug'ı (Ek A.17 Excel truncation) buldu, mevcut bir bug'ı (mapping yapısal stale) kanıtladı, alternatif kaynak yokluğunu belgeledi. Karar zemini sağlam: Yol D bilgili karar, geri çekilme değil.
+
+**Referans raporlar (`_research/` altında):**
+- `2026-05-02-faz55-29b-poc.md` — Overpass + networkx + Dijkstra PoC
+- `2026-05-02-iett-stoptimes-investigation.md` — Excel truncation keşfi
+- `2026-05-02-faz55-patch-results.md` — Patch reimport sonuçları
+- `2026-05-02-29b-spatial-sanity.md` — n=4 ölçüm, ilk γ teşhisi
+- `2026-05-02-29b-mapping-spatial.md` — Set A vs Set B
+- `2026-05-02-gethatotokonum-probe.md` + `-v2.md` — endpoint kesin kapalı
+- `2026-05-02-29b-corridor-reverse.md` — 62 vehicle, 0 mapped 29B
+- `2026-05-03-canli-veri-kaynagi-arastirma.md` — P4 alternatif yok
+- `2026-05-03-spatial-inference-poc.md` — %53 yanlışlık kanıtı
+- `12_metrobus_mapping_accuracy.md` — β-lite metrobüs spot kontrolü (2026-05-03), %22 yanlış, p90=8273m, sınır vaka kararı: metrobüs de retire
+
+---
+
 ## 14. Doküman Versiyon Geçmişi
 
 | Versiyon | Tarih | Değişiklik |
@@ -1690,3 +1830,4 @@ A.16 patch öncesi yapısal sorunun kayıt değeri için korunur. A.17 patch hik
 | 0.7.3 | 2026-04-27 | **Faz 3 tamamlandı + spatial sanity check eklendi** (Adım 6h-i/ii/iii). `apps/realtime/spatial.py` modülü: lazy-load shape cache, numpy vectorized haversine, 500m threshold ile mapped vehicle'ın GTFS shape geometrisinden uzaklaşmış olanlarını `route_id=None`'a degrade eder. Canlı smoke İETT GTFS feed shape coverage **0/1096** short_name, public feed **496/496** olduğunu ortaya çıkardı (§10 Risk tablosu güncellendi). Cache miss durumunda graceful skip davranışı: mapping korunur, defansif null yok. Public feed'in 496 shape'i cache'te kalır, Faz 5+ trip simülasyonunda etkin olur. 7 commit zinciri: 6h-i `fcf1451`/`bc0d5f4`/`b8603d5`/`a07026b` (modül + entegrasyon + 7 test, 147 → 154), 6h-ii `2224e9e`/`c04d01e`/`a316df9` (graceful skip fix + docs + regression test, 154 → 155). Smoke 3 tick: `mapped_count≈1850`, `spatial_check.skipped_no_shape≈input` (beklenen, İETT shape'siz), `nullified_off_route=0`. Realtime suite 155/155 yeşil. |
 | 0.7.4 | 2026-05-02 | **Yol B (vehicle.route_id GTFS PK semantics) + stale vehicle.timestamp filter** eklendi. Backend `enrich_with_route_id` artık SHATKODU short_name yerine canonical Route.route_id PK'sını stamp ediyor (`build_mapping` `route_id_by_short_name` index'i β filtresi `agency=IETT, route_type=3` + alfabetik tie-breaker ile üretir). Frontend RouteStore'a bus PK'ları `registerSummaries` ile yüklendi (Faz 6 KM1 reliquat). 5j-ii: out-of-interval-but-mapped vakası teşhisi, drift hipotezi cross-check ile A doğrulandı, `STALE_VEHICLE_TIMESTAMP_THRESHOLD_S=180` filter ve `stats:stale_vehicle_dropped_count` heartbeat counter eklendi. 5j-ii ön-keşfinde İETT stop_times coverage 139/9274 ölçüldü (Ek A.16). Yeni Ek A.15 (fleet endpoint stale konum davranışı) ve Ek A.16 (stop_times coverage). Realtime suite 165/165, frontend 210/210 yeşil. |
 | 0.7.5 | 2026-05-02 | **Faz 5.5 stop_times patch turu**: İBB CKAN'da yan yana duran `stop_times.zip` (canonical, 6.155.692 satır) ve `stop_times.csv` (Excel-truncated, 1.048.575 satır = 2^20 - 1) arasındaki Faz 1 yanlış tercihinin (`format=="CSV"` filter) düzeltilmesi. `download_gtfs.py` yeni `_resolve_resource_for(fname)` ZIP-prefer resolver, `_extract_single_file_zip()` helper, ZIP hash manifest kaydı; sadece stop_times için ZIP variant tercih edilir, diğer 5 dosya eski CSV path'inde kaldı. `import_gtfs.py` autodetect canonical UTF-8 + virgül formatını dokunulmadan tanıdı (`_detect_encoding` BOM yokluğu → utf-8, `_detect_sep` virgül çoğunluğu → `,`). Reimport sonrası IETT StopTime 1.048.485 → 6.154.703 (+5.1M, ×5.87), Trip-level coverage %13.96 → %100 (135.625/135.625), bus short_name coverage 139/1095 → 796/1095 (~%72.7). 29B 126 trip için 3.528 stop_times. Metrobüs (34/34A/34BZ/34G/34Z) toplam 334.758 stop_times. Yeni Ek A.17 (Excel truncation incident), Ek A.5 revize, Ek A.16'ya "patch öncesi snapshot" notu. Faz 5.5 implementation Plan A (durak-bazlı polyline) önceliklendi, OSM Overpass+pgrouting Plan B'ye düştü. Realtime suite 165/165, gtfs 38/38, frontend 210/210 yeşil korundu. |
+| 0.8.0 | 2026-05-03 | **Faz 5.5 "Public Transit Refresh" — kapsam tanımı (Rapor 12 ile revize).** Üç günlük mapping yapısal teşhis turu (Ek A.18) sonrası Faz 5.5'in scope'u tamamen yeniden tanımlandı. Eski Plan A (durak-bazlı polyline) ve Plan B (OSM Overpass) iptal/erteleme. Yeni kapsam: (1) Normal İETT otobüs için mapping retire, kütle gösterim (sarı renk, hat-bazlı UI kapatıldı, popup minimal) — settings flag `IETT_BUS_MAPPING_ENABLED=False` (§3.3, §5.7). (2) Metrobüs whitelist (10 hat) sadece kategorize için (antrasit gri renk, görsel ayrım) — mapping davranışı normal İETT bus ile aynı (kapalı), popup minimal, sonraki durak yok. Önceki "exception" modeli Ek A.18 Rapor 12 ölçümü sonrası iptal edildi (%22 yanlış, p90=8273m). (3) Sonraki durak özelliği yeni §5.8: metro/Marmaray/tramvay/füniküler/vapur için Mini Tokyo 3D paritesi (metrobüs hariç — Rapor 12), çoklu durak listesi (β tasarım), planlı saat ETA (i versiyonu, real-time ETA v0.9'a ertelendi). (4) 5j-ii drift filter tüm İETT bus için anlamsızlaştı, devre dışı (metrobüs dahil — Rapor 12). (5) Yeni Ek A.18 — 3 günlük araştırma sonucu, 11 `_research/` raporu referansı, %53 mapping yanlışlık kanıtı, alternatif kaynak yokluğu, spatial inference PoC sonuçları (v0.9+'a açık seçenek). Yeni Rapor 12 (2026-05-03 metrobüs spot kontrolü, β-lite metodoloji, %22 yanlış sonucu) Ek A.18 numaralandırma serisini 12'ye çıkardı ve metrobüs whitelist exception kararını iptal etti. Bu sürüm spec **kapsam tanımıdır** (Rapor 12 ile revize), implementation v0.8.x ardışık release'lerde. |
