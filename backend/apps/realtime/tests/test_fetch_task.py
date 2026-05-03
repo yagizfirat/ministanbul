@@ -451,7 +451,7 @@ def test_payload_format_matches_vehicles_all_spec(
     datetime.fromisoformat(snapshot["timestamp"].replace("Z", "+00:00"))
 
     veh = snapshot["vehicles"][0]
-    assert set(veh) == {"id", "lat", "lon", "bearing", "speed", "route_id"}
+    assert set(veh) == {"id", "lat", "lon", "bearing", "speed", "route_id", "is_metrobus"}
     assert veh["bearing"] is None
     assert veh["speed"] == 24.0
     assert veh["lat"] == 41.04885
@@ -712,3 +712,35 @@ def test_stale_vehicle_dropped_counter_set(
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 1
     # day-type mismatch must not fire (snapshot saturday + vehicle saturday)
     assert fake_redis.get(DAY_TYPE_MISMATCH_COUNT_KEY) is None
+
+
+# --- KM5-e.1: vehicle.is_metrobus payload field --------------------------
+
+
+def test_payload_includes_is_metrobus_field(
+    fake_redis, patch_adapter, captured_group_sends, settings,
+):
+    """vehicles_all_update payload her vehicle için is_metrobus: bool taşır.
+    Metrobüs SHATKODU (34BZ) → True; normal (29B) → False; mapping yok → False.
+    KM5-e.2 frontend renk + filtre toggle bu field'a bağlı."""
+    settings.IETT_BUS_MAPPING_ENABLED = False
+    _seed_mapping(fake_redis, {
+        "M-1": [_interval(1000, 99999, "34BZ")],
+        "B-1": [_interval(1000, 99999, "29B")],
+    })
+    patch_adapter(fetch_return=[
+        _make_vehicle("M-1", ts_ms=5000),
+        _make_vehicle("B-1", ts_ms=5000),
+        _make_vehicle("X-1", ts_ms=5000),  # mapping'de yok
+    ])
+
+    fetch_iett_positions()
+    snapshot = _read_snapshot(fake_redis)
+
+    by_id = {v["id"]: v for v in snapshot["vehicles"]}
+    assert "is_metrobus" in by_id["M-1"]
+    assert by_id["M-1"]["is_metrobus"] is True
+    assert by_id["B-1"]["is_metrobus"] is False
+    assert by_id["X-1"]["is_metrobus"] is False
+    # Flag kapalı: route_id hepsi None (KM5-a sözleşmesi korunur)
+    assert all(v["route_id"] is None for v in snapshot["vehicles"])

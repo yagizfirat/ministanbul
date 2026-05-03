@@ -8,6 +8,11 @@ export interface Vehicle {
   bearing: number | null;
   speed: number;
   route_id: string | null;
+  // KM5-e.1: backend kategorize sinyali (Spec §3.3). Optional — eski
+  // snapshot'lar veya ileride farklı adapter'lar field'ı taşımayabilir.
+  // KM5-e.2 InterpolatedVehicle'a yansıtır, fleet_layer paint expression
+  // is_metrobus=true → antrasit gri rendering uygular.
+  is_metrobus?: boolean;
 }
 
 export interface InterpolatedVehicle {

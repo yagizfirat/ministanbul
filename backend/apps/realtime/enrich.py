@@ -77,54 +77,41 @@ def enrich_with_route_id(
     if not vehicles:
         return [], 0
 
+    by_kapi = mapping.get("by_kapi", {})
+    snapshot_next_date = _snapshot_next_date(mapping)
+
     # v0.8.0 (KM5-a): IETT bus mapping retire (Spec §5.7, Ek A.18 R12).
     # Flag default kapalı; tüm İETT bus için route_id=None, drift filter
     # de tetiklenmez (route_id None ⇒ stale check zaten skip). Hibernation
     # path (flag açık) aşağıda aynen korunur, gelecekte İBB veri kalitesi
     # düzelirse tek satırlık reaktivasyon.
+    #
+    # KM5-e.1: Flag-kapalı path bile mapping cache'i is_metrobus
+    # kategorize için kullanır. Semantik ayrım: "flag kapalı = route_id
+    # stampleme yok", "mapping cache hiç kullanılmaz" değil. Kategori
+    # bilgisi cache'in yan ürünü, ek query yok.
     if not settings.IETT_BUS_MAPPING_ENABLED:
-        return [v.model_copy(update={"route_id": None}) for v in vehicles], 0
+        out: list[VehiclePosition] = []
+        for v in vehicles:
+            hat = _resolve_active_hat(v, by_kapi, snapshot_next_date)
+            is_metrobus = bool(hat and hat in settings.METROBUS_SHORT_NAMES)
+            out.append(v.model_copy(update={
+                "route_id": None,
+                "is_metrobus": is_metrobus,
+            }))
+        return out, 0
 
-    by_kapi = mapping.get("by_kapi", {})
     pk_index = mapping.get("route_id_by_short_name", {})
-    snapshot_date_str = mapping.get("snapshot_date")
-    snapshot_next_date: date | None = None
-    if snapshot_date_str is not None:
-        try:
-            snapshot_next_date = (
-                date.fromisoformat(snapshot_date_str) + timedelta(days=1)
-            )
-        except ValueError:
-            snapshot_next_date = None
 
-    out: list[VehiclePosition] = []
+    out = []
     stale_dropped = 0
     for v in vehicles:
-        intervals = by_kapi.get(v.vehicle_id)
-        route_id: str | None = None
-        if intervals:
-            local = v.timestamp.astimezone(ISTANBUL_TZ)
-            base_sec = local.hour * 3600 + local.minute * 60 + local.second
-
-            # Per-vehicle overnight check: vehicle date is exactly the day
-            # AFTER snapshot_date AND before 04:00 → look in extended range.
-            # Date-based comparison (not day_type) avoids false positives
-            # when snapshot_day_type and next_day_type happen to coincide
-            # (e.g. Wed snapshot + Thu vehicle, both "weekday").
-            is_overnight = (
-                snapshot_next_date is not None
-                and local.date() == snapshot_next_date
-                and local.hour < 4
-            )
-            now_sec = base_sec + 86400 if is_overnight else base_sec
-
-            starts = [iv["start_sec"] for iv in intervals]
-            idx = bisect_right(starts, now_sec) - 1
-            if idx >= 0 and now_sec <= intervals[idx]["end_sec"]:
-                # Yol B: translate SHATKODU → GTFS Route.route_id PK so the
-                # frontend's RouteStore (keyed by route_id) matches. Lookup
-                # miss → None (orphan SHATKODU stays unmapped, graceful).
-                route_id = pk_index.get(intervals[idx]["hat"])
+        hat = _resolve_active_hat(v, by_kapi, snapshot_next_date)
+        # Yol B: translate SHATKODU → GTFS Route.route_id PK so the
+        # frontend's RouteStore (keyed by route_id) matches. Lookup
+        # miss → None (orphan SHATKODU stays unmapped, graceful).
+        route_id = pk_index.get(hat) if hat is not None else None
+        is_metrobus = bool(hat and hat in settings.METROBUS_SHORT_NAMES)
 
         if route_id is not None and reference_now is not None:
             drift = abs((reference_now - v.timestamp).total_seconds())
@@ -132,5 +119,57 @@ def enrich_with_route_id(
                 route_id = None
                 stale_dropped += 1
 
-        out.append(v.model_copy(update={"route_id": route_id}))
+        out.append(v.model_copy(update={
+            "route_id": route_id,
+            "is_metrobus": is_metrobus,
+        }))
     return out, stale_dropped
+
+
+def _snapshot_next_date(mapping: dict) -> date | None:
+    """Mapping'in snapshot tarihinin ertesi günü — overnight bisect bumps için."""
+    snapshot_date_str = mapping.get("snapshot_date")
+    if snapshot_date_str is None:
+        return None
+    try:
+        return date.fromisoformat(snapshot_date_str) + timedelta(days=1)
+    except ValueError:
+        return None
+
+
+def _resolve_active_hat(
+    vehicle: VehiclePosition,
+    by_kapi: dict,
+    snapshot_next_date: date | None,
+) -> str | None:
+    """KapiNo + timestamp → o anda aktif SHATKODU; yoksa None.
+
+    Flag-açık (route_id stampleme) ve flag-kapalı (is_metrobus
+    kategorize) path'leri aynı bisect mantığını paylaşır. Pure helper:
+    DB / Redis / settings bağlamı kullanmaz (settings whitelist kontrolü
+    caller'da).
+
+    Per-vehicle overnight check: vehicle date is exactly the day AFTER
+    snapshot_date AND before 04:00 → look in extended range. Date-based
+    comparison (not day_type) avoids false positives when snapshot_day_type
+    and next_day_type happen to coincide (e.g. Wed snapshot + Thu vehicle,
+    both "weekday"). Overlap convention: bisect_right - 1 picks the
+    later-starting interval when two cover the same instant (spec §5.7).
+    """
+    intervals = by_kapi.get(vehicle.vehicle_id)
+    if not intervals:
+        return None
+    local = vehicle.timestamp.astimezone(ISTANBUL_TZ)
+    base_sec = local.hour * 3600 + local.minute * 60 + local.second
+    is_overnight = (
+        snapshot_next_date is not None
+        and local.date() == snapshot_next_date
+        and local.hour < 4
+    )
+    now_sec = base_sec + 86400 if is_overnight else base_sec
+
+    starts = [iv["start_sec"] for iv in intervals]
+    idx = bisect_right(starts, now_sec) - 1
+    if idx >= 0 and now_sec <= intervals[idx]["end_sec"]:
+        return intervals[idx]["hat"]
+    return None

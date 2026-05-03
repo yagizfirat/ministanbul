@@ -391,6 +391,7 @@ def fetch_iett_positions() -> dict:
                 "bearing": v.bearing,
                 "speed": v.speed,
                 "route_id": v.route_id,
+                "is_metrobus": v.is_metrobus,
             }
             for v in enriched
         ],

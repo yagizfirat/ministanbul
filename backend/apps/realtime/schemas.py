@@ -67,6 +67,13 @@ class VehiclePosition(BaseModel):
     timestamp: datetime
     source: str
     mode: str
+    # KM5-e.1 (Spec §3.3): metrobüs kategorize sinyali — frontend antrasit
+    # gri rendering ayrımı için. enrich.py mapping cache lookup'ı her iki
+    # IETT_BUS_MAPPING_ENABLED durumunda yapar; route_id stampleme flag'a
+    # bağlı, is_metrobus değil. Mapping cache miss → False (defansif).
+    # %22 yanlış kategori riski Yağız kararı (B yolundan dönüş): rengin
+    # yokluğu = %0 bilgi, varlığı yanlışlık olsa bile %78 doğru.
+    is_metrobus: bool = False
 
 
 class IettArsivGorev(BaseModel):

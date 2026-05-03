@@ -378,3 +378,57 @@ def test_flag_enabled_default_in_module_uses_mapping():
     mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
     out, _ = enrich_with_route_id([_make_vehicle("A-231", 1500)], mapping)
     assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
+
+
+# --- KM5-e.1: vehicle.is_metrobus categorize (B yolundan dönüş) ----------
+
+
+def test_flag_disabled_sets_is_metrobus_for_metrobus_kapi(settings):
+    """Flag kapalıyken bile mapping cache lookup'ı kategorize için yapılır:
+    KapiNo'nun aktif görevi bir metrobüs SHATKODU ise is_metrobus=True
+    set edilir. route_id yine None (KM5-a sözleşmesi korunur)."""
+    settings.IETT_BUS_MAPPING_ENABLED = False
+    mapping = _mapping(**{"M-3090": [_interval(1000, 2000, "34BZ")]})
+    out, _ = enrich_with_route_id([_make_vehicle("M-3090", 1500)], mapping)
+    assert out[0].is_metrobus is True
+    assert out[0].route_id is None
+
+
+def test_flag_disabled_sets_is_metrobus_false_for_normal_bus(settings):
+    """Normal İETT bus SHATKODU (29B) METROBUS_SHORT_NAMES dışında →
+    is_metrobus=False; aynı path, aynı bisect, sadece whitelist farkı."""
+    settings.IETT_BUS_MAPPING_ENABLED = False
+    mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
+    out, _ = enrich_with_route_id([_make_vehicle("A-231", 1500)], mapping)
+    assert out[0].is_metrobus is False
+    assert out[0].route_id is None
+
+
+def test_flag_disabled_is_metrobus_false_when_kapi_not_in_mapping(settings):
+    """KapiNo by_kapi'de yok → bisect skip → is_metrobus=False (defansif).
+    Mapping cache miss yokluğu metrobüs sayılmaz, "tip bilinmiyor" durumu."""
+    settings.IETT_BUS_MAPPING_ENABLED = False
+    mapping = _mapping(**{"A-231": [_interval(1000, 2000, "34BZ")]})
+    out, _ = enrich_with_route_id([_make_vehicle("X-999", 1500)], mapping)
+    assert out[0].is_metrobus is False
+    assert out[0].route_id is None
+
+
+def test_flag_disabled_is_metrobus_false_when_mapping_empty(settings):
+    """by_kapi yok / mapping boş dict → tüm vehicle'lar is_metrobus=False.
+    Cache miss / refresh hatası senaryosu defansif handle edilir."""
+    settings.IETT_BUS_MAPPING_ENABLED = False
+    out, _ = enrich_with_route_id([_make_vehicle("M-3090", 1500)], {})
+    assert out[0].is_metrobus is False
+    assert out[0].route_id is None
+
+
+def test_flag_enabled_also_sets_is_metrobus(settings):
+    """Hibernation path (flag açık) kategorize bilgisini de üretir;
+    mapping bisect lookup'ın yan ürünü, ek cost yok."""
+    settings.IETT_BUS_MAPPING_ENABLED = True
+    mapping = _mapping(**{"M-3090": [_interval(1000, 2000, "34BZ")]})
+    out, _ = enrich_with_route_id([_make_vehicle("M-3090", 1500)], mapping)
+    assert out[0].is_metrobus is True
+    # Flag açık olduğu için route_id de stamp'lendi (hibernation)
+    assert out[0].route_id == EXPECTED_PK_FOR_HAT["34BZ"]
