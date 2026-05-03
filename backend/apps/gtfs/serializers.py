@@ -3,6 +3,7 @@
 Phase 1 preview uses simple {lat, lon} pairs for Stop (Leaflet-friendly);
 only Shape uses proper GeoJSON via drf-gis (route-line rendering).
 """
+from django.conf import settings
 from rest_framework import serializers
 from rest_framework_gis.serializers import GeoFeatureModelSerializer
 
@@ -20,6 +21,13 @@ class RouteSerializer(serializers.ModelSerializer):
     route_type_label = serializers.CharField(
         source="get_route_type_display", read_only=True
     )
+    # KM5-b (Spec §3.3, v0.8.0): metrobüs hatları için kategorize sinyali.
+    # Mapping davranışını etkilemez (KM5-a sonrası tüm İETT bus için
+    # route_id=None); frontend KM5-d'de antrasit gri rendering ayrımı için
+    # kullanır. METROBUS_SHORT_NAMES içindeki short_name'ler İETT'ye özel
+    # (Spec §3.3 — discovery query: 34-prefix'li başka short_name yok),
+    # agency=İETT kontrolü gereksiz.
+    is_metrobus = serializers.SerializerMethodField()
 
     class Meta:
         model = Route
@@ -28,7 +36,11 @@ class RouteSerializer(serializers.ModelSerializer):
             "short_name", "long_name",
             "route_type", "route_type_label",
             "color", "text_color",
+            "is_metrobus",
         ]
+
+    def get_is_metrobus(self, obj) -> bool:
+        return obj.short_name in settings.METROBUS_SHORT_NAMES
 
 
 class StopSerializer(serializers.ModelSerializer):

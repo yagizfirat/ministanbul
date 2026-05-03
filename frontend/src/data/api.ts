@@ -21,6 +21,11 @@ export interface RouteSummary {
   // App-level mode. Backend returns route_type ints; we map them back via the
   // query mode and post-process subway → marmaray when short_name says so.
   mode: string;
+  // KM5-b (Spec §3.3, v0.8.0): metrobüs kategorize sinyali. Backend
+  // RouteSerializer.is_metrobus settings.METROBUS_SHORT_NAMES'a bakıyor;
+  // KM5-d'de antrasit gri rendering ayrımı için kullanılacak. Optional —
+  // eski response'lara karşı defansif.
+  is_metrobus?: boolean;
 }
 
 export interface ShapeFeature {
@@ -78,6 +83,7 @@ interface BackendRoute {
   long_name: string;
   route_type: number;
   route_type_label: string;
+  is_metrobus?: boolean;
 }
 
 interface RouteListResponse {
@@ -111,6 +117,7 @@ export async function fetchAllBusRoutes(): Promise<RouteSummary[]> {
     route_type_label: r.route_type_label,
     agency_name: r.agency?.name ?? '',
     mode: 'bus',
+    is_metrobus: r.is_metrobus,
   }));
 }
 
@@ -130,6 +137,7 @@ async function fetchRoutesForMode(mode: string): Promise<RouteSummary[]> {
     route_type_label: r.route_type_label,
     agency_name: r.agency?.name ?? '',
     mode: appModeFor(mode, r.short_name),
+    is_metrobus: r.is_metrobus,
   }));
 }
 
