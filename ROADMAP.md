@@ -7,8 +7,11 @@ Bu doküman projenin **nihai yol haritasıdır**: ne yapıldı, ne yapılacak,
 her fazda hangi kararlar alındı. Her yeni geliştirme oturumunda ilk
 okunacak doküman budur.
 
-**Durum:** Faz 1-5 tamamlandı (2026-05-01). Faz 5.5 "Public Transit Refresh" **tamamlandı** (2026-05-03, v0.8.0): (a) stop_times Excel truncation patch (v0.7.5, Spec Ek A.17). (b) Üç günlük mapping yapısal teşhis turu, 11 `_research/` raporu, %53 yanlış kanıtı (Spec Ek A.18). (c) Implementation altı alt-tur (KM5-a..f): otobüs mapping retire + metrobüs ayrı görsel kategori (antrasit gri + bağımsız toggle, KM5-d B yolundan KM5-e dönüşü kararı, %22 yanlış kategori bilinçli tolere edildi), raylı/vapur sonraki durak özelliği (Mini Tokyo 3D paritesi, frontend `computeNextStops`), filtre paneli sadeleşti (5 raylı/vapur grup hat-bazlı + iki bağımsız bus toggle), mapping cache warm-up startup hook (KM5-f kalıcı fix). v0.8.0 tag'ı bu sürümle basıldı. Faz 6 (cilalama) paralel açık. Realtime 175/175 + gtfs 44/44 + frontend 238/238 = 457 yeşil.
-**Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md) (v0.8.0 — Public Transit Refresh implementation final)
+**Durum:** Faz 1-5 tamamlandı (2026-05-01). Faz 5.5 "Public Transit Refresh" **tamamlandı** (2026-05-03, v0.8.0): (a) stop_times Excel truncation patch (v0.7.5, Spec Ek A.17). (b) Üç günlük mapping yapısal teşhis turu, 11 `_research/` raporu, %53 yanlış kanıtı (Spec Ek A.18). (c) Implementation altı alt-tur (KM5-a..f): otobüs mapping retire + metrobüs ayrı görsel kategori (antrasit gri + bağımsız toggle, KM5-d B yolundan KM5-e dönüşü kararı, %22 yanlış kategori bilinçli tolere edildi), raylı/vapur sonraki durak özelliği (Mini Tokyo 3D paritesi, frontend `computeNextStops`), filtre paneli sadeleşti (5 raylı/vapur grup hat-bazlı + iki bağımsız bus toggle), mapping cache warm-up startup hook (KM5-f kalıcı fix). v0.8.0 tag'ı bu sürümle basıldı. Realtime 175/175 + gtfs 44/44 + frontend 238/238 = 457 yeşil.
+
+**v0.8.0 sonrası yön (2026-05-03 karar):** Faz 6 cilalama açık liste olarak süresiz devam etmek yerine **yayın yoluna** odaklandı. Hedef: `ministanbul.yagizfiratt.com` subdomain'i + GitHub repo public, v1.0.0. Tahmini 2 hafta, ardışık altı sürüm: v0.8.1 borç kapama → v0.8.2 UX cilalama → v0.8.3 mobil + perf → v0.9.0 açık kaynak hazırlık → v0.9.1 production deployment → v1.0.0 yayın günü. KM2 (mobil), KM4 (perf), KM5'ten production deployment maddesi bu yola entegre edildi; KM3 (i18n), A11y, durak arama, v0.9+ spatial inference v1.0 sonrası backlog'a ertelendi. Detay yeni **Faz 7 — Yayın**'da.
+
+**Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md) (v0.8.0 — Public Transit Refresh implementation final + Ek A.19 v0.8.0 sonrası borç envanteri)
 
 ---
 
@@ -24,7 +27,8 @@ okunacak doküman budur.
    - [Faz 4 — 3D frontend ✅](#faz-4--3d-frontend-)
    - [Faz 5 — Raylı sistem ve vapur simülasyonu ✅](#faz-5--raylı-sistem-ve-vapur-simülasyonu-)
    - [Faz 5.5 — Public Transit Refresh ✅](#faz-55--public-transit-refresh-)
-   - [Faz 6 — Cilalama ⚪](#faz-6--cilalama-)
+   - [Faz 6 — Cilalama (KM1 ✅, KM2-5 yayın yoluna entegre)](#faz-6--cilalama-)
+   - [Faz 7 — Yayın ⚪](#faz-7--yayın-)
 5. [Veri kaynakları](#5-veri-kaynakları)
 6. [Teknoloji seçimleri](#6-teknoloji-seçimleri)
 7. [Lisans](#7-lisans)
@@ -916,14 +920,13 @@ Mevcut hat-bazlı UI'nin %53 yanlış mapping üzerinde kurulu olduğu kanıtlan
 
 ---
 
-### Faz 6 — Cilalama ⚪
+### Faz 6 — Cilalama (KM1 ✅, KM2-5 yayın yoluna entegre)
 
-**Durum:** Süresiz, kontinü.
+**Durum:** KM1 (kurumsal renk + filtreleme paneli) tamamlandı. KM2-5 v0.8.0 sonrası "süresiz kontinü faz" olmaktan çıkarıldı, yayın hedefli **Faz 7**'ye sıkıştırıldı.
 
 #### Hedef
 
-Kullanıcı deneyimi, performans, i18n, mobile responsive. MVP v1.0'ı
-yayına hazır hale getirmek.
+Kullanıcı deneyimi, performans, i18n, mobile responsive. KM1 ile renk + panel tutarlılığı sağlandı; KM2-5 v0.8.0 sonrası karar (2026-05-03): "süresiz cilalama" yerine yayın yolu — KM2 (mobil) ve KM4 (perf) Faz 7 v0.8.3'e entegre, KM5'in production deployment maddesi Faz 7 v0.9.1'e entegre, KM3 (i18n) ve diğerleri v1.0+ backlog'a ertelendi.
 
 #### Yapılacak iş
 
@@ -996,17 +999,25 @@ Tahmini süre: 3-4 gün → **gerçek: ~1.5 gün**.
 
 ##### KM2 — Mobile responsive (768px breakpoint)
 
+> **2026-05-03:** Bu KM **Faz 7 v0.8.3 KM-a**'ya devredildi. Aşağıdaki kapsam aynen geçerli, sadece sürüm hedefi değişti.
+
 Kontrol panelleri hamburger menüye, popup'lar bottom sheet'e dönsün. Touch events (pinch zoom, two-finger rotate). Chip'ler mobile'da daha küçük + alt köşeye kayma.
 
 ##### KM3 — i18n (TR/EN)
+
+> **2026-05-03:** Yayını blokelemiyor. **v1.0+ backlog**'a ertelendi (Spec Ek A.19). Türkçe MVP yayını yeterli; EN README açık kaynak görünürlüğü için yeterli.
 
 i18next entegrasyonu, dil değiştirici, tüm UI string'leri `src/i18n/tr.json` + `en.json`. Tarih/saat locale-aware.
 
 ##### KM4 — Performans cilalama
 
+> **2026-05-03:** Bu KM **Faz 7 v0.8.3 KM-b**'ye devredildi. Aşağıdaki kapsam aynen geçerli.
+
 Viewport dışı araçları cull et (mesh update'leri pas geçilsin). Level-of-detail: zoom < 10'da araçları nokta yerine basit point. Three.js `InstancedMesh` (Faz 4 KM5'ten ertelenmişti).
 
 ##### KM5 — Diğer borç maddeleri
+
+> **2026-05-03:** Bu listeden **Production deployment dokümanı** Faz 7 v0.9.1'e taşındı. Diğerleri **v1.0+ backlog** (Spec Ek A.19 envanter).
 
 Faz 5 deferred'tan gelen iş:
 - CalendarDate import
@@ -1024,7 +1035,150 @@ Faz 5 deferred'tan gelen iş:
 
 #### Bitiş kriteri
 
-Proje tanım belirsiz kontinü faz. "Yeterli" kararı Yağız tarafından.
+KM1 ✅ tamamlandı. KM2-5 ayrı bitiş kriterleri yok — yayın yolu **Faz 7**'nin bitiş kriterleri (v1.0.0) bu fazın da kapanışını temsil eder.
+
+---
+
+### Faz 7 — Yayın ⚪
+
+**Durum:** Planlı, v0.8.0 sonrası başlar.
+**Tahmini süre:** ~10-13 iş günü (2 hafta).
+**Hedef sürüm:** v1.0.0
+**Hedef adres:** `https://ministanbul.yagizfiratt.com` + GitHub repo public
+
+#### Hedef
+
+Mini İstanbul'u canlı demo + açık kaynak olarak yayına almak. Mevcut altyapı (CloudPanel + WARP, yagizfiratt.com sunucusu) üzerinde subdomain olarak çıkar. Kişisel sitedeki bir buton bu adrese yönlendirir. Yeni VPS / yeni domain alınmaz; ekstra kalıcı masraf yoktur (sunucu kapasitesi mevcut).
+
+#### Mimari kararlar (2026-05-03)
+
+- **Adres:** Subdomain `ministanbul.yagizfiratt.com`. CloudPanel "Add Site" → kendi vhost, kişisel siteyi etkilemez. Subpath (`/ministanbul.html`) reddedildi: WebSocket upgrade + API proxy + static serve tek `location` block'una sığdırmak komplike, çakışma riski. Ayrı domain reddedildi: ekstra masraf, marketing değeri yayın hızını geciktirmez.
+- **Backend mimarisi:** Mini İstanbul statik HTML değil — frontend Vite build (`dist/index.html` + JS bundle) + dört systemd servis (gunicorn HTTP 8010, daphne WS 8011, celery worker, celery beat) + PostgreSQL/PostGIS + Redis. CloudPanel default'una (PHP/Node) override Nginx custom location ile yapılır.
+- **Cloudflare WARP gerçekliği:** WebSocket WARP üzerinden geçer. Free plan 100sn idle timeout var; ping/pong (Faz 3 6d-i) zaten bu sınırın altında çalışıyor. Yayın smoke'unda doğrulanır, blokeleyici değil.
+- **Sunucu kapasitesi:** Yağız mevcut sunucusunu yeterli olarak teyit etti (2026-05-03). PostgreSQL+PostGIS ~500MB, Redis ~200MB, Django+gunicorn ~300MB, Daphne ~200MB, Celery worker+beat ~300MB → ~1.5GB sürekli kullanım. Disk ~2-3GB.
+
+#### Yapılacak iş (sürüm-bazlı, ardışık)
+
+##### v0.8.1 — Borç kapama (1-2 gün)
+
+Mevcut bilinen borçları sıfırla, suite yeşil tut. Detay envanter Spec Ek A.19.
+
+- **KM-a ✅** `<TBD>` — Route-lines paint hatası fix. `buildRouteLinePaint(focused)` line-width "case → interpolate(zoom)" deseni MapLibre style spec ihlaliydi (`['zoom']` yalnız top-level interpolate input'u olabilir, `case` içinde nested olmaz; setPaintProperty runtime'da Error fırlatıyordu). Düzeltme: outer `interpolate(['linear'], ['zoom'], …)` → inner `case` data-driven stops (10→3/2, 14→6/4, 18→9/6 — eski matematik korundu). Frontend Vitest 240/240 (238 + 3 yeni regression − 1 eski "case" assertion), backend dokunulmadı (175 + 44). Spec Ek A.19 borç #1 kapandı.
+- **KM-b** Beat schedule canlı doğrulama (15dk) — `SELECT name, last_run_at FROM django_celery_beat_periodictask WHERE name='refresh-iett-mapping'`. None ise beat scheduler ayağa kalkmamış demektir, fix yarım gün
+- **KM-c** Mojibake popup patch (1-2 saat) — kaynak GTFS feed sorunu çözülmedi, frontend'de `replace`-bazlı patch tablo veya görsel uyarı
+- **KM-d** Suite + tag v0.8.1
+
+##### v0.8.2 — UX cilalama (2-3 gün)
+
+Public görüntü için kritik, paylaşılabilirlik artar.
+
+- **KM-a** Bundle size optimize (1 gün) — code splitting + MapLibre style lazy + lucide tree-shake. Hedef: 1066KB → 600KB altı (mobil 3G yükleme süresi yarıya iner). Vite warn 500KB üstü, şu an `Faz 5.5 sonrası bilinen borç #4`
+- **KM-b** Toggle/filter URL persistence (1 gün) — query string sync (`?routes=M2,M4&bus=on&metrobus=off`), paylaşılabilir link. Spec §5.7'deki kanal modeli zaten short_name bazlı, frontend state ↔ URL bidirectional sync yeterli
+- **KM-c** Suite + tag v0.8.2
+
+##### v0.8.3 — Mobil + perf (3-4 gün)
+
+KM2 + KM4'ten devralındı.
+
+- **KM-a** Mobile responsive 768px breakpoint (2 gün) — hamburger menü, bottom sheet popup, touch events (pinch zoom, two-finger rotate). Trafiğin %60'ı mobil olacak; şu an mobilde kullanılamıyor
+- **KM-b** Performans cilalama (1-2 gün) — viewport culling (mesh update'leri pas geç), LOD zoom<10 nokta render, `InstancedMesh` (Faz 4 KM5'ten ertelenmişti). 6900 araç + mobil = donmaya açık
+- **KM-c** Suite + tag v0.8.3
+
+##### v0.9.0 — Açık kaynak hazırlık (1 gün)
+
+Repo public yapmadan önce hijyen.
+
+- **KM-a** Secret tarama — `git log -S "password"` türü taramalar, .env değerleri history'de mi kontrol, varsa BFG / `git filter-repo` ile temizle
+- **KM-b** LICENSE — MIT (MapLibre / Three.js / deck.gl uyumlu, en geniş benimseme), `.env.example` finalize (tüm production override'lar dummy)
+- **KM-c** README.md sıfırdan yaz: hero ekran görüntüsü, ne yapar (kısa), niye yapıldı, mimari özet, kurulum (Spec §8'e link), demo URL, lisans, teşekkürler (Mini Tokyo 3D ilhamı, İBB açık veri)
+- **KM-d** CONTRIBUTING.md kısa (issue/PR akışı), `_research/` klasörü hakkında bir paragraf — projenin entelektüel dürüstlüğünü gösteren araştırma raporları (mapping %53 yanlış kararının gerekçesi orada)
+- **KM-e** Repo metadata: topics (`istanbul`, `gtfs`, `transit`, `maplibre`, `mini-tokyo-3d`, `django`, `realtime`), about, social preview image
+- **KM-f** Tag v0.9.0 — repo henüz public DEĞİL, hazırlık tag'ı
+
+##### v0.9.1 — Production deployment (2-3 gün)
+
+Subdomain canlıya çıkış. CloudPanel + manuel systemd entegrasyonu.
+
+- **KM-a** Sunucu hazırlık (yarım gün)
+  - PostgreSQL 16 + PostGIS apt install (CloudPanel'in MySQL'inin yanına)
+  - Redis 7 apt install (db=0 Celery, db=1 Channels — Faz 3 6b-iii ile aynı ayrım)
+  - DB user + database create (`mini_istanbul_prod`), PostGIS extension
+  - GTFS download + import (`download_gtfs` + `import_gtfs`, ~30dk runtime)
+- **KM-b** CloudPanel site ekle (10dk)
+  - "Add Site" → `ministanbul.yagizfiratt.com`
+  - DNS A record (yagizfiratt.com'un IP'sine)
+  - Let's Encrypt SSL otomatik çekilir
+- **KM-c** systemd unit dosyaları × 4 (yarım gün)
+  - `ministanbul-gunicorn.service` (HTTP, internal 8010, `--bind 127.0.0.1:8010`)
+  - `ministanbul-daphne.service` (WebSocket, internal 8011)
+  - `ministanbul-celery-worker.service`
+  - `ministanbul-celery-beat.service`
+  - `EnvironmentFile=/etc/ministanbul.env`, `Restart=always`, `User=ministanbul`
+- **KM-d** Nginx config — CloudPanel vhost'a custom location (yarım gün)
+  - `/api/` → gunicorn 127.0.0.1:8010 proxy
+  - `/ws/` → daphne 127.0.0.1:8011 (WebSocket upgrade headers, `proxy_read_timeout 86400s`)
+  - `/` → frontend `dist/` static serve, `try_files $uri /index.html`
+  - Cloudflare WARP WebSocket smoke testi (browser DevTools → WS → 101 Switching Protocols)
+- **KM-e** Production settings (yarım gün)
+  - `DEBUG=False`, `ALLOWED_HOSTS=ministanbul.yagizfiratt.com`
+  - `SECRET_KEY` rotation (yeni `secrets.token_urlsafe(50)`)
+  - CORS ayarı (statik dosyalar aynı origin, ekstra header gerek yok ama `CSRF_TRUSTED_ORIGINS` kontrol)
+  - Frontend `vite build` (production env: WS_URL = `wss://ministanbul.yagizfiratt.com/ws/`, API_URL = `https://ministanbul.yagizfiratt.com/api/`) + Django `collectstatic`
+- **KM-f** Public-grade rate limiting (yarım gün)
+  - django-ratelimit veya nginx `limit_req` — IP başı request rate (`/api/` için 60/min)
+  - WS connection cap global ~500 (mevcut IP cap 5'i koru, ek olarak global)
+  - Faz 3 6d-i `scope["client"]` localhost'ta `127.0.0.1` döner — Nginx `X-Forwarded-For` header'ını consumer'a aktarmak gerek (Faz 3 risk listesinde dokümante)
+- **KM-g** Backup + log rotation (15dk)
+  - `pg_dump` cron günlük, `/var/backups/ministanbul/`
+  - logrotate config (Daphne, Celery, gunicorn logları)
+- **KM-h** Smoke + tag v0.9.1
+  - 5 dakika canlı: WS bağlantı + 60sn tick + REST fallback + SSL skor (SSL Labs A)
+  - Mobil + masaüstü smoke
+
+##### v1.0.0 — Yayın günü (yarım gün)
+
+- GitHub repo public toggle
+- yagizfiratt.com kişisel sitedeki butonu `https://ministanbul.yagizfiratt.com`'a bağla
+- Final smoke: mobil + masaüstü + Chrome/Firefox/Safari
+- Tag v1.0.0
+- Sosyal duyuru (opsiyonel — Yağız tercih)
+
+#### Bitiş kriterleri (v1.0.0)
+
+- [ ] `https://ministanbul.yagizfiratt.com` canlı, SSL valid, Lighthouse mobile ≥80
+- [ ] WebSocket Cloudflare WARP üzerinden çalışıyor, ping/pong 100sn idle altında
+- [ ] PostgreSQL+PostGIS+Redis sunucuda kurulu, GTFS import edilmiş
+- [ ] 4 systemd servis `enable`'lı, `Restart=always`, reboot sonrası ayağa kalkıyor
+- [ ] pg_dump cron çalışıyor, son 7 backup duruyor
+- [ ] GitHub repo public, MIT lisans, README + ekran görüntüsü + demo URL
+- [ ] `_research/` klasörü repo'da, projenin entelektüel dürüstlüğü görünür
+- [ ] yagizfiratt.com'dan buton ministanbul.yagizfiratt.com'a yönlendiriyor
+- [ ] Mobil (iPhone Safari + Android Chrome) smoke geçti
+- [ ] Realtime + gtfs + frontend suite final yeşil
+
+#### v1.0+ backlog (yayını blokelemiyor)
+
+Spec Ek A.19 detayında envanter:
+- **i18n (KM3)** — TR/EN dil değiştirici, ~3 gün
+- **A11y** — klavye nav, ARIA, focus trap (etik olarak yapılması gereken, v1.1)
+- **Durak arama** — autocomplete + PostGIS `pg_trgm` Turkish fuzzy
+- **E2E test (Playwright)** — yayın sonrası ilk tur
+- **Saat çubuğu, landmark GeoJSON** — tatlı eklemeler
+- **KM5 alt borçlar** — CalendarDate import, Trip.service_id FK upgrade, frequencies.csv expansion (Marmaray görünürlüğü), route_type=9/10 araştırması, 299 trip'siz IETT short_name PK temizliği (Spec Ek A.17)
+- **Spatial inference v0.9 production entegrasyonu** — büyük teknik atılım, 2-3 hafta, mevcut PoC %53 → ?? hedef (Spec Ek A.18 Rapor 12 + sonrası)
+- **Real-time ETA** — vehicle hızı + mesafe bazlı, mevcut planlı saat yerine
+- **Smoke automation** — channels-redis/daphne version bump sonrası tekrar (Faz 3 6d-iv)
+- **Mojibake stops sözlüğü** — backend `_demojibake` hibrit %75.9 sonrası kalan 2237 satır substring-level recovery
+- **Akademik kanaldan İBB GTFS-RT bilateral data sharing başvurusu** (Yağız tarafı)
+- **İBB GTFS-RT açılırsa mapping flag reaktivasyonu** — `IETT_BUS_MAPPING_ENABLED=True`, hibernation kod hazır
+
+#### Riskler
+
+- **Cloudflare WARP WebSocket idle timeout** — free plan 100sn. Faz 3 ping/pong altyapısı buna göre tasarlandı, ama production smoke'unda mutlaka doğrulanmalı. Düşerse WS reconnect frontend'de zaten var (Faz 3 Adım 6f).
+- **PostgreSQL+PostGIS first-time install on shared CloudPanel server** — CloudPanel default MySQL üzerine kurulu, PostgreSQL kurulumu CloudPanel UI'sini bilgilendirmez. PG port 5432 default, çakışma yok ama firewall kuralı manuel.
+- **Subdomain SSL renewal** — Let's Encrypt auto-renew CloudPanel'de aktif, ama yeni site eklendiğinde ilk certificate fetch olmazsa `certbot --nginx --domain ministanbul.yagizfiratt.com` manuel.
+- **Beat scheduler doğal tetikleme** — v0.8.1 KM-b'de doğrulanır. None çıkarsa systemd unit'i yanlış kurulmuş demektir, KM-d kapsamı genişler.
+- **Public IP traffic spike** — sosyal duyuru sonrası ani yük. Rate limiting v0.9.1 KM-f'te kurulu, ama 60sn tick payload'ı her client için ~200KB compressed → 1000 eşzamanlı client = 200MB/min outbound bandwidth. Sunucu plan upgrade gerekebilir.
 
 ---
 

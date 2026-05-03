@@ -54,9 +54,54 @@ describe('buildRouteLinePaint', () => {
     expect(buildRouteLinePaint([])['line-opacity']).toBe(0.85);
   });
 
-  it('focused dolu → line-width also case-driven (focused thicker)', () => {
+  // v0.8.1 KM-a (Spec Ek A.19): focused dolu line-width artık outer
+  // interpolate(zoom), inner case stops. Eski desen (case → interpolate
+  // [zoom]) MapLibre style spec ihlali, setPaintProperty hata fırlatıyordu.
+  it('focused dolu → line-width outer interpolate(zoom), inner case stops', () => {
     const w = buildRouteLinePaint(['public:m2'])['line-width'] as readonly unknown[];
-    expect(w[0]).toBe('case');
+    expect(w[0]).toBe('interpolate');
+    expect(w[1]).toEqual(['linear']);
+    expect(w[2]).toEqual(['zoom']);
+    // Stops: 10/14/18 → her output bir case array'i
+    expect(w[3]).toBe(10);
+    expect((w[4] as readonly unknown[])[0]).toBe('case');
+    expect(w[5]).toBe(14);
+    expect((w[6] as readonly unknown[])[0]).toBe('case');
+    expect(w[7]).toBe(18);
+    expect((w[8] as readonly unknown[])[0]).toBe('case');
+  });
+
+  it('focused dolu → focused/non-focused stop değerleri eski matematikle aynı (3/2, 6/4, 9/6)', () => {
+    const w = buildRouteLinePaint(['public:m2'])['line-width'] as readonly unknown[];
+    // [case, condition, focusedValue, baseValue]
+    const at10 = w[4] as readonly unknown[];
+    const at14 = w[6] as readonly unknown[];
+    const at18 = w[8] as readonly unknown[];
+    expect([at10[2], at10[3]]).toEqual([3, 2]);
+    expect([at14[2], at14[3]]).toEqual([6, 4]);
+    expect([at18[2], at18[3]]).toEqual([9, 6]);
+  });
+
+  it('focused dolu → ["zoom"] expression nested case içinde GEÇMEZ (regression guard)', () => {
+    // MapLibre kuralı: ["zoom"] yalnız top-level interpolate/step input'u.
+    // case içinde herhangi bir alt ifadede ["zoom"] görürsek setPaintProperty
+    // runtime'da Error fırlatır. Bu test recursive tarama ile garanti.
+    const w = buildRouteLinePaint(['public:m2'])['line-width'];
+    const hasNestedZoom = (node: unknown, depth: number): boolean => {
+      if (!Array.isArray(node)) return false;
+      // Top-level interpolate'in input'u ['zoom'] → kabul. Daha derin
+      // (depth > 0) iç içe geçmiş ['zoom'] → ihlal.
+      if (depth > 0 && node.length === 1 && node[0] === 'zoom') return true;
+      return node.some((child) => hasNestedZoom(child, depth + 1));
+    };
+    // top-level ['interpolate', ['linear'], ['zoom'], …] kabul (depth 1'den
+    // sonra ['zoom'] görsek bile ilk geçişte top-level interpolate'in
+    // ikinci argümanı), ancak inner case stops içinde ['zoom'] olmamalı.
+    const stops = (w as readonly unknown[]).slice(3);
+    for (let i = 1; i < stops.length; i += 2) {
+      // stops[i] = output expression (case veya literal)
+      expect(hasNestedZoom(stops[i], 0)).toBe(false);
+    }
   });
 });
 

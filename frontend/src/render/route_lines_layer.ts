@@ -30,6 +30,16 @@ const shapeIndex = new Map<string, LonLat[]>();
 // focused string[] → bu hatlar parlak (opacity 1.0, %50 daha kalın),
 // diğerleri sönük (opacity 0.2). f-polish-5: array filter, varyant
 // grubu tek seferde focus'a alınır.
+//
+// v0.8.1 KM-a fix (Spec Ek A.19): MapLibre style spec'te ``["zoom"]``
+// expression yalnız top-level ``interpolate``/``step`` input'unda
+// kullanılabilir; ``case`` içinde nested zoom kabul edilmez ve
+// ``setPaintProperty('line-width', …)`` runtime'da hata fırlatır.
+// focused dolu paint'i bu nedenle "outer interpolate(zoom) → inner
+// data-driven case stops" desenine çevrildi: zoom interpolation top-
+// level kalır, her stop'un output'u kendi içinde focused/non-focused
+// arası ayrım yapar. Sonuç matematiksel olarak eskisiyle aynı
+// (10→3/2, 14→6/4, 18→9/6).
 export function buildRouteLinePaint(focused: readonly string[] | null = null) {
   if (focused === null || focused.length === 0) {
     return {
@@ -43,18 +53,19 @@ export function buildRouteLinePaint(focused: readonly string[] | null = null) {
       ],
     } as const;
   }
+  const focusedCase = ['in', ['get', 'route_id'], ['literal', focused]] as const;
   return {
     'line-color': ['get', 'color'],
     'line-opacity': [
       'case',
-      ['in', ['get', 'route_id'], ['literal', focused]], 1.0,
+      focusedCase, 1.0,
       0.2,
     ],
     'line-width': [
-      'case',
-      ['in', ['get', 'route_id'], ['literal', focused]],
-      ['interpolate', ['linear'], ['zoom'], 10, 3, 14, 6, 18, 9],
-      ['interpolate', ['linear'], ['zoom'], 10, 2, 14, 4, 18, 6],
+      'interpolate', ['linear'], ['zoom'],
+      10, ['case', focusedCase, 3, 2],
+      14, ['case', focusedCase, 6, 4],
+      18, ['case', focusedCase, 9, 6],
     ],
   } as const;
 }
