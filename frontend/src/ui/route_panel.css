@@ -343,6 +343,44 @@
   margin-left: 4px;
 }
 
+/* KM5-e.2: bus + metrobüs toggle satırları. Hat-bazlı liste yerine iki
+   sabit, bağımsız toggle (Spec §3.3). Mode group'larından sonra ayrı
+   section olarak render edilir; vehicle sayıları snapshot push'unda
+   anlık güncellenir. */
+.route-panel__iett-bus-toggles {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.route-panel__bus-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.route-panel__bus-toggle:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.route-panel__bus-toggle-label {
+  font-size: 13px;
+  color: #e5e7eb;
+  flex: 1;
+}
+
+.route-panel__bus-toggle-count {
+  font-size: 11px;
+  color: #9ca3af;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Vehicle popup (alt-iş g madde 5) — MapLibre default popup stili
    üzerine küçük yapısal düzenleme. MapLibre body'ye render eder,
    route-panel scope dışı ama tek CSS dosyasında tutuyoruz. */

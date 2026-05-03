@@ -20,6 +20,9 @@ export interface InterpolatedVehicle {
   lat: number;
   lon: number;
   route_id: string | null;
+  // KM5-e.2: backend'den gelen is_metrobus snapshot.push üzerinden
+  // taşınır, fleet_layer paint expression antrasit/sarı ayrımı yapar.
+  is_metrobus?: boolean;
 }
 
 interface ParsedSnapshot {
@@ -61,9 +64,29 @@ export class SnapshotStore {
     for (const [id, t1Vehicle] of this.t1.vehicles) {
       const t0Vehicle = this.t0.vehicles.get(id) ?? t1Vehicle;
       const pos = interpolatePosition(id, t0Vehicle, t1Vehicle, alpha);
-      out.push({ id, lat: pos.lat, lon: pos.lon, route_id: t1Vehicle.route_id });
+      out.push({
+        id,
+        lat: pos.lat,
+        lon: pos.lon,
+        route_id: t1Vehicle.route_id,
+        is_metrobus: t1Vehicle.is_metrobus,
+      });
     }
     return out;
+  }
+
+  // KM5-e.2: panel "İETT Otobüs (n)" / "Metrobüs (n)" sayaçları için.
+  // Latest snapshot üzerinden anlık sayım; interpolation aralığında
+  // değişmez (set push'ta güncellenir). Snapshot yoksa 0/0.
+  countByMetrobus(): { bus: number; metrobus: number } {
+    if (this.t1 === null) return { bus: 0, metrobus: 0 };
+    let bus = 0;
+    let metrobus = 0;
+    for (const v of this.t1.vehicles.values()) {
+      if (v.is_metrobus) metrobus++;
+      else bus++;
+    }
+    return { bus, metrobus };
   }
 
   latestTimestamp(): number | null {

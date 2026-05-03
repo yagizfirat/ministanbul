@@ -5,21 +5,23 @@
 //   - Tüm magic number'lar RoutePanelConfig içinde, override'lanabilir
 //   - DOM class isimli, CSS değişken kontrol noktalarıyla bağlı
 //   - State (RouteVisibility) view'dan ayrı; panel sadece view
-//   - 6 mod grup: metro/marmaray/tram/funicular/ferry/bus.
-//     Bus grubu lazy: body open olunca virtual_list mount.
+//   - 5 mod grup: metro/marmaray/tram/funicular/ferry. Bus listesi
+//     KM5-e.2'de iptal — yerine iki bağımsız toggle satırı (İETT Otobüs
+//     + Metrobüs) eklendi (Spec §3.3 v0.8.0). Mapping retire sonrası
+//     hat-bazlı kontrol anlamsız; vehicle.is_metrobus kategorize
+//     payload field'ına göre filter expression çalışır.
 //
 // Sınırlar:
 //   - Drag/star/favori yok (Faz 6 KM5)
 //   - Mobile bottom-sheet yok (Faz 6 KM2)
 //   - Hat tıklamayla focus mode yok (alt-iş g)
-//   - Search debounce yok (her keystroke ~2ms 9275 fuzzyMatch)
+//   - Search debounce yok (her keystroke ~2ms fuzzyMatch)
 
 import './route_panel.css';
 import type { RouteSummary } from '../data/api';
 import type { RouteVisibility } from '../state/route_visibility';
 import { fuzzyMatch, isMojibake } from '../util/turkish_normalize';
 import { getRouteColor } from '../styling/route_colors';
-import { createVirtualList, type VirtualListHandle } from './virtual_list';
 import {
   expandedKey,
   flattenRoutesForDisplay,
@@ -31,7 +33,6 @@ export interface RoutePanelConfig {
   position: 'left' | 'right';
   collapseWidth: string;
   itemHeight: number;
-  busVirtualizationOverscan: number;
 }
 
 const DEFAULT_CONFIG: RoutePanelConfig = {
@@ -39,7 +40,6 @@ const DEFAULT_CONFIG: RoutePanelConfig = {
   position: 'right',
   collapseWidth: '48px',
   itemHeight: 40,
-  busVirtualizationOverscan: 5,
 };
 
 interface ModeRow {
@@ -47,13 +47,14 @@ interface ModeRow {
   label: string;
 }
 
+// KM5-e.2: bus mode kaldırıldı — yerine iki sabit toggle satırı (İETT
+// Otobüs + Metrobüs) MODE_ORDER dışında render edilir.
 const MODE_ORDER: ReadonlyArray<ModeRow> = [
   { key: 'metro', label: 'Metro' },
   { key: 'marmaray', label: 'Marmaray' },
   { key: 'tram', label: 'Tramvay' },
   { key: 'funicular', label: 'Füniküler' },
   { key: 'ferry', label: 'Vapur' },
-  { key: 'bus', label: 'Otobüs' },
 ];
 
 interface ModeGroupRefs {
@@ -62,14 +63,16 @@ interface ModeGroupRefs {
   body: HTMLElement;
   countEl: HTMLElement;
   bulkBtn: HTMLElement;
-  // bus dışı modlar — flatten sonrası DOM'da satır referansları
+  // flatten sonrası DOM'da satır referansları
   // (single → route_id key, group-header → `header|${shortName}` key,
   //  group-variant → route_id key).
   itemByKey: Map<string, HTMLElement>;
-  busListContainer?: HTMLElement;
-  busLoadingEl?: HTMLElement;
-  busErrorEl?: HTMLElement;
-  virtualList?: VirtualListHandle<FlatItem>;
+}
+
+interface BusToggleRefs {
+  el: HTMLElement;
+  checkbox: HTMLInputElement;
+  countEl: HTMLElement;
 }
 
 export interface RoutePanelOptions {
@@ -82,6 +85,10 @@ export interface RoutePanelOptions {
   onRouteDoubleClick?: (routeId: string) => void;
   // f-polish-5: variant header çift tıkla → tüm variants union focus.
   onVariantGroupDoubleClick?: (routeIds: readonly string[]) => void;
+  // KM5-e.2: iki bağımsız toggle değiştiğinde main.ts MapLibre filter
+  // expression'ı günceller (buildFleetFilter). Default ikisi true.
+  onBusVisibilityChange?: (visible: boolean) => void;
+  onMetrobusVisibilityChange?: (visible: boolean) => void;
   config?: Partial<RoutePanelConfig>;
 }
 
@@ -91,8 +98,9 @@ const HINT_TEXT =
 export interface RoutePanelHandle {
   element: HTMLElement;
   setRoutes(routes: RouteSummary[]): void;
-  setBusLoading(loading: boolean): void;
-  setBusError(message: string | null): void;
+  // KM5-e.2: snapshot.push sonrası main.ts canlı sayım hesaplayıp gönderir.
+  // Snapshot yoksa {bus:0, metrobus:0}; bağlam: store.countByMetrobus().
+  setVehicleCounts(counts: { bus: number; metrobus: number }): void;
   destroy(): void;
 }
 
@@ -101,8 +109,12 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   let allRoutes = opts.routes;
   let searchQuery = '';
   let collapsed = false;
-  let busLoading = false;
-  let busError: string | null = null;
+  // KM5-e.2: iki bağımsız toggle, default ikisi açık. Mapping retire
+  // kararıyla (KM5-a) hat-bazlı kontrol İETT bus için anlamsız;
+  // is_metrobus payload field'ına göre fleet_layer filter güncellenir.
+  let busVisible = true;
+  let metrobusVisible = true;
+  let vehicleCounts = { bus: 0, metrobus: 0 };
   // Variant gruplarının açık/kapalı durumu — `${mode}|${shortName}` key.
   const expandedGroups = new Set<string>();
 
@@ -133,10 +145,13 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   collapseBtn.addEventListener('click', () => toggleCollapse());
   row1.append(title, hintIcon, collapseBtn);
 
+  // KM5-e.2: "121 hat görünür" sayacı kaldırıldı. KM5-a sonrası
+  // mapping kapalı + İETT bus için hat-bazlı kontrol yok; toplam sayım
+  // çelişkili (raylı/vapur 121 hat hat-bazlı, otobüs 2 toggle). Bulk
+  // action butonları sadece raylı/vapur (visibility scope'undaki hatlar)
+  // için anlamlı kalır.
   const row2 = document.createElement('div');
   row2.className = 'route-panel__header-row2';
-  const headerCount = document.createElement('span');
-  headerCount.className = 'route-panel__count';
   const bulkActions = document.createElement('div');
   bulkActions.className = 'route-panel__bulk-actions';
   const allBtn = document.createElement('button');
@@ -149,7 +164,7 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   resetBtn.textContent = 'Reset';
   resetBtn.addEventListener('click', () => onReset());
   bulkActions.append(allBtn, noneBtn, resetBtn);
-  row2.append(headerCount, bulkActions);
+  row2.append(bulkActions);
 
   header.append(row1, row2);
   root.appendChild(header);
@@ -184,14 +199,40 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
     groupsByMode.set(m.key, refs);
   }
 
+  // KM5-e.2: iki bağımsız toggle satırı (İETT Otobüs + Metrobüs).
+  // MODE_ORDER dışında, ayrı section olarak render edilir.
+  const busTogglesEl = document.createElement('div');
+  busTogglesEl.className = 'route-panel__iett-bus-toggles';
+  const busToggleRef = createBusToggleRow({
+    key: 'iett-bus',
+    label: 'İETT Otobüs',
+    iconColor: '#FFD200',
+    initialChecked: busVisible,
+    onChange: (v) => {
+      busVisible = v;
+      opts.onBusVisibilityChange?.(v);
+    },
+  });
+  const metrobusToggleRef = createBusToggleRow({
+    key: 'metrobus',
+    label: 'Metrobüs',
+    iconColor: '#3A3D40',
+    initialChecked: metrobusVisible,
+    onChange: (v) => {
+      metrobusVisible = v;
+      opts.onMetrobusVisibilityChange?.(v);
+    },
+  });
+  busTogglesEl.append(busToggleRef.el, metrobusToggleRef.el);
+  root.appendChild(busTogglesEl);
+
   // İlk render + RouteVisibility değişimlerine subscribe.
   rebuildItems();
   applySearch();
   syncCheckboxes();
-  updateHeaderCount();
+  refreshBusToggleCounts();
   opts.visibility.subscribe(() => {
     syncCheckboxes();
-    updateHeaderCount();
   });
 
   document.body.appendChild(root);
@@ -201,8 +242,8 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
     const el = document.createElement('div');
     el.className = 'route-panel__group';
     el.dataset.mode = m.key;
-    // Bus default kapalı (lazy mount); diğerleri default açık.
-    el.dataset.open = m.key === 'bus' ? 'false' : 'true';
+    // KM5-e.2: bus mode kaldırıldı; tüm modlar default açık.
+    el.dataset.open = 'true';
 
     const headerEl = document.createElement('div');
     headerEl.className = 'route-panel__group-header';
@@ -246,45 +287,16 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   }
 
   function rebuildItems(): void {
-    // Bus dışı modlar: DOM'da inline (flatten edilmiş). Bus: lazy mount.
+    // KM5-e.2: tüm modlar polyline-style (bus özel dal kaldırıldı).
     for (const [modeKey, refs] of groupsByMode) {
       refs.body.replaceChildren();
       refs.itemByKey.clear();
-      if (refs.virtualList) {
-        refs.virtualList.destroy();
-        refs.virtualList = undefined;
-      }
-      refs.busListContainer = undefined;
-      refs.busLoadingEl = undefined;
-      refs.busErrorEl = undefined;
-
-      if (modeKey === 'bus') {
-        const loadingEl = document.createElement('div');
-        loadingEl.className = 'route-panel__bus-loading';
-        loadingEl.textContent = 'Otobüs hatları yükleniyor…';
-        loadingEl.style.display = 'none';
-        const errorEl = document.createElement('div');
-        errorEl.className = 'route-panel__bus-error';
-        errorEl.style.display = 'none';
-        const listContainer = document.createElement('div');
-        listContainer.className = 'route-panel__bus-list';
-        refs.body.append(loadingEl, errorEl, listContainer);
-        refs.busLoadingEl = loadingEl;
-        refs.busErrorEl = errorEl;
-        refs.busListContainer = listContainer;
-        if (refs.el.dataset.open === 'true') {
-          mountBusVirtualList(refs);
-        }
-        applyBusStateVisibility(refs);
-      } else {
-        // Polyline modlar: flatten + DOM render
-        const modeRoutes = allRoutes.filter((r) => r.mode === modeKey);
-        const flatItems = flattenRoutesForDisplay(modeRoutes, expandedGroups, searchQuery);
-        for (const item of flatItems) {
-          const node = renderFlatItem(item);
-          refs.body.appendChild(node);
-          refs.itemByKey.set(flatItemKey(item), node);
-        }
+      const modeRoutes = allRoutes.filter((r) => r.mode === modeKey);
+      const flatItems = flattenRoutesForDisplay(modeRoutes, expandedGroups, searchQuery);
+      for (const item of flatItems) {
+        const node = renderFlatItem(item);
+        refs.body.appendChild(node);
+        refs.itemByKey.set(flatItemKey(item), node);
       }
     }
     updateGroupCounts();
@@ -293,22 +305,6 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   function flatItemKey(item: FlatItem): string {
     if (item.kind === 'group-header') return `header|${item.mode}|${item.shortName}`;
     return item.route.route_id;
-  }
-
-  function mountBusVirtualList(refs: ModeGroupRefs): void {
-    if (refs.virtualList || !refs.busListContainer) return;
-    refs.virtualList = createVirtualList({
-      container: refs.busListContainer,
-      items: currentBusFlatItems(),
-      itemHeight: config.itemHeight,
-      overscan: config.busVirtualizationOverscan,
-      renderItem: (item) => renderFlatItem(item),
-    });
-  }
-
-  function currentBusFlatItems(): FlatItem[] {
-    const buses = allRoutes.filter((r) => r.mode === 'bus');
-    return flattenRoutesForDisplay(buses, expandedGroups, searchQuery);
   }
 
   function renderFlatItem(item: FlatItem): HTMLElement {
@@ -459,14 +455,7 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
 
   function applySearch(): void {
     // Search state değişti — tüm bodyleri yeniden flatten + DOM rebuild.
-    // (Bus için virtual_list.setItems yeni flatItems alır.)
     for (const [modeKey, refs] of groupsByMode) {
-      if (modeKey === 'bus') {
-        if (refs.virtualList) {
-          refs.virtualList.setItems(currentBusFlatItems());
-        }
-        continue;
-      }
       refs.body.replaceChildren();
       refs.itemByKey.clear();
       const modeRoutes = allRoutes.filter((r) => r.mode === modeKey);
@@ -488,11 +477,7 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   }
 
   function syncCheckboxes(): void {
-    for (const [modeKey, refs] of groupsByMode) {
-      if (modeKey === 'bus') {
-        if (refs.virtualList) refs.virtualList.setItems(currentBusFlatItems());
-        continue;
-      }
+    for (const [, refs] of groupsByMode) {
       // Polyline modları: variant header indeterminate state ve item
       // checkbox'ları güncellenir. flat list küçük (≤30) — refs.body
       // child'larını tara.
@@ -532,19 +517,11 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
     }
   }
 
-  function updateHeaderCount(): void {
-    const visibleCount = opts.visibility.getVisible().size;
-    headerCount.textContent = `${visibleCount} hat görünür`;
-  }
-
   function toggleGroupOpen(modeKey: string): void {
     const refs = groupsByMode.get(modeKey);
     if (!refs) return;
     const wasOpen = refs.el.dataset.open === 'true';
     refs.el.dataset.open = wasOpen ? 'false' : 'true';
-    if (modeKey === 'bus' && !wasOpen) {
-      mountBusVirtualList(refs);
-    }
   }
 
   function onBulkToggle(modeKey: string): void {
@@ -580,12 +557,49 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
         : '>';
   }
 
-  function applyBusStateVisibility(refs: ModeGroupRefs): void {
-    if (!refs.busLoadingEl || !refs.busErrorEl || !refs.busListContainer) return;
-    refs.busLoadingEl.style.display = busLoading ? 'block' : 'none';
-    refs.busErrorEl.style.display = busError ? 'block' : 'none';
-    refs.busErrorEl.textContent = busError ?? '';
-    refs.busListContainer.style.display = busLoading || busError ? 'none' : 'block';
+  // KM5-e.2: iki bağımsız toggle satırı factory.
+  function createBusToggleRow(rowOpts: {
+    key: string;
+    label: string;
+    iconColor: string;
+    initialChecked: boolean;
+    onChange: (visible: boolean) => void;
+  }): BusToggleRefs {
+    const el = document.createElement('div');
+    el.className = 'route-panel__bus-toggle';
+    el.dataset.key = rowOpts.key;
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = rowOpts.initialChecked;
+    checkbox.addEventListener('click', (e) => e.stopPropagation());
+    checkbox.addEventListener('change', () => {
+      rowOpts.onChange(checkbox.checked);
+    });
+
+    const dot = document.createElement('span');
+    dot.className = 'route-panel__route-color-dot';
+    dot.style.background = rowOpts.iconColor;
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'route-panel__bus-toggle-label';
+    labelEl.textContent = rowOpts.label;
+
+    const countEl = document.createElement('span');
+    countEl.className = 'route-panel__bus-toggle-count';
+    countEl.textContent = '(0 araç)';
+
+    el.append(checkbox, dot, labelEl, countEl);
+    el.addEventListener('click', () => {
+      checkbox.checked = !checkbox.checked;
+      rowOpts.onChange(checkbox.checked);
+    });
+    return { el, checkbox, countEl };
+  }
+
+  function refreshBusToggleCounts(): void {
+    busToggleRef.countEl.textContent = `(${vehicleCounts.bus} araç)`;
+    metrobusToggleRef.countEl.textContent = `(${vehicleCounts.metrobus} araç)`;
   }
 
   // ── public API ────────────────────────────────────────────────────
@@ -597,25 +611,14 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
       rebuildItems();
       applySearch();
       syncCheckboxes();
-      updateHeaderCount();
     },
 
-    setBusLoading(loading: boolean): void {
-      busLoading = loading;
-      const refs = groupsByMode.get('bus');
-      if (refs) applyBusStateVisibility(refs);
-    },
-
-    setBusError(message: string | null): void {
-      busError = message;
-      const refs = groupsByMode.get('bus');
-      if (refs) applyBusStateVisibility(refs);
+    setVehicleCounts(counts: { bus: number; metrobus: number }): void {
+      vehicleCounts = counts;
+      refreshBusToggleCounts();
     },
 
     destroy(): void {
-      for (const refs of groupsByMode.values()) {
-        if (refs.virtualList) refs.virtualList.destroy();
-      }
       root.remove();
     },
   };

@@ -9,7 +9,13 @@ const LAYER_ID = 'fleet-circles';
 // Mapped/unmapped ayrımı renk yerine border ile (mavi/kırmızı kaldırıldı —
 // kırmızı "hata" çağrışımı yapıyordu, oysa unmapped doğal bir durum,
 // spec §A.13/A.14).
+//
+// KM5-e.2 (Spec §3.3): is_metrobus=true → antrasit gri (kurumsal metrobüs
+// hattı görsel kimliği). Backend mapping cache lookup'ı %22 yanlış
+// kategori riskiyle gelir (Rapor 12); Yağız bilinçli tolerans (rengin
+// yokluğu = %0 bilgi, varlığı = %78 doğru, B yolundan dönüş kararı).
 const COLOR_FILL = MODE_FALLBACK_COLORS.bus;
+const COLOR_FILL_METROBUS = '#3A3D40';   // antrasit
 const COLOR_STROKE_MAPPED = '#3a2a00'; // koyu kahve — sarının HSL koyu tonu
 const STROKE_WIDTH_MAPPED = 1.5;
 const STROKE_WIDTH_UNMAPPED = 0;
@@ -19,6 +25,9 @@ interface FleetFeatureProperties {
   // route_id is set ONLY for mapped vehicles. The paint expression
   // uses ['has', 'route_id'] to draw the border.
   route_id?: string;
+  // KM5-e.2: kategori bayrağı; paint case expression'ında antrasit/sarı
+  // ayrımı + filter expression'ında bağımsız toggle için kullanılır.
+  is_metrobus?: boolean;
 }
 
 interface FleetFeature {
@@ -44,7 +53,14 @@ export function buildFleetPaint(focused: readonly string[] | null = null) {
       10, 3,
       14, 6,
     ],
-    'circle-color': COLOR_FILL,
+    // KM5-e.2: data-driven case — is_metrobus=true → antrasit, else sarı.
+    // Field eksik (eski snapshot, defansif) ['get', 'is_metrobus'] undefined
+    // dönerse case false'a düşer → sarı default.
+    'circle-color': [
+      'case',
+      ['==', ['get', 'is_metrobus'], true], COLOR_FILL_METROBUS,
+      COLOR_FILL,
+    ],
     'circle-stroke-width': [
       'case',
       ['has', 'route_id'], STROKE_WIDTH_MAPPED,
@@ -68,6 +84,21 @@ export function buildFleetPaint(focused: readonly string[] | null = null) {
   } as const;
 }
 
+// KM5-e.2: filtre paneli toggle'larına bağlı MapLibre filter expression.
+// İki bağımsız boolean: is_metrobus=true vehicle'lar metrobusVisible'a,
+// is_metrobus=false (veya yok) vehicle'lar busVisible'a bakar. İkisi de
+// false → tüm İETT bus gizli; ikisi true → hepsi görünür (default).
+export function buildFleetFilter(
+  busVisible: boolean,
+  metrobusVisible: boolean,
+): unknown {
+  return [
+    'case',
+    ['==', ['get', 'is_metrobus'], true], metrobusVisible,
+    busVisible,
+  ];
+}
+
 export function initFleetLayer(map: MapLibreMap): void {
   map.addSource(SOURCE_ID, { type: 'geojson', data: EMPTY_FC });
   map.addLayer({
@@ -86,6 +117,7 @@ export function updateFleet(map: MapLibreMap, positions: InterpolatedVehicle[]):
     const p = positions[i];
     const props: FleetFeatureProperties = { id: p.id };
     if (p.route_id !== null) props.route_id = p.route_id;
+    if (p.is_metrobus) props.is_metrobus = true;
     features[i] = {
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [p.lon, p.lat] },

@@ -4,13 +4,12 @@ import { connectWebSocket, type VehicleSnapshot } from './data/websocket';
 import {
   fetchActiveRoutes,
   fetchActiveTrips,
-  fetchAllBusRoutes,
   fetchLiveVehicles,
   type RouteSummary,
 } from './data/api';
 import { SnapshotStore } from './state/snapshot_store';
 import { RouteStore } from './state/route_store';
-import { buildFleetPaint, initFleetLayer, updateFleet } from './render/fleet_layer';
+import { buildFleetFilter, buildFleetPaint, initFleetLayer, updateFleet } from './render/fleet_layer';
 import { initBuildingsLayer } from './render/buildings_layer';
 import {
   buildRouteLinePaint,
@@ -203,12 +202,32 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
   // 5 polyline modu (subway+tram+funicular+marmaray) + ferry = default visible.
   // Bus default hidden — lazy fetch sonrası expandTotalCount.
   routeVisibility = new RouteVisibility(initialIds, initialIds);
+  // KM5-e.2: iki bağımsız toggle state, default ikisi açık.
+  // Panel callback'leri burada state'i günceller ve fleet_layer
+  // filter expression'ını yeniden çizer.
+  let busVisible = true;
+  let metrobusVisible = true;
+  function applyFleetVisibilityFilter(): void {
+    if (!map.getLayer('fleet-circles')) return;
+    map.setFilter(
+      'fleet-circles',
+      buildFleetFilter(busVisible, metrobusVisible) as never,
+    );
+  }
   routePanel = createRoutePanel({
     visibility: routeVisibility,
     routes: initialRoutes,
     defaultVisibleIds: initialIds, // Reset hedefi (polyline + ferry)
     onRouteDoubleClick: (routeId) => focusAndZoom([routeId]),
     onVariantGroupDoubleClick: (routeIds) => focusAndZoom(routeIds),
+    onBusVisibilityChange: (v) => {
+      busVisible = v;
+      applyFleetVisibilityFilter();
+    },
+    onMetrobusVisibilityChange: (v) => {
+      metrobusVisible = v;
+      applyFleetVisibilityFilter();
+    },
   });
 
   function focusAndZoom(routeIds: readonly string[]): void {
@@ -282,20 +301,11 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
   routeVisibility.subscribe(applyFilters);
   applyFilters();
 
-  // Bus lazy fetch (~9275 hat, page_size=10000 tek seferde).
-  routePanel.setBusLoading(true);
-  fetchAllBusRoutes()
-    .then((busRoutes) => {
-      console.log(`[bus] loaded ${busRoutes.length} routes`);
-      routeStore.registerSummaries(busRoutes);
-      routeVisibility?.expandTotalCount(busRoutes.length);
-      routePanel?.setRoutes([...initialRoutes, ...busRoutes]);
-    })
-    .catch((err) => {
-      console.warn('[bus] fetch failed', err);
-      routePanel?.setBusError('Otobüs hatları yüklenemedi');
-    })
-    .finally(() => routePanel?.setBusLoading(false));
+  // KM5-e.2: bus listesi panel'den iptal — fetchAllBusRoutes / virtual
+  // list / setBusLoading akışı kaldırıldı. Vehicle.is_metrobus payload
+  // field'ı kategorize için yeterli, hat-bazlı listeye gerek yok.
+  // Otobüs / metrobüs sayım initial 0; render frame'inde snapshot
+  // değişimleriyle güncellenir.
 }
 
 function startRenderLoop(): void {
@@ -347,6 +357,10 @@ function startRealtime(): void {
   function pushSnapshot(snap: VehicleSnapshot): void {
     store.push(snap);
     indicator.setTimestamp(Date.parse(snap.timestamp));
+    // KM5-e.2: panel "İETT Otobüs (n) / Metrobüs (n)" toggle sayaçları
+    // her snapshot'ta yenilenir. Interpolation aralığında sayım değişmez,
+    // sadece push'ta — düşük frekans (60sn).
+    routePanel?.setVehicleCounts(store.countByMetrobus());
   }
 
   async function pollOnce(): Promise<void> {

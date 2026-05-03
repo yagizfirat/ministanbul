@@ -8,7 +8,15 @@ import type { VehicleSnapshot } from '../data/websocket';
 interface MockSnapshot {
   timestamp: string;
   vehicle_count: number;
-  vehicles: Array<{ id: string; lat: number; lon: number; bearing: number | null; speed: number; route_id: string | null }>;
+  vehicles: Array<{
+    id: string;
+    lat: number;
+    lon: number;
+    bearing: number | null;
+    speed: number;
+    route_id: string | null;
+    is_metrobus?: boolean;
+  }>;
 }
 
 function snap(vehicles: MockSnapshot['vehicles']): MockSnapshot {
@@ -86,5 +94,41 @@ describe('SnapshotStore.getVehicleBBoxForRoute', () => {
     );
     const bbox = s.getVehicleBBoxForRoute('iett:29B');
     expect(bbox).toEqual([29.0, 41.0, 29.0, 41.0]);
+  });
+});
+
+// KM5-e.2: backend is_metrobus payload field interpolation pipeline
+// boyunca taşınır; fleet_layer paint expression bu field'ı okur.
+describe('SnapshotStore.is_metrobus pass-through (KM5-e.2)', () => {
+  it('forwards is_metrobus from snapshot to InterpolatedVehicle', () => {
+    const s = new SnapshotStore();
+    s.push(
+      snap([
+        { id: 'm1', lat: 41.0, lon: 29.0, bearing: null, speed: 0, route_id: null, is_metrobus: true },
+        { id: 'b1', lat: 41.0, lon: 29.0, bearing: null, speed: 0, route_id: null, is_metrobus: false },
+      ]) as unknown as VehicleSnapshot,
+    );
+    const out = s.getInterpolated(performance.now());
+    const byId = new Map(out.map((v) => [v.id, v]));
+    expect(byId.get('m1')?.is_metrobus).toBe(true);
+    expect(byId.get('b1')?.is_metrobus).toBe(false);
+  });
+
+  it('countByMetrobus splits bus vs metrobus from latest snapshot', () => {
+    const s = new SnapshotStore();
+    s.push(
+      snap([
+        { id: '1', lat: 41, lon: 29, bearing: null, speed: 0, route_id: null, is_metrobus: true },
+        { id: '2', lat: 41, lon: 29, bearing: null, speed: 0, route_id: null, is_metrobus: true },
+        { id: '3', lat: 41, lon: 29, bearing: null, speed: 0, route_id: null, is_metrobus: false },
+        { id: '4', lat: 41, lon: 29, bearing: null, speed: 0, route_id: null }, // missing → bus
+      ]) as unknown as VehicleSnapshot,
+    );
+    expect(s.countByMetrobus()).toEqual({ bus: 2, metrobus: 2 });
+  });
+
+  it('countByMetrobus returns {0,0} when no snapshot has been pushed', () => {
+    const s = new SnapshotStore();
+    expect(s.countByMetrobus()).toEqual({ bus: 0, metrobus: 0 });
   });
 });
