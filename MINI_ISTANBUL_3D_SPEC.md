@@ -143,7 +143,7 @@ Kullanıcı müdahalesi olmadan haritada görünen, kapasitesi yönetilebilir ve
 
 **Toplam sürekli görünür:** 131 unique short_name. Fiziksel dünya karşılığı ~131 polyline, ~500-800 hareketli araç/obje anlık ekranda (metrobüs canlı filosu + raylı/vapur aktif trip simülasyonları).
 
-**v0.8.0 güncellemesi (2026-05-03, Rapor 12 ile revize):** Yukarıdaki tabloda **Metrobüs** kategorisinin "sürekli görünür, antrasit gri renk" olarak konumlandığı korunur; ancak "hat-bazlı" ve "sonraki durak özellikli" nitelikleri **kaldırıldı**. Faz 5.5 patch turundan sonra İETT bus mapping yapısal olarak terk edildi (Ek A.18, %53 yanlış). İlk hipotez "metrobüs koridoru sabit, mapping yapısal olarak doğru olmalı" idi; ölçüldü (Ek A.18 Rapor 12, 2026-05-03): metrobüs için %22 yanlış, p90=8273m, dağılım bimodal. Hat etiketi UX olarak savunulamaz (vehicle bazen 8 km uzakta gösteriliyor). Sonuç: **metrobüs de kütle gösterime dahil**, mapping kapalı. Whitelist tamamen kalmadı — sadece **kategorize için** kullanılıyor: frontend antrasit gri renkle metrobüs vehicle'larını sarı kütleden ayırıyor (kullanıcı haritada koridor üstündeki vehicle'ları "bunlar metrobüs" diye gözle tanır), ama popup minimal ve hat etiketi yok. Davranış normal İETT bus ile aynı, **fark sadece görsel kategori**.
+**v0.8.0 güncellemesi (2026-05-03, Rapor 12 + KM5-d/e tartışması ile üçüncü revize):** Yukarıdaki tabloda **Metrobüs** kategorisinin "sürekli görünür, antrasit gri renk" konumu korunur; ancak "hat-bazlı" ve "sonraki durak özellikli" nitelikleri **kaldırıldı**. Faz 5.5 patch turundan sonra İETT bus mapping yapısal olarak terk edildi (Ek A.18, %53 yanlış). İlk hipotez "metrobüs koridoru sabit, mapping yapısal olarak doğru olmalı" idi; ölçüldü (Ek A.18 Rapor 12, 2026-05-03): metrobüs için %22 yanlış, p90=8273m, dağılım bimodal. KM5-d brief'inde önce "renk ayrımı iptal, metrobüs kütleye dahil" (B yolu) kararı verildi — %22 yanlış kategori UX olarak savunulamaz argümanıyla. KM5-e tartışmasında karar revize edildi: **rengin yokluğu = %0 bilgi, varlığı (yanlışlık olsa bile) = %78 doğru**; %22 yanlış kategori riski Yağız tarafından bilinçli tolere edildi (Yağız + Claude üç tur tartışma, KM5-e turunda kesin). Sonuç: **metrobüs ayrı görsel kategori** — antrasit gri renk + filtre panelinde ayrı toggle. Davranış normal İETT bus ile aynı (mapping route_id stampleme kapalı, popup minimal, sonraki durak yok), tek fark görsel + filtre ayrımı. M4898 / 34BZ / 11km gibi uzak-kuyruk vakalarda kullanıcı antrasit gri bir vehicle'ı "metrobüs" diye okuyabilir, gerçekte koridorun dışında olabilir — bu UX riski açıkça kabul edildi.
 
 **Feed eksikleri (gözlemden):** T5 tramvay ve F4 füniküler İstanbul'da gerçekten servis veriyor ancak İBB GTFS feed'inde şu anda yoklar. Faz 1 import'unda DB'ye girmediler. Spec bu iki hattı "dahil ama henüz feed'de yok" olarak belgeliyor — İBB feed'i güncellenirse otomatik dahil olacaklar, kod tarafında özel bir iş gerekmez.
 
@@ -177,20 +177,20 @@ Whitelist neden regex değil: `^34[A-Z]*$` pattern'i `340`, `341` gibi normal İ
 3. Kullanıcı hat seçer → haritaya polyline + araçları eklenir, WebSocket subscribe gönderilir
 4. Seçimden çıkarır → haritadan temizlenir
 
-**v0.8.0 itibariyle UI modeli (Ek A.18'deki mapping yapısal teşhis sonrası):**
+**v0.8.0 itibariyle UI modeli (Ek A.18 + KM5 zinciri sonrası):**
 
-Otobüsler **kütle olarak** gösterilir; hat-bazlı filtreleme ve hat-bazlı subscribe normal otobüs için **kapatıldı**:
+Otobüsler **kütle olarak** gösterilir, ama metrobüs ayrı bir görsel + filtre kategorisi olarak ayrılır:
 
-1. Açılışta tüm aktif İETT otobüsleri (~6.900 araç) tek renkte (sarı kütle) haritada görünür
-2. Filtre paneli normal otobüs için sadece tek satır toggle: "🟡 İETT Otobüs (n araç)" — hep birlikte göster/gizle
-3. Bir otobüse tıklandığında popup minimal: "İETT Otobüs, KapiNo {kapi_no}". Hat satırı gösterilmez (yanlış olduğu için, Ek A.18)
-4. Sonraki durak özelliği (§5.8) **otobüs için yok** — vehicle ↔ trip eşleştirmesi mapping üzerinden gelirdi, mapping kapalı
+1. Açılışta tüm aktif İETT otobüsleri (~6.900 araç) **sarı** (`#FFD200` kurumsal İETT), metrobüs vehicle'ları **antrasit gri** (`#3A3D40`) haritada görünür. Renk ayrımı `vehicle.is_metrobus` payload field'ından gelir (KM5-e.1: mapping cache lookup → SHATKODU → METROBUS_SHORT_NAMES).
+2. Filtre paneli **iki bağımsız toggle**: "🟡 İETT Otobüs (n araç)" + "⚫ Metrobüs (n araç)". Default ikisi açık. Bağımsız: sadece metrobüs gizlenebilir, sadece otobüs gizlenebilir, ikisi de gizlenebilir. MapLibre filter expression `case ['get', 'is_metrobus'] → metrobusVisible : busVisible`.
+3. Bir araca tıklandığında popup minimal — otobüs ve metrobüs ayrımsız: "İETT Otobüs · KapiNo {kapi_no}". Hat satırı gösterilmez (yanlış olduğu için, Ek A.18). KM5-d B yolu kararı: metrobüs label ayrımı popup'ta yok, sadece renk + toggle.
+4. Sonraki durak özelliği (§5.8) **otobüs ve metrobüs için yok** — vehicle ↔ trip eşleştirmesi mapping üzerinden gelirdi, mapping route_id stampleme kapalı.
 
 **Neden kütle?** Faz 5.5 patch turunda mapping katmanının yapısal olarak %53'ünün yanlış olduğu kanıtlandı (Ek A.18): İBB SOAP arşivi vehicle ↔ HatKodu eşleşmesini 1 günlük lag ile veriyor, gerçek günün servisini yansıtmıyor. Hat-bazlı UI bu kanıt karşısında kullanıcıya yanlış bilgi verir. Kütle gösterim **dürüst**: "İstanbul'da 6.900 İETT otobüsü canlı hareket halinde" doğru bilgi, "B-184 = 98B" yanlış bilgi. Mini Tokyo 3D'nin orijinal "şehrin nabzı" felsefesiyle de örtüşür.
 
-**Metrobüs ayrı görsel kategori (kütleye dahil, davranış aynı):** Whitelist'teki 10 metrobüs hattı (§3.3 sürekli görünür tablosunda, agency=İETT, route_type=3) bu kütle gruba **dahildir** — mapping kapalı, popup minimal, hat-bazlı seçim yok. Tek fark görsel: antrasit gri renk (sarı kütleden ayırt etmek için). Popup'ta "Metrobüs, KapiNo {kapi_no}" — hat etiketi gösterilmez. Sonraki durak özelliği (§5.8) metrobüs için de **yok**. Bu karar Ek A.18 Rapor 12 ölçümü sonrası alındı (metrobüs %22 yanlış mapping, p90=8273m): koridor sabitliği varsayımı kısmen geçerli (median 96m iyi) ama uzak kuyruk normal otobüsünkiyle aynı mertebede (8 km), hat etiketi UX olarak savunulamaz. Görsel ayrım yapısal değil estetik — kullanıcı koridor üstündeki gri noktaları "bunlar metrobüs" diye gözle ayırt edebilir.
+**Metrobüs ayrı görsel kategori (ayrı toggle, davranış aynı):** Whitelist'teki 10 metrobüs hattı (§3.3 sürekli görünür tablosunda, agency=İETT, route_type=3) kütle ile aynı sözleşmeyi paylaşır — mapping route_id stampleme kapalı, popup minimal "İETT Otobüs · KapiNo X" (label ayrımı yok), hat-bazlı seçim yok. **Fark sadece renk + filtre toggle**: antrasit gri + bağımsız visibility. Bu karar KM5-d B yolundan dönüş ile verildi (KM5-e tartışması): rengin yokluğu = %0 bilgi, varlığı (Rapor 12 ölçümüne göre %78 doğru) = anlamlı sinyal. %22 yanlış kategori (M4898 / 34BZ / 11km gibi uzak-kuyruk vakaları) bilinçli tolere edildi.
 
-**Mapping katmanı geçici hibernation'da:** Settings flag `IETT_BUS_MAPPING_ENABLED = False` ile devre dışı. Kod silinmedi, gelecekte İBB veri kalitesi düzelirse veya GTFS-RT feed'i yayınlanırsa flag ile aktive edilebilir. Drift filter (5j-ii) tüm İETT bus için anlamsızlaştı, devre dışı (metrobüs dahil — Rapor 12).
+**Mapping katmanı hibernation'da, ama categorize lookup açık:** Settings flag `IETT_BUS_MAPPING_ENABLED = False` route_id stampleme'yi kapatır (KM5-a). Ama mapping cache (`iett:mapping:current`) hâlâ günlük refresh ile güncellenir ve `is_metrobus` categorize için kullanılır (KM5-e.1, _resolve_active_hat helper, flag-açık + flag-kapalı path'lerin paylaştığı bisect). **Semantic ayrım: "flag kapalı = route_id stampleme kapalı, mapping cache lookup categorize için açık"**. Drift filter (5j-ii) tüm İETT bus için anlamsızlaştı, doğal devre dışı (route_id None ⇒ stale check skip). Hibernation: gelecekte İBB veri kalitesi düzelirse veya GTFS-RT feed'i yayınlanırsa flag ile route_id stampleme'yi aktive et — tek satırlık reaktivasyon, kod silinmedi.
 
 #### Kapsam dışı (MVP'ye dahil değil)
 
@@ -609,7 +609,9 @@ server: {
 
 ### 5.7. Hat-Merkezli Pipeline
 
-**v0.8.0 değişikliği (2026-05-03, Rapor 12 ile revize):** Bu bölüm Faz 2'de (2026-04-24, v0.7.x) tasarlandı, mapping katmanı pipeline'ın merkeziydi. Faz 5.5 patch turunda yapılan ampirik ölçümler (Ek A.18) mevcut SOAP arşivi mapping'inin **%53 yanlış** olduğunu, yapısal arşiv stale'liğinin sistemik olduğunu ve İBB tarafında alternatif bir canlı veri kaynağının olmadığını kanıtladı. İlk hipotez metrobüs whitelist (10 hat) için exception yapmaktı — koridor sabitliği nedeniyle mapping doğru olmalıydı. Ek A.18 Rapor 12 ölçümü (2026-05-03) bu hipotezi yalanladı (%22 yanlış, p90=8273m, dağılım bimodal). Sonuç: **tüm İETT otobüsleri (normal + metrobüs) için mapping pipeline'ı devre dışı bırakıldı.** Aşağıdaki mapping mantığı **raylı sistem + vapur (Faz 5'te ayrıca işlenen kategoriler)** için aktif kalır; tüm İETT bus hatları (~1.080 normal + 10 metrobüs) kütle olarak (route_id=None) yayınlanır. Settings flag: `IETT_BUS_MAPPING_ENABLED = False` (default, tek flag, metrobüs istisnası yok — Rapor 12). Pipeline kodu silinmedi, hibernation'da; gelecekte İBB veri kalitesi düzelirse veya GTFS-RT feed'i açılırsa flag ile yeniden aktive edilebilir.
+**v0.8.0 değişikliği (2026-05-03, Rapor 12 + KM5-d/e ile üçüncü revize):** Bu bölüm Faz 2'de (2026-04-24, v0.7.x) tasarlandı, mapping katmanı pipeline'ın merkeziydi. Faz 5.5 patch turunda yapılan ampirik ölçümler (Ek A.18) mevcut SOAP arşivi mapping'inin **%53 yanlış** olduğunu, yapısal arşiv stale'liğinin sistemik olduğunu ve İBB tarafında alternatif bir canlı veri kaynağının olmadığını kanıtladı. İlk hipotez metrobüs whitelist (10 hat) için exception yapmaktı — koridor sabitliği nedeniyle mapping doğru olmalıydı. Ek A.18 Rapor 12 ölçümü (2026-05-03) bu hipotezi yalanladı (%22 yanlış, p90=8273m, dağılım bimodal). Sonuç: **`IETT_BUS_MAPPING_ENABLED = False` (default, tek flag, metrobüs istisnası yok)** ile tüm İETT otobüslerinin (normal + metrobüs) `route_id` stampleme'si kapatıldı. Aşağıdaki mapping mantığı **raylı sistem + vapur** için aktif kalır; tüm İETT bus hatları (~1.080 normal + 10 metrobüs) `route_id=None` yayınlanır.
+
+**KM5-e.1 semantic ayrımı:** Flag `route_id` stampleme'yi kapatır, ama mapping cache (`iett:mapping:current`) hâlâ günlük refresh ile dolar ve `is_metrobus` categorize için lookup edilir. `_resolve_active_hat` helper (apps/realtime/enrich.py) flag-açık + flag-kapalı path'lerinin paylaştığı bisect; flag-açık path'te SHATKODU → route_id PK + is_metrobus üretir, flag-kapalı path'te sadece is_metrobus üretir. Anlamsal: **"flag kapalı = route_id stampleme kapalı, mapping cache lookup categorize için açık"**. Frontend `vehicle.is_metrobus` field'ı ile metrobüs antrasit gri rendering + ayrı toggle ayrımı yapar (§3.3). Pipeline kodu silinmedi, hibernation'da; flag ile yeniden aktive edilirse `route_id` stampleme + drift filter + spatial check zinciri eskisi gibi çalışır (test_enrich.py'da test_flag_enabled_also_sets_is_metrobus garantisi).
 
 UI modeli hat-merkezli olduğu için (§3.3), pipeline'ın son aşaması veriyi araç bazlıdan hat bazlına dönüştürür. Upstream'den gelen ham veri hâlâ araç granülerliğinde (her araç ayrı kayıt) — bu değişmedi, değişmiyor. Değişen tek şey fetch task'ının son adımı.
 
@@ -653,7 +655,9 @@ Günlük refresh task (`refresh_iett_mapping`) `GetIettArsivGorev_json(yesterday
 }
 ```
 
-`hat` ve `active_routes` değerleri `SHATKODU`'dan gelir ve `short_name` namespace'iyle eşleştirilir. `routes_by_mode` kategorileri §3.3'teki tespit mekanizmasına göre hesaplanır (metrobüs whitelist match'i — sadece kategorize için, mapping davranışı normal bus ile aynı; kalan İETT hatları "bus"). v0.8.0'da `IETT_BUS_MAPPING_ENABLED=False` olduğundan bu kategoriler runtime'da boş bir cache'e işaret eder; pipeline reaktive edilirse otomatik dolar. Raylı sistem ve vapur kategorileri İETT feed'inde olmadığından bu mapping'de görünmez — onların routes listesi GTFS DB'den doğrudan okunur (`/api/routes/active/` endpoint'i iki kaynağı birleştirir).
+`hat` ve `active_routes` değerleri `SHATKODU`'dan gelir ve `short_name` namespace'iyle eşleştirilir. `routes_by_mode` kategorileri §3.3'teki tespit mekanizmasına göre hesaplanır (metrobüs whitelist match — `settings.METROBUS_SHORT_NAMES`; kalan İETT hatları "bus"). v0.8.0'da mapping cache **dolu kalır** (refresh-iett-mapping beat task günlük yenileme + KM5-f startup warm-up hook); `IETT_BUS_MAPPING_ENABLED=False` olduğundan içerik `route_id` stampleme'sinde kullanılmaz, ancak `is_metrobus` categorize lookup'ı için aktif kullanılır (KM5-e.1). Raylı sistem ve vapur kategorileri İETT feed'inde olmadığından bu mapping'de görünmez — onların routes listesi GTFS DB'den doğrudan okunur (`/api/routes/active/` endpoint'i iki kaynağı birleştirir).
+
+**KM5-f mapping cache warm-up (startup hook):** Beat schedule `refresh-iett-mapping` cron `0 4 * * *` UTC. Fresh deployment / dev restart / Redis flush sonrası ilk doğal tetiklemeye kadar cache 24 saate kadar boş kalabilir; KM5-e.1'den itibaren `is_metrobus` categorize lookup'ı bu cache'e bağlı (KM5-a flag'tan bağımsız), boş cache → tüm vehicle'lar `is_metrobus=False` (kategorize sinyali kayıp). Fix: `apps/realtime/apps.py::RealtimeConfig.ready()` startup signal'inde `r.strlen("iett:mapping:current") > 0` ise no-op, boşsa `refresh_iett_mapping.apply()` ile sync refresh tetikler (Celery worker'a değil, in-process). Hata yutulur (try/except) — startup patlamamalı. Test runner (`pytest`) ve autoreload watcher (`RUN_MAIN=false`) skip — mock redis kullanan test'ler ve double-fire koruması.
 
 Tek key (~2-3 MB JSON), her fetch task'ında bir `GET` + bir parse, ~10-30ms overhead. Tüm fetch worker'ları aynı cache'i okur, `refresh_iett_mapping` task günde bir kez güncelleyip atomik `SET` yapar (tutarlılık sorunu yok).
 
@@ -695,28 +699,23 @@ vehicles:route:{short_name}` + `PUBLISH` kombinasyonu yerine tek `SET
 vehicles:all` + `channel_layer.group_send("vehicles_all", ...)` model
 kullanılıyor.
 
-Payload formatı (6c-i implementation, `apps.realtime.tasks.fetch_iett_positions`):
+Payload formatı (KM5-a + KM5-e.1 sonrası, `apps.realtime.tasks.fetch_iett_positions`):
 
 ```json
 {
   "type": "vehicles_all_update",
-  "timestamp": "2026-04-26T08:30:00Z",
+  "timestamp": "2026-05-03T08:30:00Z",
   "vehicle_count": 6911,
-  "mapped_count": 3320,
   "vehicles": [
     {"id": "C-231", "lat": 41.04, "lon": 29.10, "bearing": 87.5,
-     "speed": 24.0, "route_id": "29B"},
-    {"id": "C-232", "lat": 41.05, "lon": 29.11, "bearing": null,
-     "speed": null, "route_id": null}
+     "speed": 24.0, "route_id": null, "is_metrobus": false},
+    {"id": "M-3090", "lat": 40.99, "lon": 28.86, "bearing": null,
+     "speed": null, "route_id": null, "is_metrobus": true}
   ]
 }
 ```
 
-`route_id null` = hat bilinmiyor (mapping eksik). UX pivot gereği bu
-araçlar payload'da tutulur, frontend ham nokta olarak çizer, popup'ta
-"hat bilinmiyor" notu gösterir. `mapped_count` payload'daki `route_id
-!= null` vehicle sayısı, `vehicle_count` ise toplam — frontend HUD bu
-iki değerle "mapped/total" oranını gösterir.
+`route_id` v0.8.0'da tüm İETT bus için `null` (KM5-a, mapping retire). `is_metrobus` `mapping_cache_lookup(KapiNo, ts) in METROBUS_SHORT_NAMES` (KM5-e.1) — kategorize sinyali, frontend antrasit/sarı renk + filtre toggle ayrımı için. `mapped_count` field'ı payload'dan kaldırıldı (KM5-a) — flag kapalıyken tüm değerler `0` olurdu, frontend HUD yanıltıcı render üretirdi. Frontend `vehicles_all_update` üzerinden sayım yapar (`store.countByMetrobus()` → bus + metrobus ayrımı, panel toggle satırlarında "(n araç)").
 
 Hat-bazlı kanallar silinmedi — Faz 5'te metro/marmaray/vapur
 simülasyonu eklendiğinde geri gelecek. O zaman her mod için ayrı
@@ -744,41 +743,17 @@ Kullanıcı bir araca tıkladığında popup'ta sadece "şu an buradayım" deği
 | Tramvay (T1, T3, T4) | ✅ | Aynı |
 | Füniküler (F1, F2, F3) | ✅ | Aynı (kısa hatlar, çoğunlukla tek sonraki) |
 | Vapur | ✅ | İskele bazlı, "sonraki iskele 12 dk" formatı |
-| **Metrobüs (10 hat)** ve normal İETT otobüsü | ❌ | Mapping kapalı (Ek A.18 + Rapor 12); vehicle ↔ trip eşleşmesi yok |
+| **İETT Otobüs + Metrobüs** | ❌ | Mapping kapalı (Ek A.18 + Rapor 12); vehicle ↔ trip eşleşmesi yok. KM5-d B yolu kararıyla popup label ayrımı da yok (otobüs/metrobüs popup'ı aynı: "İETT Otobüs · KapiNo X") |
 
-**Veri kaynağı:** Faz 5.5 patch turu sonrası DB'de tüm `Trip.stop_times` ilişkisi tam (6.155.692 satır). Bir vehicle için canlı pipeline'ın bağladığı `route_id` üzerinden Trip seçilir, Trip'in stop_times'ı `stop_sequence` ile sıralı okunur, vehicle koordinatına en yakın olan `seq=k` bulunur, `seq=k+1...k+5` sonraki duraklardır (bearing'e göre yön tahmini ile k-1 olabilir).
+**Veri kaynağı + compute lokasyonu (KM5-c iptal sonrası):** Faz 5 mimarisi raylı/vapur simülasyonunu **frontend tarafında** çalıştırıyor — backend `/api/trips/active/?mode=metro` 60sn polled, her trip için stop_times array'i (stop_id, **stop_name** [KM5-d eklendi], sequence, arrival_seconds, lat, lon) zaten sunuyor (gtfs/serializers.py::TripActiveSerializer). Frontend `prepareTrip(trip, shape)` (frontend/src/simulation/scheduled_trip.ts) shape polyline + `stopProjections[]` (arrivalSec + arcLengthM + stopName + sequence) hazırlıyor; `interpolateScheduledTrip(prepared, nowSec)` her animasyon tick'inde `lat, lon, bearing, trip_id` üretir. Sonraki durak compute'u backend modülü değil, **frontend pure helper**: `computeNextStops(prepared, nowSec, limit)` (frontend/src/simulation/next_stops.ts) `stopProjections.filter(sp => sp.arrivalSec > nowSec).slice(0, limit)` mantığıyla anlık çalışır.
 
-**ETA hesaplama — ilk versiyon (planlı saat):** `stop_times.arrival_time` field'ı kullanılır. "Sonraki durak Şişli-Mecidiyeköy, 14:32 (2 dk sonra)". Avantaj: trivial, DB'den direkt okunur. Dezavantaj: gerçek gecikme yansımaz; vehicle 5 dk geç kalmışsa popup yine planlı saati gösterir. Kullanıcı feedback'ine göre v0.9+ için real-time ETA (vehicle hızı + mesafe) eklenir.
+KM5-c brief'i başlangıçta backend modül + Redis cache + WebSocket payload genişletme planı içeriyordu; mimari keşfi sırasında raylı/vapur'un WebSocket payload'ında olmadığı, frontend'in zaten gerekli verinin tümüne sahip olduğu netleşti. KM5-c iptal edildi, kapsam KM5-d'ye birleşti, sonraki durak compute frontend tarafında yapıldı.
 
-**Yön tahmini:** Vehicle bearing field'ı + en yakın iki durağın koordinatları karşılaştırılır. Vehicle'ın gittiği yön sıraya göre ileri (k+1) veya geri (k-1) belirlenir. Çift yönlü hatta (örn. M2 hem Yenikapı→Hacıosman hem Hacıosman→Yenikapı) hangi trip'in stop_times'ı kullanılacak — bu Trip'in `direction_id` field'ı ile eşleşir.
+**ETA hesaplama — ilk versiyon (planlı saat):** `stopProjection.arrivalSec - nowSec` saniye cinsi. "Sonraki durak Şişli-Mecidiyeköy 14:32 (2 dk)". Avantaj: anlık compute, DB roundtrip yok. Dezavantaj: gerçek gecikme yansımaz; vehicle 5 dk geç kalmışsa popup yine planlı saati gösterir. v0.9+ için real-time ETA (vehicle hızı + mesafe) eklenir.
 
-**WebSocket payload genişletmesi:** Mevcut `VehiclePosition` formatına opsiyonel field'lar eklenir:
+**Yön tahmini:** Frontend simülasyonun `interpolateScheduledTrip` çıktısı vehicle'ın hangi trip'in `stopProjections`'ını izlediğini biliyor; sequence sıralı projection üzerinden `arrivalSec > nowSec` filter "şu andan sonra"yı doğal yön olarak verir. Bearing-bazlı tahmin gerekmez (trip seçimi prepareTrip aşamasında direction_id ile zaten kararlaştı).
 
-```json
-{
-  "id": "B-1234",
-  "lat": 41.04,
-  "lon": 28.95,
-  "bearing": 45,
-  "speed": 32,
-  "route_id": "iett:1296",
-  "next_stops": [
-    {"stop_name": "Şişli-Mecidiyeköy", "scheduled": "14:32", "eta_seconds": 120, "sequence": 8},
-    {"stop_name": "Gayrettepe",        "scheduled": "14:34", "eta_seconds": 240, "sequence": 9},
-    ...
-  ]
-}
-```
-
-`next_stops` sadece sonraki durak özelliği aktif olan modlar için doldurulur, normal otobüsler için `null` veya `[]`.
-
-**Performans:** Her tick'te ~500-800 araç için stop_times sorgusu çalışır. PostgreSQL üzerinde indexed, `Trip.id` + `stop_sequence` BTREE indeksi yeterli. Ortalama tek sorgu <5ms; toplam tick overhead <500ms hedef. Cache'leme opsiyonu var (Trip → stop_times listesi 24 saat TTL ile Redis'te) ama ilk sürümde DB direkt okuma yeterli.
-
-**UX detayları:**
-
-- Popup'ta scroll'lanabilir liste (mobile için 3 stops görünür, scroll ile devamı)
-- Her durak satırında ikon: yaklaşan (sarı), uzakta (gri), geçildi (yeşil — eğer bunu izlemeye gerek görülürse)
-- Tıkla durak adı → harita o duraka pan eder
+**Popup zengin versiyonu (KM5-d):** Raylı/vapur tıklandığında `vehicle_popup.ts::renderScheduledPopup` short_name + long_name + agency_name + sonraki 5 durak listesi (stop adı + planlı saat + ETA "X dk") render eder. Popup max-height 140px scroll'lu kart (mobile uyumu). Otobüs/metrobüs popup'ı `renderIettPopup` minimal: "İETT Otobüs · KapiNo X" — sonraki durak yok, hat etiketi yok (mapping kapalı).
 
 ---
 
@@ -1785,12 +1760,12 @@ A.16 patch öncesi yapısal sorunun kayıt değeri için korunur. A.17 patch hik
 
 **v0.8.0 kapsam (Faz 5.5 "Public Transit Refresh"):**
 
-- Normal İETT otobüsleri: kütle gösterim, sarı renk, hat-bazlı UI kapatıldı, popup'ta sadece KapiNo (§3.3, §5.7)
-- Metrobüs (10 hat whitelist): kütleye dahil (mapping kapalı, popup minimal, sonraki durak yok), tek fark antrasit gri renk (görsel kategori) — Rapor 12 sonucu (§3.3)
+- Normal İETT otobüsleri: kütle gösterim, sarı renk, hat-bazlı UI kapatıldı, popup minimal "İETT Otobüs · KapiNo X" (§3.3, §5.7)
+- Metrobüs (10 hat whitelist): **ayrı görsel kategori** — antrasit gri renk + filtre panelinde ayrı toggle (KM5-e B'den dönüş kararı). Davranış normal İETT bus ile aynı: mapping `route_id` stampleme kapalı, popup minimal (label ayrımı yok), sonraki durak yok. Fark sadece renk + bağımsız visibility toggle (§3.3)
 - Raylı sistem + vapur + füniküler: değişmez, mevcut (§5.4) Faz 5 simülasyon yapısı korunur
-- Sonraki durak özelliği (§5.8): metro/Marmaray/tramvay/füniküler/vapur için Mini Tokyo 3D paritesi (metrobüs hariç, Rapor 12)
-- Settings flag: `IETT_BUS_MAPPING_ENABLED = False` (default), pipeline kodu hibernation'da
-- 5j-ii drift filter tüm İETT bus için anlamsızlaştı, devre dışı (metrobüs dahil — Rapor 12)
+- Sonraki durak özelliği (§5.8): metro/Marmaray/tramvay/füniküler/vapur için Mini Tokyo 3D paritesi — frontend `computeNextStops` (KM5-c iptal sonrası backend modülü değil). İETT bus + metrobüs hariç (mapping kapalı)
+- Settings flag: `IETT_BUS_MAPPING_ENABLED = False` (default) → `route_id` stampleme kapalı; mapping cache lookup `is_metrobus` categorize için açık (KM5-e.1 semantic ayrım)
+- 5j-ii drift filter tüm İETT bus için anlamsızlaştı, doğal devre dışı (route_id None ⇒ stale check skip)
 
 **İleride (v0.9+) açık seçenekler:**
 - Spatial inference algoritmasını production'a entegre et (vehicle hareket geçmişinden hat türetme)
@@ -1809,7 +1784,9 @@ A.16 patch öncesi yapısal sorunun kayıt değeri için korunur. A.17 patch hik
 - `2026-05-02-29b-corridor-reverse.md` — 62 vehicle, 0 mapped 29B
 - `2026-05-03-canli-veri-kaynagi-arastirma.md` — P4 alternatif yok
 - `2026-05-03-spatial-inference-poc.md` — %53 yanlışlık kanıtı
-- `12_metrobus_mapping_accuracy.md` — β-lite metrobüs spot kontrolü (2026-05-03), %22 yanlış, p90=8273m, sınır vaka kararı: metrobüs de retire
+- `12_metrobus_mapping_accuracy.md` — β-lite metrobüs spot kontrolü (2026-05-03), %22 yanlış, p90=8273m, sınır vaka
+
+**KM5-d → KM5-e karar zinciri (B yolu + dönüş):** Rapor 12 sonrası KM5-d brief'inde üç olası yol değerlendirildi: A) "is_metrobus için mapping cache'e flag'tan bağımsız bak — %22 yanlış kategori UX'e yansır", B) "renk ayrımını + ayrı toggle'ı tamamen kaldır, monolitik kütle", C) "soft flag ile categorize-only mapping yeniden aç". KM5-d'de **B yolu** seçildi: "%22 yanlış kategori UX olarak savunulamaz, hat etiketi yokluğu kararıyla aynı argüman" (Rapor 12 paralel mantığı). KM5-e brief'inde karar revize edildi (Yağız + Claude üç tur tartışma): rengin **yokluğu = %0 bilgi**, **varlığı (yanlışlık olsa bile) = %78 doğru**. M4898 / 34BZ / 11km gibi vakaların antrasit gri görünebileceği bilinçli kabul edildi — kullanıcıya kategori sinyali sunmak, hiç sunmamaktan iyi. KM5-e.1 backend `vehicle.is_metrobus` payload field'ı (mapping cache lookup flag'tan bağımsız), KM5-e.2 frontend renk + filtre toggle ayrımı bu kararın implementasyonu. **Mühendislik dersi:** "Yanlışlık riski varsa özelliği yapma" tek geçerli prensip değil. Risk skalası ile bilgi değeri tartılır; bazen %78 doğru sinyal %100 sessizlikten anlamlı.
 
 ---
 
@@ -1830,4 +1807,4 @@ A.16 patch öncesi yapısal sorunun kayıt değeri için korunur. A.17 patch hik
 | 0.7.3 | 2026-04-27 | **Faz 3 tamamlandı + spatial sanity check eklendi** (Adım 6h-i/ii/iii). `apps/realtime/spatial.py` modülü: lazy-load shape cache, numpy vectorized haversine, 500m threshold ile mapped vehicle'ın GTFS shape geometrisinden uzaklaşmış olanlarını `route_id=None`'a degrade eder. Canlı smoke İETT GTFS feed shape coverage **0/1096** short_name, public feed **496/496** olduğunu ortaya çıkardı (§10 Risk tablosu güncellendi). Cache miss durumunda graceful skip davranışı: mapping korunur, defansif null yok. Public feed'in 496 shape'i cache'te kalır, Faz 5+ trip simülasyonunda etkin olur. 7 commit zinciri: 6h-i `fcf1451`/`bc0d5f4`/`b8603d5`/`a07026b` (modül + entegrasyon + 7 test, 147 → 154), 6h-ii `2224e9e`/`c04d01e`/`a316df9` (graceful skip fix + docs + regression test, 154 → 155). Smoke 3 tick: `mapped_count≈1850`, `spatial_check.skipped_no_shape≈input` (beklenen, İETT shape'siz), `nullified_off_route=0`. Realtime suite 155/155 yeşil. |
 | 0.7.4 | 2026-05-02 | **Yol B (vehicle.route_id GTFS PK semantics) + stale vehicle.timestamp filter** eklendi. Backend `enrich_with_route_id` artık SHATKODU short_name yerine canonical Route.route_id PK'sını stamp ediyor (`build_mapping` `route_id_by_short_name` index'i β filtresi `agency=IETT, route_type=3` + alfabetik tie-breaker ile üretir). Frontend RouteStore'a bus PK'ları `registerSummaries` ile yüklendi (Faz 6 KM1 reliquat). 5j-ii: out-of-interval-but-mapped vakası teşhisi, drift hipotezi cross-check ile A doğrulandı, `STALE_VEHICLE_TIMESTAMP_THRESHOLD_S=180` filter ve `stats:stale_vehicle_dropped_count` heartbeat counter eklendi. 5j-ii ön-keşfinde İETT stop_times coverage 139/9274 ölçüldü (Ek A.16). Yeni Ek A.15 (fleet endpoint stale konum davranışı) ve Ek A.16 (stop_times coverage). Realtime suite 165/165, frontend 210/210 yeşil. |
 | 0.7.5 | 2026-05-02 | **Faz 5.5 stop_times patch turu**: İBB CKAN'da yan yana duran `stop_times.zip` (canonical, 6.155.692 satır) ve `stop_times.csv` (Excel-truncated, 1.048.575 satır = 2^20 - 1) arasındaki Faz 1 yanlış tercihinin (`format=="CSV"` filter) düzeltilmesi. `download_gtfs.py` yeni `_resolve_resource_for(fname)` ZIP-prefer resolver, `_extract_single_file_zip()` helper, ZIP hash manifest kaydı; sadece stop_times için ZIP variant tercih edilir, diğer 5 dosya eski CSV path'inde kaldı. `import_gtfs.py` autodetect canonical UTF-8 + virgül formatını dokunulmadan tanıdı (`_detect_encoding` BOM yokluğu → utf-8, `_detect_sep` virgül çoğunluğu → `,`). Reimport sonrası IETT StopTime 1.048.485 → 6.154.703 (+5.1M, ×5.87), Trip-level coverage %13.96 → %100 (135.625/135.625), bus short_name coverage 139/1095 → 796/1095 (~%72.7). 29B 126 trip için 3.528 stop_times. Metrobüs (34/34A/34BZ/34G/34Z) toplam 334.758 stop_times. Yeni Ek A.17 (Excel truncation incident), Ek A.5 revize, Ek A.16'ya "patch öncesi snapshot" notu. Faz 5.5 implementation Plan A (durak-bazlı polyline) önceliklendi, OSM Overpass+pgrouting Plan B'ye düştü. Realtime suite 165/165, gtfs 38/38, frontend 210/210 yeşil korundu. |
-| 0.8.0 | 2026-05-03 | **Faz 5.5 "Public Transit Refresh" — kapsam tanımı (Rapor 12 ile revize).** Üç günlük mapping yapısal teşhis turu (Ek A.18) sonrası Faz 5.5'in scope'u tamamen yeniden tanımlandı. Eski Plan A (durak-bazlı polyline) ve Plan B (OSM Overpass) iptal/erteleme. Yeni kapsam: (1) Normal İETT otobüs için mapping retire, kütle gösterim (sarı renk, hat-bazlı UI kapatıldı, popup minimal) — settings flag `IETT_BUS_MAPPING_ENABLED=False` (§3.3, §5.7). (2) Metrobüs whitelist (10 hat) sadece kategorize için (antrasit gri renk, görsel ayrım) — mapping davranışı normal İETT bus ile aynı (kapalı), popup minimal, sonraki durak yok. Önceki "exception" modeli Ek A.18 Rapor 12 ölçümü sonrası iptal edildi (%22 yanlış, p90=8273m). (3) Sonraki durak özelliği yeni §5.8: metro/Marmaray/tramvay/füniküler/vapur için Mini Tokyo 3D paritesi (metrobüs hariç — Rapor 12), çoklu durak listesi (β tasarım), planlı saat ETA (i versiyonu, real-time ETA v0.9'a ertelendi). (4) 5j-ii drift filter tüm İETT bus için anlamsızlaştı, devre dışı (metrobüs dahil — Rapor 12). (5) Yeni Ek A.18 — 3 günlük araştırma sonucu, 11 `_research/` raporu referansı, %53 mapping yanlışlık kanıtı, alternatif kaynak yokluğu, spatial inference PoC sonuçları (v0.9+'a açık seçenek). Yeni Rapor 12 (2026-05-03 metrobüs spot kontrolü, β-lite metodoloji, %22 yanlış sonucu) Ek A.18 numaralandırma serisini 12'ye çıkardı ve metrobüs whitelist exception kararını iptal etti. Bu sürüm spec **kapsam tanımıdır** (Rapor 12 ile revize), implementation v0.8.x ardışık release'lerde. |
+| 0.8.0 | 2026-05-03 | **Faz 5.5 "Public Transit Refresh" — kapsam tanımı + implementation final (KM5-a..f, üçüncü revize).** Üç günlük mapping yapısal teşhis turu (Ek A.18) sonrası Faz 5.5 yeniden tanımlandı. Eski Plan A (durak-bazlı polyline) ve Plan B (OSM Overpass) iptal/erteleme. Implementation altı alt-tur: **KM5-a** İETT bus mapping retire (settings flag `IETT_BUS_MAPPING_ENABLED=False`, drift filter doğal devre dışı, payload'dan `mapped_count` kaldırıldı). **KM5-b** `/api/routes/` `is_metrobus` SerializerMethodField (KM5-d için kategori sinyali). **KM5-c** sonraki durak backend modülü iptal — keşifte Faz 5 simülasyonun frontend tarafında olduğu netleşti, `TripActiveSerializer.stop_times` zaten gerekli verinin tümünü sunuyor; kapsam KM5-d'ye birleşti. **KM5-d** frontend popup ayrımı (otobüs/metrobüs minimal "İETT Otobüs · KapiNo X", raylı/vapur zengin + sonraki 5 durak ETA'lı), `frontend/src/simulation/next_stops.ts` compute helper, `TripActiveSerializer.get_stop_times` `stop_name` field eklendi. KM5-d B yolu: renk ayrımı iptal, "%22 yanlış kategori UX olarak savunulamaz" argümanıyla. **KM5-e** B yolundan dönüş (Yağız + Claude üç tur tartışma, KM5-e turunda kesin): rengin yokluğu = %0 bilgi, varlığı = %78 doğru, %22 yanlış kategori riski bilinçli tolere edildi. **KM5-e.1** `VehiclePosition.is_metrobus` payload field — mapping cache lookup flag'tan bağımsız (`_resolve_active_hat` helper, flag-açık + flag-kapalı path'lerin paylaştığı bisect). **KM5-e.2** `fleet_layer.ts` paint case (`is_metrobus → #3A3D40`, else sarı), `buildFleetFilter(busVisible, metrobusVisible)`, `route_panel.ts` "121 hat görünür" sayacı + bus mode group + virtual_list kaldırıldı, iki bağımsız toggle satırı (İETT Otobüs + Metrobüs) eklendi. **KM5-f** mapping cache warm-up startup hook (`apps/realtime/apps.py::ready()` → `refresh_iett_mapping.apply()` cache boşsa sync — KM5-e.1 smoke bug'ı kalıcı fix), §3.3/§5.7/§5.8/Ek A.18 üçüncü revize. Suite final: realtime 175/175, gtfs 44/44, frontend 238/238 (toplam 457 yeşil). v0.8.0 release tag'ı bu satırla basıldı. |
