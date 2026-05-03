@@ -105,9 +105,12 @@ class TripActiveSerializer(serializers.ModelSerializer):
         # StopTime.Meta.ordering already includes stop_sequence, so the
         # prefetched list arrives in order. lat/lon embedded for frontend
         # stop projection (KM3-a) — saves a separate /api/stops/ batch fetch.
+        # KM5-d: stop_name eklendi — Spec §5.8 sonraki durak listesi popup'ında
+        # "Şişli-Mecidiyeköy 14:32 (2 dk)" gibi insan-okur etiket için zorunlu.
         return [
             {
                 "stop_id": st.stop.stop_id,
+                "stop_name": st.stop.name,
                 "sequence": st.stop_sequence,
                 "arrival_seconds": int(st.arrival_time.total_seconds()),
                 "lat": st.stop.location.y,

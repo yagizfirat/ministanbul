@@ -238,7 +238,24 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
   });
   map.on('click', 'scheduled-circles', (e) => {
     if (!e.features?.[0]) return;
-    showVehiclePopup(map, e.lngLat, e.features[0].properties as never, 'scheduled', routeStore);
+    const props = e.features[0].properties as { trip_id?: string; mode?: string };
+    // KM5-d: popup zengin versiyonu için PreparedTrip + nowSec context'i.
+    // Mod feature.properties'tan, fleet de SCHEDULED_MODES Map'inden gelir;
+    // fleet bulunmaz veya trip_id eksikse prepared null → popup meta-only
+    // fallback'a düşer (gracefully degrade, vehicle_popup test'lerinde
+    // "context.prepared null" senaryosu ile teyit edildi).
+    const fleet = props.mode ? scheduledFleets.get(props.mode) : undefined;
+    const prepared = (fleet && props.trip_id)
+      ? fleet.getPreparedTrip(props.trip_id)
+      : null;
+    showVehiclePopup(
+      map,
+      e.lngLat,
+      e.features[0].properties as never,
+      'scheduled',
+      routeStore,
+      { nowSec: nowSecondsIstanbul(), prepared },
+    );
   });
   map.on('click', (e) => {
     // Layer-spesifik handler'lar zaten yakaladı; boş alana tıklamada

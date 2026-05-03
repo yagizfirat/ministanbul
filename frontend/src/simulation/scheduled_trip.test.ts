@@ -25,9 +25,9 @@ function makeTrip(overrides: Partial<ActiveTrip> = {}): ActiveTrip {
     headsign: 'B',
     mode: 'metro',
     stop_times: [
-      { stop_id: 's0', sequence: 1, arrival_seconds: 36000, lat: 41.0, lon: 29.0 },
-      { stop_id: 's1', sequence: 2, arrival_seconds: 36060, lat: 41.0, lon: 29.001 },
-      { stop_id: 's2', sequence: 3, arrival_seconds: 36300, lat: 41.02, lon: 29.001 },
+      { stop_id: 's0', stop_name: 'Stop 0', sequence: 1, arrival_seconds: 36000, lat: 41.0, lon: 29.0 },
+      { stop_id: 's1', stop_name: 'Stop 1', sequence: 2, arrival_seconds: 36060, lat: 41.0, lon: 29.001 },
+      { stop_id: 's2', stop_name: 'Stop 2', sequence: 3, arrival_seconds: 36300, lat: 41.02, lon: 29.001 },
     ],
     ...overrides,
   };
@@ -59,10 +59,10 @@ describe('prepareTrip', () => {
   it('returns null when a stop is too far from the polyline (>500 m)', () => {
     const bad = makeTrip({
       stop_times: [
-        { stop_id: 's0', sequence: 1, arrival_seconds: 36000, lat: 41.0, lon: 29.0 },
+        { stop_id: 's0', stop_name: 'Stop 0', sequence: 1, arrival_seconds: 36000, lat: 41.0, lon: 29.0 },
         // 1° east of the polyline → ~84 km, far beyond SNAP_THRESHOLD_M
-        { stop_id: 'far', sequence: 2, arrival_seconds: 36060, lat: 41.0, lon: 30.0 },
-        { stop_id: 's2', sequence: 3, arrival_seconds: 36300, lat: 41.02, lon: 29.001 },
+        { stop_id: 'far', stop_name: 'Far', sequence: 2, arrival_seconds: 36060, lat: 41.0, lon: 30.0 },
+        { stop_id: 's2', stop_name: 'Stop 2', sequence: 3, arrival_seconds: 36300, lat: 41.02, lon: 29.001 },
       ],
     });
     expect(prepareTrip(bad, SHAPE)).toBeNull();
@@ -71,7 +71,7 @@ describe('prepareTrip', () => {
   it('returns null when stop_times has fewer than 2 entries', () => {
     const tiny = makeTrip({
       stop_times: [
-        { stop_id: 's0', sequence: 1, arrival_seconds: 36000, lat: 41.0, lon: 29.0 },
+        { stop_id: 's0', stop_name: 'Stop 0', sequence: 1, arrival_seconds: 36000, lat: 41.0, lon: 29.0 },
       ],
     });
     expect(prepareTrip(tiny, SHAPE)).toBeNull();

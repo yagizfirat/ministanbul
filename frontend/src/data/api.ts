@@ -36,6 +36,7 @@ export interface ShapeFeature {
 
 export interface ActiveTripStopTime {
   stop_id: string;
+  stop_name: string;
   sequence: number;
   arrival_seconds: number;
   lat: number;

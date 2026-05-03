@@ -238,6 +238,15 @@ def test_stop_times_carry_lat_lon(client_fri, base_data):
     assert sts[0]["lat"] == pytest.approx(41.0)
 
 
+def test_stop_times_carry_stop_name(client_fri, base_data):
+    """KM5-d (Spec §5.8): popup'ta sonraki durak listesi için stop_name
+    payload'da gerekli. Stop fixture isimleri 'A'/'B'/'C', sequence
+    sırasına göre döner."""
+    r = client_fri.get(URL, {"mode": "metro"})
+    sts = r.json()["trips"][0]["stop_times"]
+    assert [st["stop_name"] for st in sts] == ["A", "B", "C"]
+
+
 def test_cache_control_header(client_fri, base_data):
     r = client_fri.get(URL, {"mode": "metro"})
     cc = r.headers.get("Cache-Control", "")

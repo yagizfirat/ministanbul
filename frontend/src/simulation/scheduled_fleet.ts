@@ -91,6 +91,13 @@ export class ScheduledFleet {
     return out;
   }
 
+  // KM5-d: popup zengin versiyonu için PreparedTrip lookup. Click handler
+  // trip_id'yi feature.properties'tan okuyup buradan PreparedTrip'i alır
+  // ve computeNextStops'a geçirir.
+  getPreparedTrip(tripId: string): PreparedTrip | null {
+    return this.prepared.get(tripId) ?? null;
+  }
+
   size(): number {
     return this.prepared.size;
   }

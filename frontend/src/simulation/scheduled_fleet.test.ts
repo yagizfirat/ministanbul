@@ -33,9 +33,9 @@ function trip(overrides: Partial<ActiveTrip>): ActiveTrip {
     headsign: 'B',
     mode: 'metro',
     stop_times: [
-      { stop_id: 's0', sequence: 1, arrival_seconds: 36000, lat: 41.0, lon: 29.0 },
-      { stop_id: 's1', sequence: 2, arrival_seconds: 36060, lat: 41.0, lon: 29.001 },
-      { stop_id: 's2', sequence: 3, arrival_seconds: 36300, lat: 41.02, lon: 29.001 },
+      { stop_id: 's0', stop_name: 's0', sequence: 1, arrival_seconds: 36000, lat: 41.0, lon: 29.0 },
+      { stop_id: 's1', stop_name: 's1', sequence: 2, arrival_seconds: 36060, lat: 41.0, lon: 29.001 },
+      { stop_id: 's2', stop_name: 's2', sequence: 3, arrival_seconds: 36300, lat: 41.02, lon: 29.001 },
     ],
     ...overrides,
   };
@@ -47,8 +47,8 @@ function trip2(overrides: Partial<ActiveTrip>): ActiveTrip {
     trip_id: 't2',
     shape_id: 'sh2',
     stop_times: [
-      { stop_id: 'a', sequence: 1, arrival_seconds: 40000, lat: 41.1, lon: 29.1 },
-      { stop_id: 'b', sequence: 2, arrival_seconds: 40060, lat: 41.1, lon: 29.105 },
+      { stop_id: 'a', stop_name: 'a', sequence: 1, arrival_seconds: 40000, lat: 41.1, lon: 29.1 },
+      { stop_id: 'b', stop_name: 'b', sequence: 2, arrival_seconds: 40060, lat: 41.1, lon: 29.105 },
     ],
     ...overrides,
   };
@@ -140,9 +140,9 @@ describe('ScheduledFleet.setActiveTrips', () => {
     const bad = trip({
       trip_id: 'tbad',
       stop_times: [
-        { stop_id: 's0', sequence: 1, arrival_seconds: 36000, lat: 41.0, lon: 29.0 },
+        { stop_id: 's0', stop_name: 's0', sequence: 1, arrival_seconds: 36000, lat: 41.0, lon: 29.0 },
         // 1° east — far beyond SNAP_THRESHOLD_M
-        { stop_id: 'far', sequence: 2, arrival_seconds: 36300, lat: 41.0, lon: 30.0 },
+        { stop_id: 'far', stop_name: 'far', sequence: 2, arrival_seconds: 36300, lat: 41.0, lon: 30.0 },
       ],
     });
     const result = await fleet.setActiveTrips([bad]);
@@ -184,9 +184,9 @@ describe('ScheduledFleet.getInterpolated', () => {
       trip({
         trip_id: 'past',
         stop_times: [
-          { stop_id: 's0', sequence: 1, arrival_seconds: 30000, lat: 41.0, lon: 29.0 },
-          { stop_id: 's1', sequence: 2, arrival_seconds: 30100, lat: 41.0, lon: 29.001 },
-          { stop_id: 's2', sequence: 3, arrival_seconds: 30200, lat: 41.02, lon: 29.001 },
+          { stop_id: 's0', stop_name: 's0', sequence: 1, arrival_seconds: 30000, lat: 41.0, lon: 29.0 },
+          { stop_id: 's1', stop_name: 's1', sequence: 2, arrival_seconds: 30100, lat: 41.0, lon: 29.001 },
+          { stop_id: 's2', stop_name: 's2', sequence: 3, arrival_seconds: 30200, lat: 41.02, lon: 29.001 },
         ],
       }),
     ]);

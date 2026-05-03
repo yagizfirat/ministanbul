@@ -399,6 +399,67 @@
   font-style: normal;
 }
 
+/* KM5-d (Spec §5.8) — popup kütle (otobüs) + zengin (raylı/vapur).
+   Otobüs popup minimal: KapiNo satırı; mapping retire sonrası hat etiketi
+   yok. Raylı/vapur popup zengin: sonraki 5 durak listesi, scroll'lu kart. */
+.vehicle-popup__kapi {
+  font-size: 11px;
+  color: #4b5563;
+  margin-top: 2px;
+}
+
+.vehicle-popup__next-stops {
+  margin-top: 6px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.vehicle-popup__next-stops-header {
+  font-size: 10px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.vehicle-popup__stop {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.vehicle-popup__stop-name {
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vehicle-popup__stop-time {
+  color: #4b5563;
+  font-variant-numeric: tabular-nums;
+}
+
+.vehicle-popup__stop-eta {
+  color: #2563eb;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 48px;
+  text-align: right;
+}
+
+.vehicle-popup__empty {
+  font-size: 11px;
+  color: #9ca3af;
+  font-style: italic;
+}
+
 /* Toast (alt-iş g f-polish-3 madde 3): bus zoom başarısız vb. küçük
    bilgi mesajları için fade-in/fade-out element. */
 .toast {

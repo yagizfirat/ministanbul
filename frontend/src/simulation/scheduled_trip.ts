@@ -9,6 +9,12 @@ import {
 export interface StopProjection {
   arrivalSec: number;
   arcLengthM: number;
+  // KM5-d: popup'ta sonraki durak listesi için (Spec §5.8). prepareTrip
+  // backend'den gelen stop_name + sequence'ı projection'a yansıtır;
+  // computeNextStops bu projection üzerinden anlık (vehicle interpolated
+  // pozisyonundan bağımsız) k+1...k+5 durağı çeker.
+  stopName: string;
+  sequence: number;
 }
 
 export interface PreparedTrip {
@@ -51,6 +57,8 @@ export function prepareTrip(trip: ActiveTrip, shape: LonLat[]): PreparedTrip | n
     projections.push({
       arrivalSec: st.arrival_seconds,
       arcLengthM: snap.arcLength,
+      stopName: st.stop_name,
+      sequence: st.sequence,
     });
   }
 
