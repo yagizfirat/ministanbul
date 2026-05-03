@@ -337,7 +337,7 @@ function startRealtime(): void {
       const snap = await fetchLiveVehicles();
       console.log(
         `[rest] snapshot: ${snap.vehicle_count} vehicles, ` +
-        `${snap.mapped_count} mapped, ${snap.vehicles.length} in payload`,
+        `${snap.vehicles.length} in payload`,
       );
       pushSnapshot(snap);
     } catch (err) {

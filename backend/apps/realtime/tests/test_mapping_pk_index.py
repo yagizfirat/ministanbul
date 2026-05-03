@@ -22,6 +22,13 @@ ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
 SNAPSHOT_DATE = date(2026, 4, 22)
 
 
+@pytest.fixture(autouse=True)
+def _enable_iett_bus_mapping(settings):
+    """KM5-a: flag default False; PK-index testleri historik mapping
+    davranışını doğruluyor, autouse ile True yapılır."""
+    settings.IETT_BUS_MAPPING_ENABLED = True
+
+
 def _gorev(kapi_no: str, hat_kodu: str) -> IettArsivGorev:
     return IettArsivGorev(
         kapi_no=kapi_no,

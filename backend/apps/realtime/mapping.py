@@ -21,7 +21,8 @@ import datetime
 import logging
 from collections import defaultdict
 
-from apps.core.constants import METROBUS_ROUTES
+from django.conf import settings
+
 from apps.realtime.calendar import ISTANBUL_TZ
 from apps.realtime.schemas import IettArsivGorev
 
@@ -193,8 +194,8 @@ def build_mapping(
     for kapi_tasks in by_kapi.values():
         kapi_tasks.sort(key=lambda t: t["start_sec"])
 
-    metrobus_active = sorted(active_routes & METROBUS_ROUTES)
-    bus_active = sorted(active_routes - METROBUS_ROUTES)
+    metrobus_active = sorted(active_routes & settings.METROBUS_SHORT_NAMES)
+    bus_active = sorted(active_routes - settings.METROBUS_SHORT_NAMES)
 
     skip_total = empty_kapi_skipped + inverted_skipped + outside_snapshot_skipped
     if skip_total:

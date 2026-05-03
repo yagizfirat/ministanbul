@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 
+import pytest
+
 from apps.realtime.calendar import ISTANBUL_TZ
 from apps.realtime.enrich import enrich_with_route_id
 from apps.realtime.schemas import VehiclePosition
@@ -21,6 +23,17 @@ from apps.realtime.tests._helpers import EXPECTED_PK_FOR_HAT
 TEST_DATE = date(2026, 4, 22)  # Wednesday → weekday
 TEST_DAY_TYPE = "weekday"
 _TEST_MIDNIGHT = datetime.combine(TEST_DATE, time.min, tzinfo=ISTANBUL_TZ)
+
+
+# KM5-a: ``IETT_BUS_MAPPING_ENABLED`` settings flag default v0.8.0'da
+# False (Spec §5.7, Ek A.18 R12). Bu modüldeki testler hibernation
+# davranışını (flag açıkken eski mapping path) kontrol ediyor —
+# tümünün doğru çalışabilmesi için autouse fixture flag'ı True yapar.
+# Flag=False tarafının davranışı dosyanın sonundaki yeni testlerde
+# açıkça override ile test edilir.
+@pytest.fixture(autouse=True)
+def _enable_iett_bus_mapping(settings):
+    settings.IETT_BUS_MAPPING_ENABLED = True
 
 
 def _make_vehicle(
@@ -313,3 +326,55 @@ def test_reference_now_none_disables_stale_check():
     out, dropped = enrich_with_route_id([vehicle], mapping)
     assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]
     assert dropped == 0
+
+
+# --- KM5-a: IETT_BUS_MAPPING_ENABLED flag ---------------------------------
+
+
+def test_flag_disabled_returns_route_id_none(settings):
+    """v0.8.0 default davranışı: flag kapalıyken bisect path tamamen
+    atlanır, tüm vehicle'lar route_id=None ile döner."""
+    settings.IETT_BUS_MAPPING_ENABLED = False
+    mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
+    vehicles = [
+        _make_vehicle("A-231", 1500),  # mapping bisect içine düşerdi
+        _make_vehicle("X-999", 1500),  # mapping'de yok zaten
+    ]
+    out, dropped = enrich_with_route_id(vehicles, mapping)
+    assert [v.route_id for v in out] == [None, None]
+    assert dropped == 0
+
+
+def test_flag_disabled_preserves_input_immutability(settings):
+    """Flag kapalı path da pure: input vehicle list mutate edilmez."""
+    settings.IETT_BUS_MAPPING_ENABLED = False
+    mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
+    original = _make_vehicle("A-231", 1500).model_copy(update={"route_id": "PRESET"})
+    vehicles = [original]
+    out, _ = enrich_with_route_id(vehicles, mapping)
+    assert vehicles[0].route_id == "PRESET"
+    assert out[0].route_id is None
+    assert id(vehicles[0]) != id(out[0])
+
+
+def test_flag_disabled_does_not_drop_stale_vehicles(settings):
+    """Flag kapalıyken stale-timestamp filter de tetiklenmez (route_id
+    zaten None, drift check skip). stale_dropped counter 0 kalır →
+    heartbeat ``stats:stale_vehicle_dropped_count`` sıfır yazılır."""
+    settings.IETT_BUS_MAPPING_ENABLED = False
+    mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
+    vehicle = _make_vehicle("A-231", 1500)
+    reference_now = vehicle.timestamp + timedelta(seconds=600)  # +10dk drift
+    out, dropped = enrich_with_route_id(
+        [vehicle], mapping, reference_now=reference_now,
+    )
+    assert out[0].route_id is None
+    assert dropped == 0
+
+
+def test_flag_enabled_default_in_module_uses_mapping():
+    """Sanity: autouse fixture flag=True yaptığında inherited testlerin
+    eski mapping path çalışıyor — hibernation davranışı garanti."""
+    mapping = _mapping(**{"A-231": [_interval(1000, 2000, "29B")]})
+    out, _ = enrich_with_route_id([_make_vehicle("A-231", 1500)], mapping)
+    assert out[0].route_id == EXPECTED_PK_FOR_HAT["29B"]

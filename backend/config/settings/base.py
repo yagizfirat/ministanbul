@@ -129,6 +129,20 @@ REST_FRAMEWORK = {
     ],
 }
 
+# Faz 5.5 v0.8.0 — Public Transit Refresh (Spec §3.3, §5.7, Ek A.18 + R12)
+IETT_BUS_MAPPING_ENABLED = False    # Tüm İETT bus için kapalı (metrobüs dahil).
+                                     # Hibernation; gelecekte İBB veri kalitesi
+                                     # düzelirse veya GTFS-RT açılırsa flag ile aktive.
+
+# Metrobüs short_name set'i — SADECE kategorize için (frontend antrasit gri ayrımı).
+# Mapping davranışını etkilemez. v0.7.x'teki "whitelist exception" semantiği
+# v0.8.0'da kaldırıldı (Ek A.18 Rapor 12: metrobüs için %22 yanlış,
+# p90=8273m, hat etiketi UX olarak savunulamaz).
+METROBUS_SHORT_NAMES = frozenset({
+    "34", "34A", "34AS", "34B", "34BZ",
+    "34C", "34G", "34T", "34U", "34Z",
+})
+
 # Redis — shared across Celery (broker/result), rate limiter, distributed
 # lock, mapping cache, and pub/sub. Single URL, single source of truth.
 REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")

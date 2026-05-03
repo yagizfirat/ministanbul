@@ -7,7 +7,6 @@ export interface VehicleSnapshot {
   type: 'vehicles_all_update';
   timestamp: string;
   vehicle_count: number;
-  mapped_count: number;
   vehicles: unknown[];
 }
 
@@ -55,7 +54,7 @@ export function connectWebSocket(handlers: VehicleClientHandlers = {}): WsContro
         const snap = msg as VehicleSnapshot;
         console.log(
           `[ws] snapshot: ${snap.vehicle_count} vehicles, ` +
-            `${snap.mapped_count} mapped, ${snap.vehicles.length} in payload`,
+            `${snap.vehicles.length} in payload`,
         );
         handlers.onSnapshot?.(snap);
       } else if (msg.type === 'pong') {

@@ -40,6 +40,8 @@ from __future__ import annotations
 from bisect import bisect_right
 from datetime import date, datetime, timedelta
 
+from django.conf import settings
+
 from apps.realtime.calendar import ISTANBUL_TZ
 from apps.realtime.schemas import VehiclePosition
 
@@ -74,6 +76,14 @@ def enrich_with_route_id(
     """
     if not vehicles:
         return [], 0
+
+    # v0.8.0 (KM5-a): IETT bus mapping retire (Spec §5.7, Ek A.18 R12).
+    # Flag default kapalı; tüm İETT bus için route_id=None, drift filter
+    # de tetiklenmez (route_id None ⇒ stale check zaten skip). Hibernation
+    # path (flag açık) aşağıda aynen korunur, gelecekte İBB veri kalitesi
+    # düzelirse tek satırlık reaktivasyon.
+    if not settings.IETT_BUS_MAPPING_ENABLED:
+        return [v.model_copy(update={"route_id": None}) for v in vehicles], 0
 
     by_kapi = mapping.get("by_kapi", {})
     pk_index = mapping.get("route_id_by_short_name", {})

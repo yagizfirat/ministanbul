@@ -102,7 +102,6 @@ async def test_initial_snapshot_sent_when_present(fake_async_redis):
         "type": "vehicles_all_update",
         "timestamp": "2026-04-26T12:00:00Z",
         "vehicle_count": 1,
-        "mapped_count": 1,
         "vehicles": [
             {"id": "C-1", "lat": 41.0, "lon": 29.0, "bearing": None,
              "speed": None, "route_id": "29B"},

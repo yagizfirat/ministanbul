@@ -116,12 +116,10 @@ def _seed_vehicles_all(redis_client, route_counts: dict) -> None:
                 "route_id": route_id,
             })
             seq += 1
-    mapped = sum(c for r, c in route_counts.items() if r is not None)
     payload = json.dumps({
         "type": "vehicles_all_update",
         "timestamp": "2026-04-25T12:00:00Z",
         "vehicle_count": len(vehicles),
-        "mapped_count": mapped,
         "vehicles": vehicles,
     })
     redis_client.set("vehicles:all", payload)

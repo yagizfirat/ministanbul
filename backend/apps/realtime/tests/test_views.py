@@ -49,7 +49,6 @@ def test_vehicles_live_returns_snapshot_when_present(
         "type": "vehicles_all_update",
         "timestamp": "2026-04-26T08:30:00Z",
         "vehicle_count": 2,
-        "mapped_count": 1,
         "vehicles": [
             {"id": "K-1", "lat": 41.0, "lon": 29.0, "bearing": None,
              "speed": None, "route_id": "29B"},

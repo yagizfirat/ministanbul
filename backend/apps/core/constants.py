@@ -25,13 +25,8 @@ ISTANBUL_LAT_MAX = 41.5
 ISTANBUL_LON_MIN = 27.95
 ISTANBUL_LON_MAX = 29.95
 
-# Metrobüs hatları — 34 ile 34Z arası kapalı whitelist. Regex
-# `^34[A-Z]*$` pattern'i `340`, `341` gibi normal İETT otobüslerini ve
-# gelecekte eklenebilecek `34D`/`34X` gibi değişiklikleri yanlış
-# pozitif/negatif yakalar; sabit liste yılda 1-2 kez elle güncellenen
-# bir veri. Spec §3.3 ve Faz 2 Adım 5a discovery query DB'de tam
-# match olduğunu doğruladı (10/10, 34-prefix'li başka short_name yok).
-METROBUS_ROUTES = frozenset({
-    "34", "34A", "34AS", "34B", "34BZ",
-    "34C", "34G", "34T", "34U", "34Z",
-})
+# NOTE — Metrobüs whitelist v0.8.0'da settings'e taşındı:
+# ``django.conf.settings.METROBUS_SHORT_NAMES``. Eski ``METROBUS_ROUTES``
+# adı v0.7.x'te "mapping whitelist exception" semantiğiyle yüklenmişti;
+# v0.8.0'da Ek A.18 Rapor 12 sonucunda whitelist exception iptal oldu,
+# sabit yalnız frontend kategorize (antrasit gri) için kalır.

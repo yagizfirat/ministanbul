@@ -94,6 +94,14 @@ class _PermissiveCache(dict):
 
 
 @pytest.fixture(autouse=True)
+def _enable_iett_bus_mapping(settings):
+    """KM5-a: ``IETT_BUS_MAPPING_ENABLED`` v0.8.0 default False. Integration
+    testleri historik mapping davranışını doğruluyor; flag autouse fixture'ıyla
+    True yapılır. Flag=False sözleşmesi test_enrich.py'de ayrıca kapsanır."""
+    settings.IETT_BUS_MAPPING_ENABLED = True
+
+
+@pytest.fixture(autouse=True)
 def _disable_stale_check(monkeypatch):
     """Mirror of test_fetch_task.py's fixture — drops reference_now from
     enrich so cassette / synthetic vehicle timestamps don't trip the
@@ -274,7 +282,6 @@ def test_end_to_end_chain_with_real_fleet_cassette(
 
     expected_unmapped = len(vehicles) - 8
     assert len(by_route.get(None, [])) == expected_unmapped
-    assert snapshot["mapped_count"] == 8
 
     # Single broadcast, mirrors the SET payload byte-for-byte.
     assert len(captured_group_sends) == 1
@@ -290,7 +297,6 @@ def test_end_to_end_chain_with_real_fleet_cassette(
     assert result["status"] == "ok"
     assert result["fetched"] == len(vehicles)
     assert result["unmapped"] == expected_unmapped
-    assert result["mapped_count"] == 8
 
 
 # --- 2. Stale cache survives an adapter failure --------------------------
@@ -361,12 +367,10 @@ def test_mapping_miss_then_present_recovery(
     snapshot_t1 = _read_snapshot(fake_redis)
 
     assert snapshot_t1["vehicle_count"] == 3
-    assert snapshot_t1["mapped_count"] == 0
     assert all(v["route_id"] is None for v in snapshot_t1["vehicles"])
 
     assert len(captured_group_sends) == 1
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 3
-    assert result_t1["mapped_count"] == 0
     assert result_t1["unmapped"] == 3
 
     # --- Mapping seeded between ticks (synthetic, not via refresh task) ---
@@ -386,14 +390,12 @@ def test_mapping_miss_then_present_recovery(
         "B-100": EXPECTED_PK_FOR_HAT["29B"],
         "C-50": EXPECTED_PK_FOR_HAT["34BZ"],
     }
-    assert snapshot_t2["mapped_count"] == 3
 
     # Second broadcast fired (total = 2).
     assert len(captured_group_sends) == 2
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 0
     assert result_t2["fetched"] == 3
     assert result_t2["unmapped"] == 0
-    assert result_t2["mapped_count"] == 3
 
 
 # --- 4. Same KapiNo lands on different routes across ticks ---------------
@@ -533,7 +535,6 @@ async def test_fetch_task_broadcast_reaches_websocket_consumer(
     msg = await communicator.receive_json_from()
     assert msg["type"] == "vehicles_all_update"
     assert msg["vehicle_count"] == len(vehicles)
-    assert msg["mapped_count"] == 8
 
     by_route: dict = {}
     for v in msg["vehicles"]:

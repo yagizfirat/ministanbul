@@ -4,10 +4,10 @@ import type { VehicleSnapshot } from '../data/websocket';
 
 // Test snapshot factory — VehicleSnapshot data/websocket'tan import
 // edilirdi normalde, ama burada yapısı yeterince basit, inline.
+// KM5-a (v0.8.0): mapped_count payload field'ı kaldırıldı (Spec §5.7).
 interface MockSnapshot {
   timestamp: string;
   vehicle_count: number;
-  mapped_count: number;
   vehicles: Array<{ id: string; lat: number; lon: number; bearing: number | null; speed: number; route_id: string | null }>;
 }
 
@@ -15,7 +15,6 @@ function snap(vehicles: MockSnapshot['vehicles']): MockSnapshot {
   return {
     timestamp: new Date().toISOString(),
     vehicle_count: vehicles.length,
-    mapped_count: vehicles.filter((v) => v.route_id !== null).length,
     vehicles,
   };
 }

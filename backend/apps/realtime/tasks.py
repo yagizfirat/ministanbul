@@ -36,7 +36,6 @@ from apps.core.constants import (
     IETT_RATE_LIMIT_MAX_CALLS,
     IETT_RATE_LIMIT_SOFT_CALLS,
     IETT_RATE_LIMIT_WINDOW_MINUTES,
-    METROBUS_ROUTES,
 )
 from apps.realtime.adapters.iett_soap import IettRateLimitViolation, IettSoapAdapter
 from apps.realtime.calendar import ISTANBUL_TZ, get_day_type, pick_target_date
@@ -163,8 +162,8 @@ def refresh_iett_mapping(self) -> dict:
     mapping = build_mapping(records, target_date, day_type)
 
     active = set(mapping["active_routes"])
-    metrobus_missing = sorted(METROBUS_ROUTES - active)
-    metrobus_present_count = len(METROBUS_ROUTES) - len(metrobus_missing)
+    metrobus_missing = sorted(settings.METROBUS_SHORT_NAMES - active)
+    metrobus_present_count = len(settings.METROBUS_SHORT_NAMES) - len(metrobus_missing)
 
     payload_bytes = json.dumps(mapping, separators=(",", ":")).encode("utf-8")
     redis_client.set(
@@ -185,7 +184,7 @@ def refresh_iett_mapping(self) -> dict:
         "day_type": day_type,
         "records_received": len(records),
         "active_routes_count": len(active),
-        "metrobus_coverage": f"{metrobus_present_count}/{len(METROBUS_ROUTES)}",
+        "metrobus_coverage": f"{metrobus_present_count}/{len(settings.METROBUS_SHORT_NAMES)}",
         "metrobus_missing": metrobus_missing,
         "payload_bytes": len(payload_bytes),
         "elapsed_seconds": elapsed,
@@ -384,7 +383,6 @@ def fetch_iett_positions() -> dict:
         "type": "vehicles_all_update",
         "timestamp": now_iso,
         "vehicle_count": len(enriched),
-        "mapped_count": mapped_count,
         "vehicles": [
             {
                 "id": v.vehicle_id,
@@ -410,7 +408,6 @@ def fetch_iett_positions() -> dict:
     result = {
         "status": "ok",
         "fetched": len(vehicles),
-        "mapped_count": mapped_count,
         "unmapped": unmapped,
         "elapsed_seconds": elapsed,
     }

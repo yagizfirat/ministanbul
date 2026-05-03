@@ -77,6 +77,15 @@ def patch_adapter(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _enable_iett_bus_mapping(settings):
+    """KM5-a: ``IETT_BUS_MAPPING_ENABLED`` v0.8.0 default False (Spec §5.7,
+    Ek A.18 R12). fetch_iett_positions testleri historik mapping davranışını
+    (hibernation path) doğruluyor; flag autouse fixture'ıyla True yapılır.
+    Flag=False senaryosu test_enrich.py altında ayrı testlerle kapsanır."""
+    settings.IETT_BUS_MAPPING_ENABLED = True
+
+
+@pytest.fixture(autouse=True)
 def captured_group_sends(monkeypatch):
     """Capture ``channel_layer.group_send`` calls into a Python list.
 
@@ -231,10 +240,14 @@ def test_happy_path_single_vehicle(fake_redis, patch_adapter, captured_group_sen
 
     assert snapshot["type"] == "vehicles_all_update"
     assert snapshot["vehicle_count"] == 1
-    assert snapshot["mapped_count"] == 1
     assert len(snapshot["vehicles"]) == 1
     assert snapshot["vehicles"][0]["id"] == "A-231"
     assert snapshot["vehicles"][0]["route_id"] == EXPECTED_PK_FOR_HAT["29B"]
+    # KM5-a (v0.8.0): mapped_count payload field'ı kaldırıldı (Spec §5.7).
+    # Frontend KM5-d'de HUD'ı yeniden modelleyene kadar field yokluğu
+    # sözleşme — '0' veya 'undefined' fallback yanıltıcı render üretirdi.
+    assert "mapped_count" not in snapshot
+    assert "mapped_count" not in result
 
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 0
     assert fake_redis.get(LAST_FETCH_TS_KEY).endswith(b"Z")
@@ -246,7 +259,6 @@ def test_happy_path_single_vehicle(fake_redis, patch_adapter, captured_group_sen
 
     assert result["status"] == "ok"
     assert result["fetched"] == 1
-    assert result["mapped_count"] == 1
     assert result["unmapped"] == 0
 
 
@@ -274,11 +286,9 @@ def test_unmapped_vehicle_included_with_null_route_id(
     assert by_id["X-999"]["route_id"] is None
 
     assert snapshot["vehicle_count"] == 2
-    assert snapshot["mapped_count"] == 1
 
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 1
     assert result["unmapped"] == 1
-    assert result["mapped_count"] == 1
     assert len(captured_group_sends) == 1
 
 
@@ -304,12 +314,10 @@ def test_mapping_cache_miss_all_unmapped_still_broadcasts(
     snapshot = _read_snapshot(fake_redis)
 
     assert snapshot["vehicle_count"] == 3
-    assert snapshot["mapped_count"] == 0
     assert all(v["route_id"] is None for v in snapshot["vehicles"])
 
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 3
     assert result["unmapped"] == 3
-    assert result["mapped_count"] == 0
 
     assert len(captured_group_sends) == 1
     assert captured_group_sends[0][0] == VEHICLES_ALL_GROUP
@@ -408,7 +416,6 @@ def test_empty_vehicle_list_still_broadcasts_zero_payload(
     snapshot = _read_snapshot(fake_redis)
 
     assert snapshot["vehicle_count"] == 0
-    assert snapshot["mapped_count"] == 0
     assert snapshot["vehicles"] == []
 
     assert len(captured_group_sends) == 1
@@ -417,7 +424,6 @@ def test_empty_vehicle_list_still_broadcasts_zero_payload(
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 0
     assert result["fetched"] == 0
     assert result["unmapped"] == 0
-    assert result["mapped_count"] == 0
 
 
 # --- 6. payload format matches vehicles:all spec --------------------------
@@ -438,7 +444,7 @@ def test_payload_format_matches_vehicles_all_spec(
 
     snapshot = json.loads(raw)
     assert set(snapshot) == {
-        "type", "timestamp", "vehicle_count", "mapped_count", "vehicles",
+        "type", "timestamp", "vehicle_count", "vehicles",
     }
     assert snapshot["type"] == "vehicles_all_update"
     assert snapshot["timestamp"].endswith("Z")
@@ -501,8 +507,6 @@ def test_mapped_count_excludes_unmapped(
     snapshot = _read_snapshot(fake_redis)
 
     assert snapshot["vehicle_count"] == 5
-    assert snapshot["mapped_count"] == 3
-    assert result["mapped_count"] == 3
     assert result["unmapped"] == 2
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 2
 
@@ -588,7 +592,6 @@ def test_fetch_task_spatial_check_keeps_near_vehicle(
     result = fetch_iett_positions()
 
     assert result["status"] == "ok"
-    assert result["mapped_count"] == 1
 
     raw = fake_redis.get(VEHICLES_ALL_KEY)
     payload = json.loads(raw)
@@ -619,7 +622,6 @@ def test_fetch_task_spatial_check_nullifies_far_vehicle(
     result = fetch_iett_positions()
 
     assert result["status"] == "ok"
-    assert result["mapped_count"] == 0
 
     raw = fake_redis.get(VEHICLES_ALL_KEY)
     payload = json.loads(raw)
@@ -652,7 +654,6 @@ def test_fetch_task_spatial_check_skips_when_no_shape_cached(
     result = fetch_iett_positions()
 
     assert result["status"] == "ok"
-    assert result["mapped_count"] == 1
 
     raw = fake_redis.get(VEHICLES_ALL_KEY)
     payload = json.loads(raw)
@@ -708,7 +709,6 @@ def test_stale_vehicle_dropped_counter_set(
     assert by_id["F-1"]["route_id"] == EXPECTED_PK_FOR_HAT["29B"]
 
     assert int(fake_redis.get(STALE_VEHICLE_DROPPED_COUNT_KEY)) == 1
-    assert snapshot["mapped_count"] == 1
     assert int(fake_redis.get(UNMAPPED_COUNT_KEY)) == 1
     # day-type mismatch must not fire (snapshot saturday + vehicle saturday)
     assert fake_redis.get(DAY_TYPE_MISMATCH_COUNT_KEY) is None
