@@ -30,6 +30,7 @@ import {
   getFilterExpression as getRouteFilter,
 } from './state/route_visibility';
 import { RouteFocus } from './state/route_focus';
+import { debounceFrame } from './state/frame_debouncer';
 import { createLastUpdateIndicator } from './ui/last_update_indicator';
 import { createRoutePanel, type RoutePanelHandle } from './ui/route_panel';
 import { showToast } from './ui/toast';
@@ -219,6 +220,9 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
       buildFleetFilter(busVisible, metrobusVisible) as never,
     );
   }
+  // KM-e Fix-A: hızlı state değişimlerinde (Reset, Tümü, Hiçbiri,
+  // hızlı checkbox toggle) setFilter chain'ini RAF'a debounce et.
+  const debouncedApplyFleet = debounceFrame(applyFleetVisibilityFilter);
   routePanel = createRoutePanel({
     visibility: routeVisibility,
     routes: initialRoutes,
@@ -227,11 +231,11 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
     onVariantGroupDoubleClick: (routeIds) => focusAndZoom(routeIds),
     onBusVisibilityChange: (v) => {
       busVisible = v;
-      applyFleetVisibilityFilter();
+      debouncedApplyFleet();
     },
     onMetrobusVisibilityChange: (v) => {
       metrobusVisible = v;
-      applyFleetVisibilityFilter();
+      debouncedApplyFleet();
     },
   });
 
@@ -311,12 +315,20 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
     if (map.getLayer('scheduled-circles')) {
       map.setFilter('scheduled-circles', routeF as never);
     }
-    if (map.getLayer('fleet-circles')) {
-      map.setFilter('fleet-circles', routeF as never);
-    }
+    // KM-e Fix-B (Spec Ek A.19 borç #7): fleet-circles ARTIK BURAYA
+    // dokunmuyor. Önceki tasarımda hem applyFilters (route_id-based)
+    // hem applyFleetVisibilityFilter (is_metrobus-based) aynı layer'a
+    // setFilter ediyordu, sonuncusu kazanıyordu — Reset sonrası
+    // route_id null vehicle'lar (KM5-a mapping retire) gizleniyordu.
+    // Tek-kanal: fleet-circles sadece bus/metrobus toggle ile.
   }
-  routeVisibility.subscribe(applyFilters);
+  // KM-e Fix-A: RouteVisibility fire'ı RAF'a debounce et — Reset 1
+  // fire = 2 setFilter (route-lines, scheduled-circles), N hızlı
+  // toggle aynı frame içinde tek apply'a sıkışır.
+  const debouncedApplyFilters = debounceFrame(applyFilters);
+  routeVisibility.subscribe(debouncedApplyFilters);
   applyFilters();
+  applyFleetVisibilityFilter();
 
   // KM5-e.2: bus listesi panel'den iptal — fetchAllBusRoutes / virtual
   // list / setBusLoading akışı kaldırıldı. Vehicle.is_metrobus payload
