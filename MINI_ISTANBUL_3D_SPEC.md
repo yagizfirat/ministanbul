@@ -86,7 +86,7 @@ Mevcut İETT "Otobüsüm Nerede" uygulaması veriyi 2D sunuyor, turist dostu de�
 ### Teknik / Meraklı
 **US-7:** Geliştirici, uygulamanın sunduğu REST API'yi kullanarak kendi uygulamasına İstanbul toplu taşıma verisi entegre etmek ister.
 
-**US-8:** Araştırmacı, geçmiş bir tarih aralığındaki sefer verilerini indirmek ister (Faz 7+).
+**US-8:** Araştırmacı, geçmiş bir tarih aralığındaki sefer verilerini indirmek ister (v1.0+ backlog).
 
 **US-9:** Kullanıcı 29B hattını seçer; o hatta ait tüm araçların güzergâh boyunca dağılımını, hangi durakta hangi aracın olduğunu, araçlar arasındaki aralıkları (headway) görür. Hat tıklanınca polyline vurgulanır, diğer hatların araçları arka plana çekilir.
 
@@ -334,7 +334,7 @@ Geliştirmeye başlamadan önce servisi üç ayrı testle ölçtük. Sonuçlar s
 | Hat-Durak-Güzergah | `UlasimAnaVeri/HatDurakGuzergah.asmx` | Durak, hat, garaj meta verisi (GTFS'e tamamlayıcı) |
 | Duyurular | `UlasimDinamikVeri/Duyurular.asmx` | Hat kesintileri, anlık duyurular |
 | Planlanan Sefer Saati | `UlasimAnaVeri/PlanlananSeferSaati.asmx` | Hat kalkış saatleri (iş günü / cumartesi / pazar) |
-| İBB 360 Arşiv | `ibb/ibb360.asmx` | Geçmiş görev ve yolculuk verisi (Faz 7+) |
+| İBB 360 Arşiv | `ibb/ibb360.asmx` | Geçmiş görev ve yolculuk verisi (v1.0+ backlog) |
 | Araç Özellikleri | `AracAnaVeri/AracOzellik.asmx` | Yakıt tüketimi (data analiz için) |
 
 **Not:** Bu diğer servisler ayrı SOAP endpoint'leri, `SeferGerceklesme.asmx` ile rate limit paylaşımı **test edilmedi**. Muhtemelen ayrı ama doğrulanmalı. Güvenli yaklaşım: her servise kendi rate limit mantığı.
@@ -1215,19 +1215,59 @@ Her faz **çalışır bir uygulama** çıkarır. Antigravity agent her faz sonun
 
 **Bitiş kriteri:** Metro, Marmaray ve vapur araçları da haritada hareketli.
 
-### Faz 6: Cilalama (süresiz, kontinü)
+### Faz 6: Cilalama (KM1 ✅, KM2-5 yayın yoluna entegre)
 
 **Hedef:** Kullanıcı deneyimi, performans, i18n, mobil uyum.
 
+**Durum (2026-05-03):** KM1 (kurumsal renk + filtreleme paneli) tamamlandı (v0.7-v0.8 zinciri, ROADMAP detayında). KM2-5 v0.8.0 sonrası "süresiz kontinü faz" olmaktan çıkarıldı, yayın hedefli **Faz 7**'ye sıkıştırıldı. KM2 (mobil) → Faz 7 v0.8.3 KM-a; KM4 (perf) → Faz 7 v0.8.3 KM-b; KM5 production deployment maddesi → Faz 7 v0.9.1; KM3 (i18n) ve diğerleri v1.0+ backlog (Ek A.19).
+
 **Çıktılar:**
-- [ ] Türkçe / İngilizce dil değiştirici (i18next)
-- [ ] Responsive tasarım (mobil breakpoint)
-- [ ] Performans: görünür bbox dışındaki araçları gizle
-- [ ] Durak arama (autocomplete)
-- [ ] Hat filtreleme paneli
-- [ ] Saat çubuğu (v2'ye ertelenebilir)
-- [ ] Landmark özel GeoJSON (Ayasofya, Galata vb. — opsiyonel)
-- [ ] Production deployment dokümanı
+- [x] Hat-bazlı filtreleme paneli (KM1, ROADMAP)
+- [x] Kurumsal renk şeması (KM1, ROADMAP)
+- [→] Responsive tasarım (mobil breakpoint) — Faz 7 v0.8.3 KM-a
+- [→] Performans: viewport culling, LOD, InstancedMesh — Faz 7 v0.8.3 KM-b
+- [→] Production deployment dokümanı — Faz 7 v0.9.1
+- [↓] Türkçe / İngilizce dil değiştirici (i18next) — v1.0+ backlog
+- [↓] Durak arama (autocomplete) — v1.0+ backlog
+- [↓] Saat çubuğu — v1.0+ backlog
+- [↓] Landmark özel GeoJSON — v1.0+ backlog
+
+### Faz 7: Yayın (~10-13 iş günü, ~2 hafta)
+
+**Hedef:** v1.0.0 yayın. `https://ministanbul.yagizfiratt.com` canlı demo + GitHub repo public.
+
+**Mimari kararlar (2026-05-03):**
+- Subdomain `ministanbul.yagizfiratt.com` (mevcut CloudPanel + WARP sunucusu üstüne, ekstra masraf yok)
+- MIT lisans
+- Backend: gunicorn (HTTP 8010 internal) + Daphne (WS 8011 internal) + Celery worker + Celery beat, dört systemd unit, Nginx reverse proxy
+- DB: PostgreSQL 16 + PostGIS (CloudPanel default MySQL'in yanına manuel apt install)
+- Cache/queue: Redis 7 db=0 (Celery), db=1 (Channels)
+
+**Sürüm zinciri:**
+
+| Sürüm | Süre | Kapsam |
+|---|---|---|
+| v0.8.1 | 1-2 gün | Borç kapama: route-lines paint hatası, beat schedule doğrulama, mojibake popup patch |
+| v0.8.2 | 2-3 gün | UX cilalama: bundle size optimize (1066KB → 600KB altı), toggle/filter URL persistence |
+| v0.8.3 | 3-4 gün | Mobil + perf: 768px breakpoint (hamburger, bottom sheet, touch), viewport culling + LOD + InstancedMesh |
+| v0.9.0 | 1 gün | Açık kaynak hazırlık: secret tarama, LICENSE (MIT), README sıfırdan, CONTRIBUTING, repo metadata |
+| v0.9.1 | 2-3 gün | Production deployment: PostgreSQL+PostGIS+Redis kurulum, CloudPanel site, systemd × 4, Nginx config, prod settings, rate limiting, backup cron, SSL smoke |
+| v1.0.0 | yarım gün | Yayın günü: GitHub public toggle, kişisel siteden buton bağlama, final smoke, tag |
+
+**Çıktılar (v1.0.0):**
+- [ ] `https://ministanbul.yagizfiratt.com` canlı, SSL valid, Lighthouse mobile ≥80
+- [ ] WebSocket Cloudflare WARP üzerinden çalışıyor (ping/pong 100sn idle altında)
+- [ ] 4 systemd servis enable'lı, `Restart=always`, reboot sonrası ayağa kalkıyor
+- [ ] pg_dump cron + logrotate çalışıyor
+- [ ] GitHub repo public, MIT lisans, README + demo URL
+- [ ] `_research/` klasörü repo'da görünür (mapping %53 yanlış kararının gerekçesi)
+- [ ] yagizfiratt.com'dan buton ministanbul.yagizfiratt.com'a yönlendiriyor
+- [ ] Mobil (iPhone Safari + Android Chrome) smoke geçti
+- [ ] Realtime + gtfs + frontend suite final yeşil
+
+**Bitiş kriteri:** `git tag v1.0.0` push edildi, public URL açık, repo açık.
+
+**v1.0+ backlog:** i18n EN, A11y (klavye/ARIA), durak arama (PostGIS pg_trgm), E2E Playwright, saat çubuğu, landmark GeoJSON, KM5 veri katmanı temizliği (CalendarDate, FK upgrade, frequencies expansion, route_type=9/10, 299 trip'siz PK), spatial inference v0.9 production entegrasyonu (2-3 hafta), real-time ETA, smoke automation, mojibake stops sözlüğü, İBB GTFS-RT açılırsa mapping reaktivasyonu, akademik bilateral data sharing başvurusu. Detay envanter Ek A.19.
 
 ---
 
@@ -1790,6 +1830,86 @@ A.16 patch öncesi yapısal sorunun kayıt değeri için korunur. A.17 patch hik
 
 ---
 
+### A.19 v0.8.0 sonrası borç envanteri — yayın yolu ayrıştırması
+
+**Tarih:** 2026-05-03 (Faz 5.5 v0.8.0 kapanışı sonrası planlama turu)
+
+**Bağlam:** v0.8.0 release'i sonrası Faz 6 cilalama backlog'u + raporlanmış bilinen borçlar tek listeydi. Yağız "yayına çıkmak istiyorum" kararıyla beraber bu liste **yayını blokeleyen / cilalama / v1.0 sonrası** kategorilere ayrıştırıldı. Ayrıştırmanın gerekçesi: "süresiz kontinü cilalama" hedefi yayın tarihini belirsiz bırakır, oysa karar netleşti — `ministanbul.yagizfiratt.com` subdomain + GitHub public, ~2 hafta. Bu Ek envanteri tek dokümanda toplar.
+
+#### v0.8.0 sonrası bilinen borçlar (Faz 5.5 close-out raporu)
+
+| # | Borç | Şiddet | v0.x'e atandı |
+|---|---|---|---|
+| 1 | Frontend route-lines line-width interpolate hatası, console kırmızısı route focus aktive olunca tetikleniyor (`applyFocusPaint`, main.ts:122) | Görsel tutarsızlık, fonksiyon bozulmamış | v0.8.1 KM-a ✅ (commit `5b5007e`) |
+| 2 | Beat schedule doğal tetikleme doğrulanmadı: `refresh-iett-mapping` cron `0 4 * * *` UTC, `last_run_at=None` ile başladı, KM5-f warm-up hook ilk manuel refresh'i sağladı | Prod riski (cache 24h sonra bayatlar) | v0.8.1 KM-b |
+| 3 | Mojibake raylı/vapur popup `long_name`'de görünebilir, ⚠ uyarısı var ama kaynak GTFS feed sorunu | UX kozmetik | v0.8.1 KM-c.1 (frontend patch) |
+| 4 | Bundle size: JS 1066KB / CSS 77.6KB. Vite warn 500KB üstü | Mobil yükleme süresi | v0.8.2 KM-a |
+| 5 | Toggle state URL persistence yok — sayfa yenilenince default açık gelir | Paylaşılabilirlik | v0.8.2 KM-b |
+
+#### v0.8.1 manuel browser smoke turu — yeni keşfedilen borçlar (2026-05-04)
+
+KM-a fix sonrası Yağız manuel smoke turu yaptı (Chromium DevTools açık, localhost:5173). KM-a doğrulandı (M2 hattına çift tıklama → focus + bbox + zoom + popup hepsi çalışıyor, console temiz). Aynı turda 4 yeni borç keşfedildi:
+
+| # | Borç | Şiddet | v0.x'e atandı |
+|---|---|---|---|
+| 6 | **Vapur (Şehir Hatları A.Ş.) çift tıklama sessiz** — Vapur hatlarına çift tıkladığında focus + bbox + zoom hiç tetiklenmiyor. Console'da log/error/toast yok. M2/M4 metroda ve İETT bus'ta aynı double-click sorunsuz çalışıyor. Olası kökler: (a) Şehir Hatları A.Ş. agency_id farklı render path, (b) variant grup header dblclick handler sadece bus için wire edilmiş (KM1 f-polish-5), tek-variant vapur satırında handler attach yok, (c) `getRouteBBox(routeId)` lazy ferry shape cache (31 ferry shape) henüz hydrate olmamışken null dönüyor, vehicle bbox fallback (f-polish-3 Madde 3) sadece İETT için yazıldı | **Yayın blokeleyici** — vapur ana özelliklerden, public demoda çalışmazsa kırılma | v0.8.1 KM-d |
+| 7 | **Filter Reset state corruption** — Reset / Tümü / hat checkbox'ları toplu açma sonrası **frontend tamamen donuyor, F5 atılana kadar düzelmiyor**. Filter sıkı çalışıyor, ama açılış geri tepiyor. Olası kökler: (a) MapLibre `setFilter` × N ardışık çağrı, style spec invalidation döngüsü, (b) memory leak — checkbox flip her seferinde event listener attach ediyor, eskiler temizlenmiyor, (c) snapshot diff reducer kilitleniyor, sonraki tick'ler de skip ediyor | **Yayın blokeleyici, kritik** — public demoda Reset'i çağıran ilk kullanıcı sayfayı kapatır | v0.8.1 KM-e |
+| 8 | Metrobüs popup label "İETT Otobüs · KapiNo X" yazıyor — `is_metrobus` payload field'ı (KM5-e.1) backend'den geliyor ama frontend popup template'i tüketmiyor. Antrasit gri bir noktaya tıkla → "İETT Otobüs" yaz → tutarsızlık | UX kozmetik (kullanıcı kafa karışıklığı) | v0.8.1 KM-c.2 (popup template) |
+| 9 | Metrobüs nokta görsel ayrımı zayıf — Antrasit gri (#3A3D40) 6774 sarı nokta arasında küçük puntoda (zoom 8-10) ayırt edilemiyor. Toggle aç/kapat smoke (Yağız 2026-05-04): 137 nokta kayboluyor → render mantığı tamam, sadece görsel ayrım yetersiz. Çözüm: metrobüs `circle-radius` 4→6px paint case veya beyaz/sarı border | UX cilalama (yayın blokesi değil) | v0.8.2 KM-c |
+
+**v0.8.1 kapsam genişlemesi:** Borç #6 ve #7 yayın blokeleyici keşfedildi, v0.8.1 kapsamı 1-2 günden 3-4 güne çıktı. Borç #8 KM-c'ye atomik birleşti. Borç #9 v0.8.2'ye atıldı. Faz 7 toplam tahmin ~10-13 → ~12-15 iş günü.
+
+#### Faz 6 KM2-5'ten devralınan iş
+
+| Eski yer | Yeni yer | Not |
+|---|---|---|
+| KM2 — Mobile responsive (768px) | v0.8.3 KM-a | Trafiğin %60'ı mobil olacak, blokeleyici |
+| KM3 — i18n (TR/EN) | v1.0+ backlog | Türkçe MVP yeterli, EN README açık kaynak görünürlüğü için yeterli |
+| KM4 — Performans cilalama (viewport culling, LOD, InstancedMesh) | v0.8.3 KM-b | 6900 araç + mobil = donmaya açık, blokeleyici |
+| KM5 — Production deployment dokümanı (Nginx + Daphne + systemd + SSL) | v0.9.1 (tamamı) | Yayın için zorunlu |
+| KM5 — CalendarDate import | v1.0+ backlog | Veri katmanı temizliği, görsel etkisi yok |
+| KM5 — Trip.service_id FK upgrade | v1.0+ backlog | Manuel JOIN çalışıyor |
+| KM5 — frequencies.csv expansion (Marmaray görünürlüğü) | v1.0+ backlog | Marmaray "tek görünür sefer" sınırlaması v1.0'da kabul |
+| KM5 — route_type=9/10 araştırması | v1.0+ backlog | Endpoint whitelist dışı, kullanıcı görmez |
+| KM5 — 299 trip'siz IETT short_name PK temizliği (Ek A.17) | v1.0+ backlog | Mapping retire sonrası downstream sorun yok |
+| KM5 — E2E testler (Playwright) | v1.0+ backlog (yayın sonrası ilk tur) | Unit suite yayın için yeterli |
+| KM5 — Accessibility (klavye, ARIA) | v1.0+ backlog (etik olarak v1.1) | |
+| KM5 — Durak arama (PostGIS pg_trgm) | v1.0+ backlog | Güzel feature, harita çalışıyor |
+| KM5 — Saat çubuğu | v1.0+ backlog (opsiyonel) | |
+| KM5 — Landmark GeoJSON | v1.0+ backlog (opsiyonel) | |
+| KM5 — Smoke automation (channels-redis/daphne version bump sonrası) | v1.0+ backlog | Dev ergonomi |
+
+#### v0.9+ büyük açık seçenekler (yayın sonrası)
+
+| Madde | Süre | Tetikleyici |
+|---|---|---|
+| Spatial inference v0.9 production entegrasyonu | 2-3 hafta | Mevcut PoC %53 → ?? hedef. Önce 1-2 günlük accuracy benchmark turu, hedef belirleme, sonra entegrasyon kararı |
+| Real-time ETA (vehicle hızı + mesafe bazlı) | 1 hafta | Mevcut planlı saat ETA yetersiz hisseder hisseder |
+| Mojibake stops sözlüğü (substring-level recovery) | 3-5 gün | Backend `_demojibake` hibrit %75.9 sonrası kalan 2237 satır |
+| İBB GTFS-RT açılırsa mapping reaktivasyonu | 1 saat (kod hazır) | İBB tarafı kararı, akademik kanal başvurusu paralel |
+| Akademik bilateral data sharing başvurusu | (Yağız tarafı) | Resmi kanal |
+
+#### Yayın yolu sürüm zinciri
+
+ROADMAP Faz 7 detayında. Özet:
+- v0.8.1 (1-2 gün, borç kapama)
+- v0.8.2 (2-3 gün, UX cilalama)
+- v0.8.3 (3-4 gün, mobil + perf)
+- v0.9.0 (1 gün, açık kaynak hazırlık)
+- v0.9.1 (2-3 gün, production deployment)
+- v1.0.0 (yarım gün, yayın günü)
+
+**Toplam: ~10-13 iş günü, ~2 hafta.**
+
+#### Mimari kararlar
+
+- **Adres:** `ministanbul.yagizfiratt.com` (subdomain). Subpath ve ayrı domain seçenekleri reddedildi — gerekçe ROADMAP Faz 7 mimari notlarında.
+- **Sunucu:** Mevcut CloudPanel + WARP sunucusu (Yağız 2026-05-03 kapasite teyidi). PostgreSQL+PostGIS+Redis manuel apt install, CloudPanel default MySQL'e dokunulmaz.
+- **Lisans:** MIT (MapLibre / Three.js / deck.gl uyumlu).
+- **Cloudflare WARP gerçekliği:** WS WARP üzerinden geçer, free plan 100sn idle timeout. Faz 3 ping/pong altyapısı buna göre tasarlandı, smoke'ta doğrulanır.
+
+---
+
 ## 14. Doküman Versiyon Geçmişi
 
 | Versiyon | Tarih | Değişiklik |
@@ -1808,3 +1928,5 @@ A.16 patch öncesi yapısal sorunun kayıt değeri için korunur. A.17 patch hik
 | 0.7.4 | 2026-05-02 | **Yol B (vehicle.route_id GTFS PK semantics) + stale vehicle.timestamp filter** eklendi. Backend `enrich_with_route_id` artık SHATKODU short_name yerine canonical Route.route_id PK'sını stamp ediyor (`build_mapping` `route_id_by_short_name` index'i β filtresi `agency=IETT, route_type=3` + alfabetik tie-breaker ile üretir). Frontend RouteStore'a bus PK'ları `registerSummaries` ile yüklendi (Faz 6 KM1 reliquat). 5j-ii: out-of-interval-but-mapped vakası teşhisi, drift hipotezi cross-check ile A doğrulandı, `STALE_VEHICLE_TIMESTAMP_THRESHOLD_S=180` filter ve `stats:stale_vehicle_dropped_count` heartbeat counter eklendi. 5j-ii ön-keşfinde İETT stop_times coverage 139/9274 ölçüldü (Ek A.16). Yeni Ek A.15 (fleet endpoint stale konum davranışı) ve Ek A.16 (stop_times coverage). Realtime suite 165/165, frontend 210/210 yeşil. |
 | 0.7.5 | 2026-05-02 | **Faz 5.5 stop_times patch turu**: İBB CKAN'da yan yana duran `stop_times.zip` (canonical, 6.155.692 satır) ve `stop_times.csv` (Excel-truncated, 1.048.575 satır = 2^20 - 1) arasındaki Faz 1 yanlış tercihinin (`format=="CSV"` filter) düzeltilmesi. `download_gtfs.py` yeni `_resolve_resource_for(fname)` ZIP-prefer resolver, `_extract_single_file_zip()` helper, ZIP hash manifest kaydı; sadece stop_times için ZIP variant tercih edilir, diğer 5 dosya eski CSV path'inde kaldı. `import_gtfs.py` autodetect canonical UTF-8 + virgül formatını dokunulmadan tanıdı (`_detect_encoding` BOM yokluğu → utf-8, `_detect_sep` virgül çoğunluğu → `,`). Reimport sonrası IETT StopTime 1.048.485 → 6.154.703 (+5.1M, ×5.87), Trip-level coverage %13.96 → %100 (135.625/135.625), bus short_name coverage 139/1095 → 796/1095 (~%72.7). 29B 126 trip için 3.528 stop_times. Metrobüs (34/34A/34BZ/34G/34Z) toplam 334.758 stop_times. Yeni Ek A.17 (Excel truncation incident), Ek A.5 revize, Ek A.16'ya "patch öncesi snapshot" notu. Faz 5.5 implementation Plan A (durak-bazlı polyline) önceliklendi, OSM Overpass+pgrouting Plan B'ye düştü. Realtime suite 165/165, gtfs 38/38, frontend 210/210 yeşil korundu. |
 | 0.8.0 | 2026-05-03 | **Faz 5.5 "Public Transit Refresh" — kapsam tanımı + implementation final (KM5-a..f, üçüncü revize).** Üç günlük mapping yapısal teşhis turu (Ek A.18) sonrası Faz 5.5 yeniden tanımlandı. Eski Plan A (durak-bazlı polyline) ve Plan B (OSM Overpass) iptal/erteleme. Implementation altı alt-tur: **KM5-a** İETT bus mapping retire (settings flag `IETT_BUS_MAPPING_ENABLED=False`, drift filter doğal devre dışı, payload'dan `mapped_count` kaldırıldı). **KM5-b** `/api/routes/` `is_metrobus` SerializerMethodField (KM5-d için kategori sinyali). **KM5-c** sonraki durak backend modülü iptal — keşifte Faz 5 simülasyonun frontend tarafında olduğu netleşti, `TripActiveSerializer.stop_times` zaten gerekli verinin tümünü sunuyor; kapsam KM5-d'ye birleşti. **KM5-d** frontend popup ayrımı (otobüs/metrobüs minimal "İETT Otobüs · KapiNo X", raylı/vapur zengin + sonraki 5 durak ETA'lı), `frontend/src/simulation/next_stops.ts` compute helper, `TripActiveSerializer.get_stop_times` `stop_name` field eklendi. KM5-d B yolu: renk ayrımı iptal, "%22 yanlış kategori UX olarak savunulamaz" argümanıyla. **KM5-e** B yolundan dönüş (Yağız + Claude üç tur tartışma, KM5-e turunda kesin): rengin yokluğu = %0 bilgi, varlığı = %78 doğru, %22 yanlış kategori riski bilinçli tolere edildi. **KM5-e.1** `VehiclePosition.is_metrobus` payload field — mapping cache lookup flag'tan bağımsız (`_resolve_active_hat` helper, flag-açık + flag-kapalı path'lerin paylaştığı bisect). **KM5-e.2** `fleet_layer.ts` paint case (`is_metrobus → #3A3D40`, else sarı), `buildFleetFilter(busVisible, metrobusVisible)`, `route_panel.ts` "121 hat görünür" sayacı + bus mode group + virtual_list kaldırıldı, iki bağımsız toggle satırı (İETT Otobüs + Metrobüs) eklendi. **KM5-f** mapping cache warm-up startup hook (`apps/realtime/apps.py::ready()` → `refresh_iett_mapping.apply()` cache boşsa sync — KM5-e.1 smoke bug'ı kalıcı fix), §3.3/§5.7/§5.8/Ek A.18 üçüncü revize. Suite final: realtime 175/175, gtfs 44/44, frontend 238/238 (toplam 457 yeşil). v0.8.0 release tag'ı bu satırla basıldı. |
+| 0.8.0-postmortem | 2026-05-03 | **Yayın yolu kararı + Ek A.19 + §7 Faz 6/7 yeniden yapılandırma.** v0.8.0 close-out planlama turunda Yağız "yayına çıkmak istiyorum" kararıyla Faz 6 "süresiz kontinü cilalama" hedefi yayın hedefli ardışık sürüm zincirine dönüştürüldü. Mimari kararlar: subdomain `ministanbul.yagizfiratt.com` (mevcut CloudPanel + WARP sunucusu, ekstra masraf yok), MIT lisans, GitHub repo public. Yeni Ek A.19 (v0.8.0 sonrası borç envanteri — yayın yolu ayrıştırması) v0.8.0 close-out 5 borcu + Faz 6 KM2-5 maddelerini blokeleyen / cilalama / v1.0+ backlog kategorilerine ayrıştırır. §7 Faz 6 KM1 ✅ ile dondu, KM2-5 yayın yoluna devredildi notuyla; yeni §7 Faz 7 (Yayın) eklendi — sürüm zinciri v0.8.1 borç kapama → v0.8.2 UX cilalama → v0.8.3 mobil + perf → v0.9.0 açık kaynak hazırlık → v0.9.1 production deployment → v1.0.0 yayın günü, ~10-13 iş günü. ROADMAP paralel revize (üst durum satırı + içindekiler + Faz 6 daraltma + Faz 7 detay). Bu sürüm **karar dokümantasyonudur**, kod değişikliği yok — implementation v0.8.1'de başlar. |
+| 0.8.1-prep | 2026-05-04 | **v0.8.1 KM-a kapanışı + manuel smoke turu borçları.** v0.8.1 KM-a (Route-lines paint hatası fix) tamamlandı: `buildRouteLinePaint(focused)` line-width "case → interpolate(zoom)" deseni MapLibre style spec ihlaliydi (`['zoom']` yalnız top-level interpolate input'unda kullanılabilir, `case` içinde nested olmaz; setPaintProperty runtime'da Error fırlatıyordu). Düzeltme outer `interpolate(['linear'], ['zoom'], …)` → inner `case` data-driven stops desenine çevrildi (10→3/2, 14→6/4, 18→9/6 — eski matematik korundu). Frontend Vitest 240/240 (238 + 3 yeni regression − 1 eski "case" assertion), backend dokunulmadı (175 + 44 = 219). Browser smoke (Yağız 2026-05-04): KM-a doğrulandı (M2 hattına çift tıkla → focus + bbox + zoom + popup hepsi çalışıyor, console temiz). Aynı smoke turunda 4 yeni borç keşfedildi (Ek A.19 manuel smoke borçları tablosu): #6 vapur (Şehir Hatları A.Ş.) çift tıklama sessiz (yayın blokeleyici), #7 Filter Reset state corruption — F5 atılana kadar frontend donuyor (yayın blokeleyici, kritik), #8 metrobüs popup label "İETT Otobüs" yazıyor (kozmetik, KM-c'ye birleşti), #9 metrobüs nokta görsel ayrımı zayıf (UX cilalama, v0.8.2 KM-c'ye atıldı). v0.8.1 kapsamı 1-2 günden 3-4 güne genişledi (KM-a ✅ + KM-b/c/d/e/f), Faz 7 toplam tahmin ~10-13 → ~12-15 iş günü. ROADMAP v0.8.1 KM listesi revize, üst durum satırı + Faz 7 başlık tahminleri güncellendi. Kod değişikliği yalnız KM-a commit `5b5007e`'de (frontend `route_lines_layer.ts` + test, +47/−5). |

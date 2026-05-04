@@ -9,7 +9,7 @@ okunacak doküman budur.
 
 **Durum:** Faz 1-5 tamamlandı (2026-05-01). Faz 5.5 "Public Transit Refresh" **tamamlandı** (2026-05-03, v0.8.0): (a) stop_times Excel truncation patch (v0.7.5, Spec Ek A.17). (b) Üç günlük mapping yapısal teşhis turu, 11 `_research/` raporu, %53 yanlış kanıtı (Spec Ek A.18). (c) Implementation altı alt-tur (KM5-a..f): otobüs mapping retire + metrobüs ayrı görsel kategori (antrasit gri + bağımsız toggle, KM5-d B yolundan KM5-e dönüşü kararı, %22 yanlış kategori bilinçli tolere edildi), raylı/vapur sonraki durak özelliği (Mini Tokyo 3D paritesi, frontend `computeNextStops`), filtre paneli sadeleşti (5 raylı/vapur grup hat-bazlı + iki bağımsız bus toggle), mapping cache warm-up startup hook (KM5-f kalıcı fix). v0.8.0 tag'ı bu sürümle basıldı. Realtime 175/175 + gtfs 44/44 + frontend 238/238 = 457 yeşil.
 
-**v0.8.0 sonrası yön (2026-05-03 karar):** Faz 6 cilalama açık liste olarak süresiz devam etmek yerine **yayın yoluna** odaklandı. Hedef: `ministanbul.yagizfiratt.com` subdomain'i + GitHub repo public, v1.0.0. Tahmini 2 hafta, ardışık altı sürüm: v0.8.1 borç kapama → v0.8.2 UX cilalama → v0.8.3 mobil + perf → v0.9.0 açık kaynak hazırlık → v0.9.1 production deployment → v1.0.0 yayın günü. KM2 (mobil), KM4 (perf), KM5'ten production deployment maddesi bu yola entegre edildi; KM3 (i18n), A11y, durak arama, v0.9+ spatial inference v1.0 sonrası backlog'a ertelendi. Detay yeni **Faz 7 — Yayın**'da.
+**v0.8.0 sonrası yön (2026-05-03 karar):** Faz 6 cilalama açık liste olarak süresiz devam etmek yerine **yayın yoluna** odaklandı. Hedef: `ministanbul.yagizfiratt.com` subdomain'i + GitHub repo public, v1.0.0. İlk tahmin 2 hafta (~10-13 iş günü), v0.8.1 manuel smoke turunda 4 yeni borç keşfi sonrası **revize tahmin ~12-15 iş günü** (2026-05-04). Ardışık altı sürüm: v0.8.1 borç kapama → v0.8.2 UX cilalama → v0.8.3 mobil + perf → v0.9.0 açık kaynak hazırlık → v0.9.1 production deployment → v1.0.0 yayın günü. KM2 (mobil), KM4 (perf), KM5'ten production deployment maddesi bu yola entegre edildi; KM3 (i18n), A11y, durak arama, v0.9+ spatial inference v1.0 sonrası backlog'a ertelendi. Detay yeni **Faz 7 — Yayın**'da.
 
 **Teknik referans:** [`MINI_ISTANBUL_3D_SPEC.md`](./MINI_ISTANBUL_3D_SPEC.md) (v0.8.0 — Public Transit Refresh implementation final + Ek A.19 v0.8.0 sonrası borç envanteri)
 
@@ -1042,7 +1042,7 @@ KM1 ✅ tamamlandı. KM2-5 ayrı bitiş kriterleri yok — yayın yolu **Faz 7**
 ### Faz 7 — Yayın ⚪
 
 **Durum:** Planlı, v0.8.0 sonrası başlar.
-**Tahmini süre:** ~10-13 iş günü (2 hafta).
+**Tahmini süre:** ~12-15 iş günü (2-3 hafta). İlk tahmin ~10-13 idi, v0.8.1 manuel smoke turunda 4 yeni borç (#6/#7/#8/#9) keşfi sonrası revize.
 **Hedef sürüm:** v1.0.0
 **Hedef adres:** `https://ministanbul.yagizfiratt.com` + GitHub repo public
 
@@ -1059,22 +1059,27 @@ Mini İstanbul'u canlı demo + açık kaynak olarak yayına almak. Mevcut altyap
 
 #### Yapılacak iş (sürüm-bazlı, ardışık)
 
-##### v0.8.1 — Borç kapama (1-2 gün)
+##### v0.8.1 — Borç kapama (3-4 gün)
 
-Mevcut bilinen borçları sıfırla, suite yeşil tut. Detay envanter Spec Ek A.19.
+Mevcut bilinen borçları sıfırla, suite yeşil tut. Detay envanter Spec Ek A.19. v0.8.1 manuel browser smoke turunda 4 yeni borç keşfedildi (#6/#7/#8/#9), v0.8.1 kapsamı 1-2 günden 3-4 güne genişledi (#6/#7 yayın blokeleyici, #8 atomik commit'le KM-c'ye birleşti, #9 v0.8.2'ye atıldı).
 
-- **KM-a ✅** `<TBD>` — Route-lines paint hatası fix. `buildRouteLinePaint(focused)` line-width "case → interpolate(zoom)" deseni MapLibre style spec ihlaliydi (`['zoom']` yalnız top-level interpolate input'u olabilir, `case` içinde nested olmaz; setPaintProperty runtime'da Error fırlatıyordu). Düzeltme: outer `interpolate(['linear'], ['zoom'], …)` → inner `case` data-driven stops (10→3/2, 14→6/4, 18→9/6 — eski matematik korundu). Frontend Vitest 240/240 (238 + 3 yeni regression − 1 eski "case" assertion), backend dokunulmadı (175 + 44). Spec Ek A.19 borç #1 kapandı.
-- **KM-b** Beat schedule canlı doğrulama (15dk) — `SELECT name, last_run_at FROM django_celery_beat_periodictask WHERE name='refresh-iett-mapping'`. None ise beat scheduler ayağa kalkmamış demektir, fix yarım gün
-- **KM-c** Mojibake popup patch (1-2 saat) — kaynak GTFS feed sorunu çözülmedi, frontend'de `replace`-bazlı patch tablo veya görsel uyarı
-- **KM-d** Suite + tag v0.8.1
+- **KM-a ✅** Route-lines paint hatası fix (commit `5b5007e`, 2026-05-04). `buildRouteLinePaint(focused)` line-width "case → interpolate(zoom)" deseni MapLibre style spec ihlaliydi (`['zoom']` yalnız top-level interpolate input'u olabilir, `case` içinde nested olmaz; setPaintProperty runtime'da Error fırlatıyordu). Düzeltme: outer `interpolate(['linear'], ['zoom'], …)` → inner `case` data-driven stops (10→3/2, 14→6/4, 18→9/6 — eski matematik korundu). Frontend Vitest 240/240 (238 + 3 yeni regression − 1 eski "case" assertion), backend dokunulmadı (175 + 44 = 219). Browser smoke (Yağız 2026-05-04): M2'ye çift tıkla → focus + bbox + zoom + popup hepsi çalışıyor, console temiz. Spec Ek A.19 borç #1 kapandı.
+- **KM-b** Beat schedule canlı doğrulama (15dk-yarım gün) — `SELECT name, last_run_at, total_run_count, enabled FROM django_celery_beat_periodictask WHERE name='refresh-iett-mapping'`. `last_run_at` dolu + `total_run_count > 0` ise ✅. None ise beat scheduler ayağa kalkmamış demektir, tanı + fix yarım gün (production systemd unit v0.9.1 KM-c'de zaten kurulacak ama dev environment için manuel script ya da README notu).
+- **KM-c** Popup düzeltmeleri (1-2 saat, atomik) — iki küçük patch tek dosyaya:
+  - **c.1** Mojibake popup `long_name` patch — frontend'de `replace`-bazlı tablo veya `isMojibake` görsel uyarı (`vehicle_popup` modülü, kaynak GTFS feed sorunu çözülmedi)
+  - **c.2** Metrobüs popup label — mevcut "İETT Otobüs · KapiNo X" sabit string, `is_metrobus` payload field'ı (KM5-e.1) tüketilmiyor. `is_metrobus=true` ise "Metrobüs · KapiNo X" yazsın. Backend dokunulmaz, sadece frontend template
+- **KM-d** Vapur çift tıklama fix (yarım-1 gün) — Borç #6. Vapur hatlarına çift tıkladığında focus + bbox + zoom **sessiz**. Console'da log/error/toast yok (Yağız 2026-05-04 smoke). Olası kökler: (a) Şehir Hatları A.Ş. agency_id farklı render path'e düşüyor, (b) variant grup header dblclick handler sadece bus için wire edilmiş (KM1 f-polish-5), tek-variant vapur satırında handler attach yok, (c) `getRouteBBox(routeId)` lazy ferry shape cache (31 ferry shape) henüz hydrate olmamışken null dönüyor, vehicle bbox fallback (f-polish-3 Madde 3) sadece İETT için yazıldı. Tanı: agent `route_panel.ts` event handler binding'leri inceler, sessizliğin kök nedenini belirler, fix uygular. Regression test eklenir.
+- **KM-e** Filter Reset state corruption fix (1 gün, yayın blokeleyici) — Borç #7. Kullanıcı Reset / "Tümü" / hat checkbox'ları toplu açma yapınca **frontend donuyor, F5 atılana kadar düzelmiyor**. Olası kökler: (a) MapLibre `setFilter` × N üst üste, style spec invalidation döngüsü, (b) memory leak — checkbox flip her seferinde event listener attach ediyor, eskiler temizlenmiyor, (c) snapshot diff reducer kilitleniyor, sonraki tick'lerde de skip ediyor. Tanı: agent Console + Performance tab + Memory heap snapshot ile root cause belirler, ondan sonra fix. Bu **kesinlikle yayın blokeleyici** — public demoda Reset'i çağıran ilk kullanıcı sayfayı kapatır.
+- **KM-f** Suite + tag v0.8.1 (15dk) — Frontend + backend full run, tag push, ROADMAP commit hash placeholder'ları replace
 
-##### v0.8.2 — UX cilalama (2-3 gün)
+##### v0.8.2 — UX cilalama (3-4 gün)
 
-Public görüntü için kritik, paylaşılabilirlik artar.
+Public görüntü için kritik, paylaşılabilirlik artar. v0.8.1 KM-e Reset bug fix sonrası kalan UX cilalama maddeleri.
 
 - **KM-a** Bundle size optimize (1 gün) — code splitting + MapLibre style lazy + lucide tree-shake. Hedef: 1066KB → 600KB altı (mobil 3G yükleme süresi yarıya iner). Vite warn 500KB üstü, şu an `Faz 5.5 sonrası bilinen borç #4`
 - **KM-b** Toggle/filter URL persistence (1 gün) — query string sync (`?routes=M2,M4&bus=on&metrobus=off`), paylaşılabilir link. Spec §5.7'deki kanal modeli zaten short_name bazlı, frontend state ↔ URL bidirectional sync yeterli
-- **KM-c** Suite + tag v0.8.2
+- **KM-c** Metrobüs nokta görsel ayrımı (1-2 saat) — Borç #9. Antrasit gri (#3A3D40) 6774 sarı arasında küçük puntoda ayırt edilemiyor (Yağız 2026-05-04 smoke: toggle aç/kapat 137 nokta kayboluyor → mantık tamam, sadece görsel zayıf). Fix: paint case ile metrobüs noktaları için `circle-radius` 4→6px ya da beyaz/sarı border ekle (`['case', ['get', 'is_metrobus'], 6, 4]`)
+- **KM-d** Suite + tag v0.8.2
 
 ##### v0.8.3 — Mobil + perf (3-4 gün)
 
