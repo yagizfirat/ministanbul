@@ -196,6 +196,11 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
   } catch (err) {
     console.warn('[routes] ferry fetch failed', err);
   }
+  // KM-d.2 fix (Spec Ek A.19 borç #6): vapur popup'ı "Hat metadata
+  // bulunamadı" gösteriyordu çünkü RouteStore.summariesByRouteId ferry
+  // route_id'lerini içermiyordu. Polyline modlar zaten loadAlwaysVisible
+  // başlangıcında register edildi; ferry için ayrı çağrı şart.
+  routeStore.registerSummaries(ferrySummaries);
 
   const initialRoutes = [...polylineSummaries, ...ferrySummaries];
   const initialIds = initialRoutes.map((r) => r.route_id);
@@ -232,10 +237,22 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
 
   function focusAndZoom(routeIds: readonly string[]): void {
     routeFocus.setFocus(routeIds);
-    // Polyline bbox'ı dene (metro/marmaray/tram/funicular/ferry).
-    // Bus için polyline yok → vehicle konumlarından fallback. Variant
-    // grup tek tıkla → tüm variant'lar union bbox'ı.
-    const bbox = getRoutesBBox(routeIds) ?? store.getVehicleBBoxForRoutes(routeIds);
+    // Bbox lookup zinciri:
+    //   1. route_lines_layer.collection — polyline modlar (metro/marmaray/
+    //      tram/funicular). Ferry buraya eklenmez (KM3 paterni).
+    //   2. SnapshotStore — İETT canlı vehicle konumları. Bus için
+    //      mapping kapalı, route_id null çoğunlukla; sadece scheduled
+    //      modlarına denk gelmeyen edge case'lerde dolu.
+    //   3. KM-d.1 fix: ScheduledFleet.getRoutesBBox — vapur (ve diğer
+    //      scheduled modlar) için active PreparedTrip polyline'ları.
+    //      Adım 1 zaten bbox dönmüşse buraya inilmez.
+    let bbox = getRoutesBBox(routeIds) ?? store.getVehicleBBoxForRoutes(routeIds);
+    if (bbox === null) {
+      for (const fleet of scheduledFleets.values()) {
+        bbox = fleet.getRoutesBBox(routeIds);
+        if (bbox !== null) break;
+      }
+    }
     if (bbox) {
       map.fitBounds(bbox as [number, number, number, number], { padding: 80 });
     } else {

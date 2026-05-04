@@ -201,3 +201,72 @@ describe('ScheduledFleet.getInterpolated', () => {
     expect(fleet.getInterpolated(0)).toEqual([]);
   });
 });
+
+// KM-d.1 fix (Spec Ek A.19 borç #6): ferry için bbox fallback. Vapur
+// route_lines_layer.collection'a eklenmiyor (KM3 paterni — denizüstü
+// polyline anlamsız), SnapshotStore İETT canlı kapsamında. Aktif
+// PreparedTrip'lerin polyline koordinatları tek kaynak.
+describe('ScheduledFleet.getRouteBBox / getRoutesBBox (KM-d.1)', () => {
+  it('returns null when no prepared trips exist', () => {
+    const fleet = new ScheduledFleet();
+    expect(fleet.getRouteBBox('public:m2')).toBeNull();
+    expect(fleet.getRoutesBBox(['public:m2', 'public:f1'])).toBeNull();
+  });
+
+  it('returns null for empty routeIds array', async () => {
+    const fleet = new ScheduledFleet();
+    await fleet.setActiveTrips([trip({})]);
+    expect(fleet.getRoutesBBox([])).toBeNull();
+  });
+
+  it('returns the polyline bbox of a single matching trip', async () => {
+    const fleet = new ScheduledFleet();
+    await fleet.setActiveTrips([trip({})]); // SHAPE_SH1 [[29.0,41.0],[29.001,41.0],[29.001,41.02]]
+    const bbox = fleet.getRouteBBox('public:m2');
+    expect(bbox).not.toBeNull();
+    expect(bbox![0]).toBeCloseTo(29.0, 6);    // minLon
+    expect(bbox![1]).toBeCloseTo(41.0, 6);    // minLat
+    expect(bbox![2]).toBeCloseTo(29.001, 6);  // maxLon
+    expect(bbox![3]).toBeCloseTo(41.02, 6);   // maxLat
+  });
+
+  it('returns null when route_id does not match any prepared trip', async () => {
+    const fleet = new ScheduledFleet();
+    await fleet.setActiveTrips([trip({})]);
+    expect(fleet.getRouteBBox('public:nope')).toBeNull();
+  });
+
+  it('unions polyline coords across multiple matching trips (variant group)', async () => {
+    const fleet = new ScheduledFleet();
+    // İki trip aynı route_id, farklı shape — union polyline modlar +
+    // ferry için variant grup bbox testi.
+    await fleet.setActiveTrips([
+      trip({ trip_id: 'a' }),                                  // SHAPE_SH1
+      trip2({ route_id: 'public:m2', trip_id: 'b' }),          // SHAPE_SH2
+    ]);
+    const bbox = fleet.getRoutesBBox(['public:m2']);
+    expect(bbox).not.toBeNull();
+    // Union: SH1 [29.0..29.001, 41.0..41.02] + SH2 [29.1..29.105, 41.1..41.1]
+    expect(bbox![0]).toBeCloseTo(29.0, 6);
+    expect(bbox![1]).toBeCloseTo(41.0, 6);
+    expect(bbox![2]).toBeCloseTo(29.105, 6);
+    expect(bbox![3]).toBeCloseTo(41.1, 6);
+  });
+
+  it('isolates bbox to only matching route_ids (multi-route filter)', async () => {
+    const fleet = new ScheduledFleet();
+    await fleet.setActiveTrips([
+      trip({ trip_id: 'a' }),                                  // route_id public:m2, SH1
+      trip2({ route_id: 'public:f1', trip_id: 'b' }),          // route_id public:f1, SH2
+    ]);
+    // Only m2 → SH1 bbox
+    const m2 = fleet.getRoutesBBox(['public:m2']);
+    expect(m2).toEqual([29.0, 41.0, 29.001, 41.02]);
+    // Only f1 → SH2 bbox
+    const f1 = fleet.getRoutesBBox(['public:f1']);
+    expect(f1).toEqual([29.1, 41.1, 29.105, 41.1]);
+    // Both → union
+    const both = fleet.getRoutesBBox(['public:m2', 'public:f1']);
+    expect(both).toEqual([29.0, 41.0, 29.105, 41.1]);
+  });
+});

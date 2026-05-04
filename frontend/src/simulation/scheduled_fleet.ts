@@ -98,6 +98,37 @@ export class ScheduledFleet {
     return this.prepared.get(tripId) ?? null;
   }
 
+  // KM-d.1 fix (Spec Ek A.19 borç #6): ferry/scheduled hatlar için bbox
+  // fallback. SnapshotStore İETT canlı kapsamında, polyline modlar
+  // route_lines_layer collection'ında — vapur ne ikisinde. Active
+  // PreparedTrip'lerin polyline koordinatlarından union bbox hesaplar.
+  getRouteBBox(routeId: string): [number, number, number, number] | null {
+    return this.getRoutesBBox([routeId]);
+  }
+
+  getRoutesBBox(
+    routeIds: readonly string[],
+  ): [number, number, number, number] | null {
+    if (routeIds.length === 0) return null;
+    const idSet = new Set(routeIds);
+    let minLon = Infinity;
+    let minLat = Infinity;
+    let maxLon = -Infinity;
+    let maxLat = -Infinity;
+    let found = false;
+    for (const prep of this.prepared.values()) {
+      if (!idSet.has(prep.route_id)) continue;
+      for (const [lon, lat] of prep.polyline) {
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+      }
+      found = true;
+    }
+    return found ? [minLon, minLat, maxLon, maxLat] : null;
+  }
+
   size(): number {
     return this.prepared.size;
   }
