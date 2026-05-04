@@ -112,13 +112,50 @@ describe('buildPopupHtml — scheduled with metadata, no context', () => {
     expect(html).not.toContain('Sonraki duraklar');
   });
 
-  it('marks mojibake long_name with ⚠', () => {
+  it('marks mojibake long_name with ⚠ and hides the corrupted text (KM-c.1)', () => {
     const html = buildPopupHtml(
       { route_id: 'iett:x' },
       'scheduled',
       meta({ short_name: 'X', long_name: 'KÄ°RAZLITEPE - ARDA' }),
     );
     expect(html).toContain('⚠');
+    expect(html).toContain('Hat adı okunamıyor');
+    // Bozuk metnin kendisi popup'ta görünmemeli — Yağız smoke (Ek A.19 #3).
+    expect(html).not.toContain('KÄ°RAZLITEPE');
+    expect(html).not.toContain('ARDA');
+  });
+
+  it('renders clean long_name unchanged when not mojibake (regression)', () => {
+    const html = buildPopupHtml(
+      { route_id: 'public:m2' },
+      'scheduled',
+      meta(),
+    );
+    expect(html).toContain('YENİKAPI - HACIOSMAN');
+    expect(html).not.toContain('⚠');
+    expect(html).not.toContain('Hat adı okunamıyor');
+  });
+});
+
+describe('buildPopupHtml — iett popup metrobüs label (KM-c.2)', () => {
+  it('renders "Metrobüs" label when is_metrobus=true', () => {
+    const html = buildPopupHtml({ id: 'M-42', is_metrobus: true }, 'iett', null);
+    expect(html).toContain('Metrobüs');
+    expect(html).not.toContain('İETT Otobüs');
+    expect(html).toContain('KapiNo:');
+    expect(html).toContain('M-42');
+  });
+
+  it('renders "İETT Otobüs" label when is_metrobus=false', () => {
+    const html = buildPopupHtml({ id: 'B-1', is_metrobus: false }, 'iett', null);
+    expect(html).toContain('İETT Otobüs');
+    expect(html).not.toContain('Metrobüs');
+  });
+
+  it('renders "İETT Otobüs" label when is_metrobus is undefined (regression)', () => {
+    const html = buildPopupHtml({ id: 'B-1' }, 'iett', null);
+    expect(html).toContain('İETT Otobüs');
+    expect(html).not.toContain('Metrobüs');
   });
 });
 

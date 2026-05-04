@@ -27,6 +27,8 @@ export interface VehicleProps {
   trip_id?: string;
   route_id?: string;
   mode?: string;
+  // KM5-e.1 (backend) → KM-c.2 (popup): metrobüs hatları için ayrı label.
+  is_metrobus?: boolean;
 }
 
 export interface ScheduledPopupContext {
@@ -65,10 +67,12 @@ export function buildPopupHtml(
 
 function renderTitleRow(meta: RouteSummary): string {
   const longRaw = meta.long_name ?? '';
-  const longText = escapeHtml(longRaw);
+  // KM-c.1: mojibake durumda bozuk metni hiç render etme — sadece uyarı.
+  // Önceki davranış (⚠ + bozuk metin) Yağız 2026-05-04 smoke'da kafa
+  // karıştırıcı bulundu (Spec Ek A.19 borç #3).
   const longHtml = isMojibake(longRaw)
-    ? `<span style="color:#f59e0b" title="GTFS feed bozuk">⚠ </span>${longText}`
-    : longText;
+    ? `<span class="vehicle-popup__mojibake" style="color:#f59e0b" title="GTFS feed bozuk">⚠ Hat adı okunamıyor</span>`
+    : escapeHtml(longRaw);
   return `<div class="vehicle-popup__title">
     <span class="vehicle-popup__short">${escapeHtml(meta.short_name)}</span>
     <span class="vehicle-popup__long">${longHtml}</span>
@@ -125,10 +129,12 @@ function renderIettPopup(props: VehicleProps): string {
   // KM5-d: hat etiketi/uyarısı yok. Mapping kapalı, kütle UX (Spec §3.3,
   // Ek A.18 R12). f-polish-3 "henüz hat eşlemesi yapılmamış" mesajı
   // silindi — bilinçli kapatma kararı, pipeline güncellenme değil.
+  // KM-c.2: is_metrobus=true ise "Metrobüs" label, değilse "İETT Otobüs".
+  const label = props.is_metrobus === true ? 'Metrobüs' : 'İETT Otobüs';
   const kapi = `<b>${escapeHtml(props.id ?? '?')}</b>`;
   return `<div class="vehicle-popup">
     <div class="vehicle-popup__title">
-      <span class="vehicle-popup__short">İETT Otobüs</span>
+      <span class="vehicle-popup__short">${label}</span>
     </div>
     <div class="vehicle-popup__kapi">KapiNo: ${kapi}</div>
     <div class="vehicle-popup__source">İETT canlı</div>
