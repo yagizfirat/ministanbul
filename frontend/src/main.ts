@@ -31,6 +31,7 @@ import {
 } from './state/route_visibility';
 import { RouteFocus } from './state/route_focus';
 import { debounceFrame } from './state/frame_debouncer';
+import { parseUrlState, serializeUrlState } from './state/url_state';
 import { createLastUpdateIndicator } from './ui/last_update_indicator';
 import { createRoutePanel, type RoutePanelHandle } from './ui/route_panel';
 import { showToast } from './ui/toast';
@@ -205,14 +206,27 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
 
   const initialRoutes = [...polylineSummaries, ...ferrySummaries];
   const initialIds = initialRoutes.map((r) => r.route_id);
+  // KM-b: URL state persistence (Spec Ek A.19 #5). Sayfa yüklenirken
+  // `?routes=...&bus=off&...` paramlarını okur; default'larla merge.
+  // Bilinmeyen route_id'ler (eski link, hat artık feed'de yok) sessizce
+  // süzülür — initialIds whitelist'i.
+  const urlState = parseUrlState(window.location.search);
+  const initialIdSet = new Set(initialIds);
+  const filteredUrlRoutes = urlState.routes?.filter((id) => initialIdSet.has(id));
+  const initiallyVisible = filteredUrlRoutes ?? initialIds;
   // 5 polyline modu (subway+tram+funicular+marmaray) + ferry = default visible.
   // Bus default hidden — lazy fetch sonrası expandTotalCount.
-  routeVisibility = new RouteVisibility(initialIds, initialIds);
+  routeVisibility = new RouteVisibility(initialIds, initiallyVisible);
   // KM5-e.2: iki bağımsız toggle state, default ikisi açık.
   // Panel callback'leri burada state'i günceller ve fleet_layer
   // filter expression'ını yeniden çizer.
-  let busVisible = true;
-  let metrobusVisible = true;
+  let busVisible = urlState.bus ?? true;
+  let metrobusVisible = urlState.metrobus ?? true;
+  // KM-b: URL focus restore — initialIdSet whitelist (bilinmeyen ID süzülür).
+  if (urlState.focus) {
+    const validFocus = urlState.focus.filter((id) => initialIdSet.has(id));
+    if (validFocus.length > 0) routeFocus.setFocus(validFocus);
+  }
   function applyFleetVisibilityFilter(): void {
     if (!map.getLayer('fleet-circles')) return;
     map.setFilter(
@@ -233,7 +247,31 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
     debouncedApplyFleet();
     routePanel?.setFleetVisibility({ bus, metrobus });
     routeFocus.setFocus(null);
+    // KM-b: focus zaten null ise routeFocus.setFocus(null) no-op →
+    // subscribe fire etmez → URL güncellenmezdi. Bus/metrobus state
+    // değişimi her durumda URL'e yansımalı.
+    debouncedUpdateUrl();
   }
+  // KM-b: URL state sync. RAF debounce hızlı toggle'da URL flooding'i
+  // önler; replaceState (push DEĞİL) browser history'sini şişirmez.
+  // routeVisibility/routeFocus subscribe + bus/metrobus callback'leri.
+  function updateUrl(): void {
+    if (!routeVisibility) return;
+    const search = serializeUrlState(
+      {
+        routes: Array.from(routeVisibility.getVisible()),
+        bus: busVisible,
+        metrobus: metrobusVisible,
+        focus: routeFocus.getFocused(),
+      },
+      { routes: initialIds, bus: true, metrobus: true, focus: null },
+    );
+    const next = search === '' ? window.location.pathname : search;
+    history.replaceState({}, '', next);
+  }
+  const debouncedUpdateUrl = debounceFrame(updateUrl);
+  routeVisibility.subscribe(() => debouncedUpdateUrl());
+  routeFocus.subscribe(() => debouncedUpdateUrl());
   routePanel = createRoutePanel({
     visibility: routeVisibility,
     routes: initialRoutes,
@@ -243,10 +281,12 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
     onBusVisibilityChange: (v) => {
       busVisible = v;
       debouncedApplyFleet();
+      debouncedUpdateUrl();
     },
     onMetrobusVisibilityChange: (v) => {
       metrobusVisible = v;
       debouncedApplyFleet();
+      debouncedUpdateUrl();
     },
     onSelectAllChange: (allOn) => applyFleetState(allOn, allOn),
     onResetRequested: () => applyFleetState(true, true),
