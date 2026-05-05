@@ -598,3 +598,163 @@
 .route-panel[data-collapsed="true"] .route-panel__groups {
   display: none;
 }
+
+/* v0.8.3 KM-a — Mobile responsive (768px breakpoint, Spec Ek A.19,
+   Faz 6 KM2 devralındı). Desktop CSS'i dokunulmadı; aşağıdaki override
+   pattern sadece dar viewport'larda devreye girer.
+
+   Mimari kararlar:
+     • Bottom sheet pattern: harita üstte görünür, panel ekran altından
+       %50-60 yükselir. Full-screen modal değil — public yayında "şu
+       hatları aç, haritayı göster" UX'i.
+     • Hamburger button + backdrop her zaman DOM'da, CSS ile mobilde
+       görünür yapılır. Desktop koşulları (display:none) override.
+     • Touch target boyutları: min 36px buton, 44px satır (Apple HIG
+       minimum). Mevcut 28px chip'ler küçük parmak için yetersiz.
+     • Drag handle görsel — swipe-to-dismiss gesture v1.0+ backlog,
+       ilk sürüm tıkla-kapat (hamburger veya backdrop). */
+
+.route-panel__drag-handle {
+  display: none; /* desktop'ta gizli */
+}
+
+.mobile-hamburger {
+  display: none; /* desktop'ta gizli */
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 12;
+  width: 44px;
+  height: 44px;
+  background: rgba(20, 24, 32, 0.92);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #e5e7eb;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-family: inherit;
+  padding: 0;
+}
+
+.mobile-hamburger:hover {
+  background: rgba(40, 44, 52, 0.95);
+}
+
+.mobile-backdrop {
+  display: none; /* desktop'ta gizli */
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 9;
+}
+
+@media (max-width: 768px) {
+  /* Hamburger + backdrop görünür. */
+  .mobile-hamburger {
+    display: flex;
+  }
+  .mobile-backdrop[data-visible="true"] {
+    display: block;
+  }
+
+  /* Drag handle görünür — bottom sheet'in tipik visual cue'su. */
+  .route-panel__drag-handle {
+    display: block;
+    width: 40px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    margin: 8px auto 4px;
+    flex-shrink: 0;
+  }
+
+  /* Panel: bottom sheet pozisyonu. Desktop'tan farklı: top:auto, full
+     width, alt yarıyı kapla, transform ile slide animasyonu. Position
+     attribute'leri (left/right) kalsın diye [data-position] kullanmıyoruz —
+     mobilde her iki yön de aynı bottom sheet. */
+  .route-panel {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 60vh;
+    max-height: 60vh;
+    transform: translateY(100%);
+    transition: transform 250ms ease;
+    border-left: none;
+    border-right: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px 12px 0 0;
+    z-index: 10;
+  }
+
+  /* Mobile open state — hamburger ya da api ile setMobileOpen(true). */
+  .route-panel[data-mobile-open="true"] {
+    transform: translateY(0);
+  }
+
+  /* Desktop collapse mekanizması mobilde anlamsız: panel zaten kapalı
+     başlar, hamburger ile toggle edilir. data-collapsed her ne olursa
+     olsun width override. Collapse button'ı gizle. */
+  .route-panel,
+  .route-panel[data-collapsed="true"],
+  .route-panel[data-collapsed="false"] {
+    width: 100%;
+  }
+  .route-panel__collapse-btn {
+    display: none;
+  }
+  /* Desktop collapsed-state vertical title da mobilde anlamsız. */
+  .route-panel[data-collapsed="true"] .route-panel__title {
+    writing-mode: horizontal-tb;
+    transform: none;
+    font-size: 14px;
+  }
+
+  /* Touch target boyutları. Mevcut 28-30px chip'ler ve 36px header
+     satırları parmak için küçük; min 36px buton, 44px satır. */
+  .route-panel__bulk-actions button,
+  .route-panel__group-bulk-btn {
+    min-height: 36px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  .route-panel__route-item,
+  .route-panel__route-variant-header,
+  .route-panel__bus-toggle {
+    min-height: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .route-panel__group-header {
+    min-height: 44px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .route-panel__route-item input[type="checkbox"],
+  .route-panel__bus-toggle input[type="checkbox"],
+  .route-panel__route-variant-header input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+  }
+  .route-panel__search-input {
+    min-height: 36px;
+    font-size: 14px; /* iOS Safari 16px altı zoom-on-focus tetikler */
+  }
+}
+
+/* MapLibre popup mobilde okunabilir kalsın — popup container global
+   selector. Maplibre popup'ı arbitrary positioned (vehicle konumuna
+   anchor); tam bottom sheet yapmak yerine boyut sınırla, scroll. */
+@media (max-width: 768px) {
+  .maplibregl-popup-content {
+    max-width: 90vw;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+}

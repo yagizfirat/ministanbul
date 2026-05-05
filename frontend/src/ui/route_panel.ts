@@ -142,8 +142,18 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   root.className = 'route-panel';
   root.dataset.position = config.position;
   root.dataset.collapsed = 'false';
+  // v0.8.3 KM-a (Spec Ek A.19, Faz 6 KM2 devralındı): 768px altı bottom
+  // sheet. Default kapalı; CSS desktop'ta bu attribute'ü görmezden gelir
+  // (@media (max-width: 768px) içinde geçerli).
+  root.dataset.mobileOpen = 'false';
   root.style.setProperty('--route-panel-width', config.width);
   root.style.setProperty('--route-panel-collapse-width', config.collapseWidth);
+
+  // v0.8.3 KM-a: drag handle (sadece mobilde görünür, CSS-controlled).
+  // İlk satır olarak panel'in tepesinde — bottom sheet pattern'inde tipik.
+  const dragHandle = document.createElement('div');
+  dragHandle.className = 'route-panel__drag-handle';
+  root.appendChild(dragHandle);
 
   // ── header ────────────────────────────────────────────────────────
   // Çift satır: row1 (title + hint + collapse), row2 (count + bulk).
@@ -257,6 +267,31 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   });
 
   document.body.appendChild(root);
+
+  // v0.8.3 KM-a: hamburger button + backdrop. Body'ye doğrudan eklenir
+  // (panel'in sibling'i) — hamburger her zaman görünür olabilsin (panel
+  // collapsed/translated olduğunda DOM içinde kalsın), backdrop tıklaması
+  // panel'in dışındaki tıklamalar olarak okunsun. Desktop'ta her ikisi
+  // de CSS ile gizli.
+  const hamburger = document.createElement('button');
+  hamburger.className = 'mobile-hamburger';
+  hamburger.setAttribute('aria-label', 'Hatlar panelini aç/kapat');
+  hamburger.textContent = '☰';
+  hamburger.addEventListener('click', () => setMobileOpen(!mobileOpen));
+  document.body.appendChild(hamburger);
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'mobile-backdrop';
+  backdrop.dataset.visible = 'false';
+  backdrop.addEventListener('click', () => setMobileOpen(false));
+  document.body.appendChild(backdrop);
+
+  let mobileOpen = false;
+  function setMobileOpen(open: boolean): void {
+    mobileOpen = open;
+    root.dataset.mobileOpen = open ? 'true' : 'false';
+    backdrop.dataset.visible = open ? 'true' : 'false';
+  }
 
   // ──────────────────────────────────────────────────────────────────
   function createModeGroup(m: ModeRow): ModeGroupRefs {
@@ -682,6 +717,8 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
 
     destroy(): void {
       root.remove();
+      hamburger.remove();
+      backdrop.remove();
     },
   };
 }

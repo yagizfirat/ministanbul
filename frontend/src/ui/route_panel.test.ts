@@ -664,3 +664,73 @@ describe('createRoutePanel — KM-h.1 focus highlight', () => {
     expect(m2.dataset.focused).toBe('true');
   });
 });
+
+// ── v0.8.3 KM-a: Mobile responsive ───────────────────────────────────
+// jsdom CSS @media query'leri render etmez — bu testler JS davranışını
+// (DOM oluşumu, click handler'lar, data attribute toggle) doğrular.
+// CSS visual smoke Yağız'ın v0.8.3 sonu mobil test turunda yapılır.
+describe('createRoutePanel — KM-a mobile responsive', () => {
+  it('renders a hamburger button on document.body (always present, CSS-controlled visibility)', () => {
+    mount();
+    const hamburger = document.querySelector('.mobile-hamburger') as HTMLElement;
+    expect(hamburger).not.toBeNull();
+    expect(hamburger.tagName).toBe('BUTTON');
+    expect(hamburger.getAttribute('aria-label')).toContain('Hatlar');
+  });
+
+  it('renders a backdrop element on document.body (always present, hidden by default)', () => {
+    mount();
+    const backdrop = document.querySelector('.mobile-backdrop') as HTMLElement;
+    expect(backdrop).not.toBeNull();
+    expect(backdrop.dataset.visible).toBe('false');
+  });
+
+  it('renders a drag handle inside the panel root', () => {
+    mount();
+    const handle = document.querySelector('.route-panel__drag-handle');
+    expect(handle).not.toBeNull();
+    const root = document.querySelector('.route-panel') as HTMLElement;
+    expect(root.contains(handle)).toBe(true);
+  });
+
+  it('panel root starts with data-mobile-open="false"', () => {
+    mount();
+    const root = document.querySelector('.route-panel') as HTMLElement;
+    expect(root.dataset.mobileOpen).toBe('false');
+  });
+
+  it('hamburger click toggles data-mobile-open and backdrop visibility', () => {
+    mount();
+    const hamburger = document.querySelector('.mobile-hamburger') as HTMLElement;
+    const root = document.querySelector('.route-panel') as HTMLElement;
+    const backdrop = document.querySelector('.mobile-backdrop') as HTMLElement;
+    hamburger.click();
+    expect(root.dataset.mobileOpen).toBe('true');
+    expect(backdrop.dataset.visible).toBe('true');
+    hamburger.click();
+    expect(root.dataset.mobileOpen).toBe('false');
+    expect(backdrop.dataset.visible).toBe('false');
+  });
+
+  it('backdrop click closes the panel (sets mobile-open to false)', () => {
+    mount();
+    const hamburger = document.querySelector('.mobile-hamburger') as HTMLElement;
+    const root = document.querySelector('.route-panel') as HTMLElement;
+    const backdrop = document.querySelector('.mobile-backdrop') as HTMLElement;
+    hamburger.click(); // open first
+    expect(root.dataset.mobileOpen).toBe('true');
+    backdrop.click();
+    expect(root.dataset.mobileOpen).toBe('false');
+    expect(backdrop.dataset.visible).toBe('false');
+  });
+
+  it('destroy removes the hamburger and backdrop from the DOM', () => {
+    const handle = mount();
+    expect(document.querySelector('.mobile-hamburger')).not.toBeNull();
+    expect(document.querySelector('.mobile-backdrop')).not.toBeNull();
+    handle.destroy();
+    panel = null; // afterEach double-destroy guard
+    expect(document.querySelector('.mobile-hamburger')).toBeNull();
+    expect(document.querySelector('.mobile-backdrop')).toBeNull();
+  });
+});
