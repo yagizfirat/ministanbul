@@ -113,6 +113,10 @@ export interface RoutePanelHandle {
   // onBusVisibilityChange/onMetrobusVisibilityChange tetiklemez (sonsuz
   // döngü guard'ı).
   setFleetVisibility(state: { bus: boolean; metrobus: boolean }): void;
+  // KM-h.1 (Borç #15): main.ts routeFocus.subscribe'tan tetiklenir.
+  // null → highlight temizlenir; string[] → o satırlar `data-focused="true"`
+  // alır, variant grup başlığı da grup üyesi varsa highlight olur.
+  setFocusedRoutes(focused: readonly string[] | null): void;
   destroy(): void;
 }
 
@@ -127,6 +131,10 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   let busVisible = true;
   let metrobusVisible = true;
   let vehicleCounts = { bus: 0, metrobus: 0 };
+  // KM-h.1 (Borç #15): rebuildItems/applySearch DOM'u sıfırlıyor; panel
+  // her render sonrası aktif focus'u yeniden uygular. Set kullanımı O(1)
+  // lookup, 100+ satır için fark yapar.
+  let focusedSet: Set<string> = new Set();
   // Variant gruplarının açık/kapalı durumu — `${mode}|${shortName}` key.
   const expandedGroups = new Set<string>();
 
@@ -242,6 +250,7 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   rebuildItems();
   applySearch();
   syncCheckboxes();
+  applyFocusedClasses();
   refreshBusToggleCounts();
   opts.visibility.subscribe(() => {
     syncCheckboxes();
@@ -462,6 +471,7 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
     searchQuery = value;
     searchClear.dataset.visible = value ? 'true' : 'false';
     applySearch();
+    applyFocusedClasses();
     updateGroupCounts();
   }
 
@@ -485,7 +495,31 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
     if (expandedGroups.has(key)) expandedGroups.delete(key);
     else expandedGroups.add(key);
     applySearch();
+    applyFocusedClasses();
     updateGroupCounts();
+  }
+
+  // KM-h.1 (Borç #15): aktif focus'taki satırları `data-focused="true"`
+  // ile işaretler. Variant grup başlığı, herhangi bir varyantı focused
+  // ise highlight alır (kullanıcı grup tıklamasında tüm union'ı focus'a
+  // alır → header da bu durumu yansıtır).
+  function applyFocusedClasses(): void {
+    for (const [, refs] of groupsByMode) {
+      for (const node of refs.itemByKey.values()) {
+        if (node.classList.contains('route-panel__route-variant-header')) {
+          const shortName = node.dataset.shortName!;
+          const mode = node.dataset.mode!;
+          const variantIds = allRoutes
+            .filter((r) => r.mode === mode && r.short_name === shortName)
+            .map((v) => v.route_id);
+          const isFocused = variantIds.some((id) => focusedSet.has(id));
+          node.dataset.focused = isFocused ? 'true' : 'false';
+        } else {
+          const routeId = node.dataset.routeId!;
+          node.dataset.focused = focusedSet.has(routeId) ? 'true' : 'false';
+        }
+      }
+    }
   }
 
   function syncCheckboxes(): void {
@@ -626,6 +660,7 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
       rebuildItems();
       applySearch();
       syncCheckboxes();
+      applyFocusedClasses();
     },
 
     setVehicleCounts(counts: { bus: number; metrobus: number }): void {
@@ -638,6 +673,11 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
       metrobusVisible = state.metrobus;
       busToggleRef.checkbox.checked = state.bus;
       metrobusToggleRef.checkbox.checked = state.metrobus;
+    },
+
+    setFocusedRoutes(focused: readonly string[] | null): void {
+      focusedSet = focused === null ? new Set() : new Set(focused);
+      applyFocusedClasses();
     },
 
     destroy(): void {

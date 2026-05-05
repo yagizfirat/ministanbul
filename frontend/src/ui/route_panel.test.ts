@@ -603,3 +603,64 @@ describe('createRoutePanel — KM-g full filter coverage', () => {
     expect(onMetro).not.toHaveBeenCalled();
   });
 });
+
+// ── KM-h.1: aktif hat panel highlight (Borç #15) ─────────────────────
+describe('createRoutePanel — KM-h.1 focus highlight', () => {
+  it('initial render → no rows have data-focused="true"', () => {
+    mount();
+    const focused = document.querySelectorAll('[data-focused="true"]');
+    expect(focused.length).toBe(0);
+  });
+
+  it('setFocusedRoutes(["public:m2"]) marks the M2 row as data-focused="true"', () => {
+    const handle = mount();
+    handle.setFocusedRoutes(['public:m2']);
+    const m2 = document.querySelector('[data-route-id="public:m2"]') as HTMLElement;
+    expect(m2.dataset.focused).toBe('true');
+    // Diğer satırlar dokunulmaz
+    const m1a = document.querySelector('[data-route-id="public:m1a"]') as HTMLElement;
+    expect(m1a.dataset.focused).toBe('false');
+  });
+
+  it('setFocusedRoutes(null) clears highlight from all rows', () => {
+    const handle = mount();
+    handle.setFocusedRoutes(['public:m2']);
+    handle.setFocusedRoutes(null);
+    const focused = document.querySelectorAll('[data-focused="true"]');
+    expect(focused.length).toBe(0);
+  });
+
+  it('setFocusedRoutes with multi-id (variant group) marks the variant header as focused', () => {
+    const variants = [
+      route({ id: 10, route_id: 'public:m2-A', short_name: 'M2', long_name: 'A' }),
+      route({ id: 11, route_id: 'public:m2-B', short_name: 'M2', long_name: 'B' }),
+    ];
+    const handle = mount(variants);
+    handle.setFocusedRoutes(['public:m2-A', 'public:m2-B']);
+    const header = document.querySelector(
+      '.route-panel__route-variant-header[data-short-name="M2"]',
+    ) as HTMLElement;
+    expect(header.dataset.focused).toBe('true');
+  });
+
+  it('focus state survives a search-driven DOM rebuild', () => {
+    const handle = mount();
+    handle.setFocusedRoutes(['public:m2']);
+    const input = document.querySelector('.route-panel__search-input') as HTMLInputElement;
+    input.value = 'M';
+    input.dispatchEvent(new Event('input'));
+    // Search rebuilds the DOM; focused state must re-apply.
+    const m2 = document.querySelector('[data-route-id="public:m2"]') as HTMLElement;
+    expect(m2.dataset.focused).toBe('true');
+  });
+
+  it('replacing focus from id A to id B clears A and marks B', () => {
+    const handle = mount();
+    handle.setFocusedRoutes(['public:m1a']);
+    handle.setFocusedRoutes(['public:m2']);
+    const m1a = document.querySelector('[data-route-id="public:m1a"]') as HTMLElement;
+    const m2 = document.querySelector('[data-route-id="public:m2"]') as HTMLElement;
+    expect(m1a.dataset.focused).toBe('false');
+    expect(m2.dataset.focused).toBe('true');
+  });
+});

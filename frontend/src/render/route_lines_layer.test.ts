@@ -35,12 +35,13 @@ describe('buildRouteLinePaint', () => {
   });
 
   it('focused single id → line-opacity case ["in" literal] expression', () => {
+    // KM-h.2 (Borç #16): non-focused opacity 0.2 → 0.15 (kontrast artırımı).
     const p = buildRouteLinePaint(['public:m2']);
     const op = p['line-opacity'] as readonly unknown[];
     expect(op[0]).toBe('case');
     expect(op[1]).toEqual(['in', ['get', 'route_id'], ['literal', ['public:m2']]]);
     expect(op[2]).toBe(1.0);
-    expect(op[3]).toBe(0.2);
+    expect(op[3]).toBe(0.15);
   });
 
   it('focused multi-id (variant group) → "in" literal contains all ids', () => {
@@ -71,15 +72,27 @@ describe('buildRouteLinePaint', () => {
     expect((w[8] as readonly unknown[])[0]).toBe('case');
   });
 
-  it('focused dolu → focused/non-focused stop değerleri eski matematikle aynı (3/2, 6/4, 9/6)', () => {
+  it('focused dolu → focused/non-focused stop değerleri (KM-h.2: 4/1, 7/2, 10/3)', () => {
+    // KM-h.2 (Borç #16): kontrast büyütüldü — focused +1 birim, non-focused
+    // yarıya indi. Görsel etki: fokuslu hat her zoom'da diğerlerinin
+    // ≥2x kalınlığında, non-focused hatlar arka plana karışır.
     const w = buildRouteLinePaint(['public:m2'])['line-width'] as readonly unknown[];
-    // [case, condition, focusedValue, baseValue]
     const at10 = w[4] as readonly unknown[];
     const at14 = w[6] as readonly unknown[];
     const at18 = w[8] as readonly unknown[];
-    expect([at10[2], at10[3]]).toEqual([3, 2]);
-    expect([at14[2], at14[3]]).toEqual([6, 4]);
-    expect([at18[2], at18[3]]).toEqual([9, 6]);
+    expect([at10[2], at10[3]]).toEqual([4, 1]);
+    expect([at14[2], at14[3]]).toEqual([7, 2]);
+    expect([at18[2], at18[3]]).toEqual([10, 3]);
+  });
+
+  it('KM-h.2 regression guard: focused width her zoom stop\'unda non-focused\'un en az 2x\'i', () => {
+    const w = buildRouteLinePaint(['public:m2'])['line-width'] as readonly unknown[];
+    for (let i = 4; i < w.length; i += 2) {
+      const stop = w[i] as readonly unknown[];
+      const focusedW = stop[2] as number;
+      const nonFocusedW = stop[3] as number;
+      expect(focusedW).toBeGreaterThanOrEqual(nonFocusedW * 2);
+    }
   });
 
   it('focused dolu → ["zoom"] expression nested case içinde GEÇMEZ (regression guard)', () => {

@@ -27,9 +27,15 @@ const collection: RouteCollection = { type: 'FeatureCollection', features: [] };
 const shapeIndex = new Map<string, LonLat[]>();
 
 // Pure paint factory — focused null/[] → mevcut paint.
-// focused string[] → bu hatlar parlak (opacity 1.0, %50 daha kalın),
-// diğerleri sönük (opacity 0.2). f-polish-5: array filter, varyant
-// grubu tek seferde focus'a alınır.
+// focused string[] → bu hatlar belirgin parlar (opacity 1.0, kalın
+// stops 4/7/10), diğerleri belirgin söner (opacity 0.15, ince stops
+// 1/2/3 — focused'un yarısının altı, kontrast ≥3x her zoom'da).
+//
+// v0.8.1 KM-h.2 (Borç #16): non-focused width yarıya indirildi (2/4/6
+// → 1/2/3), focused width 1 birim artırıldı (3/6/9 → 4/7/10), non-
+// focused opacity 0.2 → 0.15. Glow layer (route-lines-glow) zaten
+// focus'a göre filter ile toggle ediliyor — bu fix line katmanının
+// kendi kontrastını da büyütür, glow halo'nun üstüne biner.
 //
 // v0.8.1 KM-a fix (Spec Ek A.19): MapLibre style spec'te ``["zoom"]``
 // expression yalnız top-level ``interpolate``/``step`` input'unda
@@ -38,8 +44,7 @@ const shapeIndex = new Map<string, LonLat[]>();
 // focused dolu paint'i bu nedenle "outer interpolate(zoom) → inner
 // data-driven case stops" desenine çevrildi: zoom interpolation top-
 // level kalır, her stop'un output'u kendi içinde focused/non-focused
-// arası ayrım yapar. Sonuç matematiksel olarak eskisiyle aynı
-// (10→3/2, 14→6/4, 18→9/6).
+// arası ayrım yapar.
 export function buildRouteLinePaint(focused: readonly string[] | null = null) {
   if (focused === null || focused.length === 0) {
     return {
@@ -59,13 +64,13 @@ export function buildRouteLinePaint(focused: readonly string[] | null = null) {
     'line-opacity': [
       'case',
       focusedCase, 1.0,
-      0.2,
+      0.15,
     ],
     'line-width': [
       'interpolate', ['linear'], ['zoom'],
-      10, ['case', focusedCase, 3, 2],
-      14, ['case', focusedCase, 6, 4],
-      18, ['case', focusedCase, 9, 6],
+      10, ['case', focusedCase, 4, 1],
+      14, ['case', focusedCase, 7, 2],
+      18, ['case', focusedCase, 10, 3],
     ],
   } as const;
 }

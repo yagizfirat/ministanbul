@@ -253,6 +253,21 @@
   display: none;
 }
 
+/* KM-h.1 (Borç #15): aktif focus highlight. Sol kenarda mavi accent
+   bar + hafif arka plan, kullanıcı haritada hangi hata baktığını
+   panelden hemen görür. Variant header focused olduğunda da aynı stil
+   uygulanır. */
+.route-panel__route-item[data-focused="true"],
+.route-panel__route-variant-header[data-focused="true"] {
+  background: rgba(99, 102, 241, 0.18);
+  box-shadow: inset 3px 0 0 #818cf8;
+}
+
+.route-panel__route-item[data-focused="true"]:hover,
+.route-panel__route-variant-header[data-focused="true"]:hover {
+  background: rgba(99, 102, 241, 0.26);
+}
+
 .route-panel__route-item input[type="checkbox"] {
   margin: 0;
   cursor: pointer;

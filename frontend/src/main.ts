@@ -279,6 +279,8 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
 
   // Focus paint listener — alt-iş g.
   routeFocus.subscribe(applyFocusPaint);
+  // KM-h.1 (Borç #15): focus değişiminde panel satırında highlight.
+  routeFocus.subscribe((focused) => routePanel?.setFocusedRoutes(focused));
 
   // Polyline tıkla → focus o hat. Map global click → boş alan ise reset.
   map.on('click', 'route-lines', (e) => {
