@@ -17,7 +17,14 @@ const LAYER_ID = 'fleet-circles';
 const COLOR_FILL = MODE_FALLBACK_COLORS.bus;
 const COLOR_FILL_METROBUS = '#3A3D40';   // antrasit
 const COLOR_STROKE_MAPPED = '#3a2a00'; // koyu kahve — sarının HSL koyu tonu
+// v0.8.2 KM-c (Spec Ek A.19 #9): metrobüs noktası 6700+ sarı kalabalıkta
+// gözle ayırt edilemiyor. Beyaz border antrasit zemin üzerinde maksimum
+// kontrast verir; radius +1 birim her zoom seviyesinde göze daha çabuk
+// çarpar. Kategori sinyali (KM5-e.1 categorize-only) zaten doğru çalışıyor;
+// görsel sunum güçlendirildi.
+const COLOR_STROKE_METROBUS = '#FFFFFF';
 const STROKE_WIDTH_MAPPED = 1.5;
+const STROKE_WIDTH_METROBUS = 1.5;
 const STROKE_WIDTH_UNMAPPED = 0;
 
 interface FleetFeatureProperties {
@@ -47,26 +54,40 @@ const EMPTY_FC: FleetCollection = { type: 'FeatureCollection', features: [] };
 // focused string[] → o hatlardaki İETT vehicle'ları opacity 1.0,
 // diğerleri (mapped + unmapped) 0.2. f-polish-5: array filter.
 export function buildFleetPaint(focused: readonly string[] | null = null) {
+  // v0.8.2 KM-c: metrobüs için her zoom stop'unda +1 birim radius.
+  // KM-h.2 / KM-a desenine uygun: outer interpolate(['zoom']) top-level,
+  // inner case is_metrobus stops (MapLibre style spec — case içinde
+  // nested ['zoom'] yasak, setPaintProperty Error fırlatır).
+  const isMetrobusCase = ['==', ['get', 'is_metrobus'], true] as const;
   const base = {
     'circle-radius': [
       'interpolate', ['linear'], ['zoom'],
-      10, 3,
-      14, 6,
+      10, ['case', isMetrobusCase, 4, 3],
+      14, ['case', isMetrobusCase, 7, 6],
     ],
     // KM5-e.2: data-driven case — is_metrobus=true → antrasit, else sarı.
     // Field eksik (eski snapshot, defansif) ['get', 'is_metrobus'] undefined
     // dönerse case false'a düşer → sarı default.
     'circle-color': [
       'case',
-      ['==', ['get', 'is_metrobus'], true], COLOR_FILL_METROBUS,
+      isMetrobusCase, COLOR_FILL_METROBUS,
       COLOR_FILL,
     ],
+    // v0.8.2 KM-c: 3-branch case. Metrobüs route_id genelde null
+    // (mapping retire) — eski `has route_id` branch'i kapsamazdı, şimdi
+    // metrobüs öncelikli kontrol. Mapped bus eski davranışla 1.5px
+    // koyu kahve border korunur; unmapped bus border'sız kalır.
     'circle-stroke-width': [
       'case',
+      isMetrobusCase, STROKE_WIDTH_METROBUS,
       ['has', 'route_id'], STROKE_WIDTH_MAPPED,
       STROKE_WIDTH_UNMAPPED,
     ],
-    'circle-stroke-color': COLOR_STROKE_MAPPED,
+    'circle-stroke-color': [
+      'case',
+      isMetrobusCase, COLOR_STROKE_METROBUS,
+      COLOR_STROKE_MAPPED,
+    ],
   } as const;
   if (focused === null || focused.length === 0) return base;
   return {

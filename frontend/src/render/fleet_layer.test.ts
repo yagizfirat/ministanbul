@@ -34,20 +34,63 @@ describe('buildFleetPaint', () => {
     expect(evalCase({ is_metrobus: true })).toBe('#3A3D40');
   });
 
-  it('drives circle-stroke-width via a case on ["has","route_id"]', () => {
-    const w = buildFleetPaint()['circle-stroke-width'];
+  // v0.8.2 KM-c: 3-branch case. Metrobüs öncelikli kontrol (route_id
+  // genelde null, eski `has route_id` branch'i metrobüsü kaçırırdı).
+  it('drives circle-stroke-width via a 3-branch case (metrobus → mapped → unmapped)', () => {
+    const w = buildFleetPaint()['circle-stroke-width'] as readonly unknown[];
     expect(Array.isArray(w)).toBe(true);
     expect(w[0]).toBe('case');
-    // [case, condition, then, else]
-    expect(w[1]).toEqual(['has', 'route_id']);
-    expect(w[2]).toBeGreaterThan(0); // mapped → visible border
-    expect(w[3]).toBe(0);            // unmapped → no border
+    expect(w[1]).toEqual(['==', ['get', 'is_metrobus'], true]);
+    expect(w[2]).toBe(1.5); // metrobus → border
+    expect(w[3]).toEqual(['has', 'route_id']);
+    expect(w[4]).toBe(1.5); // mapped bus → border
+    expect(w[5]).toBe(0);   // unmapped bus → no border
   });
 
   it('uses an interpolate expression for circle-radius (zoom-driven)', () => {
     const radius = buildFleetPaint()['circle-radius'];
     expect(Array.isArray(radius)).toBe(true);
     expect(radius[0]).toBe('interpolate');
+  });
+
+  // v0.8.2 KM-c: metrobüs için her zoom stop'unda +1 birim radius.
+  // KM-a deseni: outer interpolate(['zoom']), inner case is_metrobus.
+  it('circle-radius nested case: metrobus +1 over default at each zoom stop', () => {
+    const radius = buildFleetPaint()['circle-radius'] as readonly unknown[];
+    expect(radius[0]).toBe('interpolate');
+    expect(radius[1]).toEqual(['linear']);
+    expect(radius[2]).toEqual(['zoom']);
+    // Stops: [10, case], [14, case]
+    expect(radius[3]).toBe(10);
+    const at10 = radius[4] as readonly unknown[];
+    expect(at10[0]).toBe('case');
+    expect([at10[2], at10[3]]).toEqual([4, 3]); // metrobus 4, default 3
+    expect(radius[5]).toBe(14);
+    const at14 = radius[6] as readonly unknown[];
+    expect([at14[2], at14[3]]).toEqual([7, 6]); // metrobus 7, default 6
+  });
+
+  it('KM-a regression guard: ["zoom"] does not appear nested inside circle-radius case stops', () => {
+    // MapLibre style spec: ["zoom"] yalnız top-level interpolate input'u.
+    // case içinde nested ["zoom"] → setPaintProperty runtime Error.
+    const r = buildFleetPaint()['circle-radius'] as readonly unknown[];
+    const hasNestedZoom = (node: unknown, depth: number): boolean => {
+      if (!Array.isArray(node)) return false;
+      if (depth > 0 && node.length === 1 && node[0] === 'zoom') return true;
+      return node.some((c) => hasNestedZoom(c, depth + 1));
+    };
+    const stops = r.slice(3);
+    for (let i = 1; i < stops.length; i += 2) {
+      expect(hasNestedZoom(stops[i], 0)).toBe(false);
+    }
+  });
+
+  it('circle-stroke-color is a case: metrobus → white, default → koyu kahve', () => {
+    const c = buildFleetPaint()['circle-stroke-color'] as readonly unknown[];
+    expect(c[0]).toBe('case');
+    expect(c[1]).toEqual(['==', ['get', 'is_metrobus'], true]);
+    expect(c[2]).toBe('#FFFFFF');
+    expect(c[3]).toBe('#3a2a00');
   });
 
   it('focused null → no circle-opacity (default rendering)', () => {
@@ -71,20 +114,20 @@ describe('buildFleetPaint', () => {
     expect(literal[1]).toEqual(ids);
   });
 
-  it('manually evaluates the stroke-width case for a mapped vs unmapped feature', () => {
-    // Tiny inline evaluator to prove the expression's intent end-to-end.
-    const expr = buildFleetPaint()['circle-stroke-width'] as readonly [
-      'case',
-      readonly ['has', string],
-      number,
-      number,
-    ];
+  it('manually evaluates the 3-branch stroke-width case for metrobus / mapped / unmapped', () => {
+    // KM-c: case [is_metrobus → 1.5] ; case [has route_id → 1.5] ; else 0.
+    const expr = buildFleetPaint()['circle-stroke-width'] as readonly unknown[];
     const ev = (props: Record<string, unknown>): number => {
-      const [, cond, thenV, elseV] = expr;
-      return cond[0] === 'has' && cond[1] in props ? thenV : elseV;
+      // [case, isMetrobusCase, w_metrobus, hasRouteIdCase, w_mapped, w_unmapped]
+      if (props.is_metrobus === true) return expr[2] as number;
+      if ('route_id' in props) return expr[4] as number;
+      return expr[5] as number;
     };
+    expect(ev({ id: 'x', is_metrobus: true })).toBe(1.5);
     expect(ev({ id: 'x', route_id: '34A' })).toBe(1.5);
-    expect(ev({ id: 'x' })).toBe(0);
+    expect(ev({ id: 'x' })).toBe(0); // unmapped bus
+    // Metrobus + null route_id (gerçek senaryo) → border korunur
+    expect(ev({ id: 'x', is_metrobus: true })).toBe(1.5);
   });
 });
 
