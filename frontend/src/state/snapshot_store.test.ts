@@ -27,6 +27,51 @@ function snap(vehicles: MockSnapshot['vehicles']): MockSnapshot {
   };
 }
 
+// ── v0.8.3 KM-b: getAlpha (frozen-state guard helper) ──────────────
+describe('SnapshotStore.getAlpha', () => {
+  it('returns null before any snapshot has been pushed', () => {
+    const s = new SnapshotStore();
+    expect(s.getAlpha(performance.now())).toBeNull();
+  });
+
+  it('returns alpha in [0, 1] after a single push (interval=0 → fallback denom)', () => {
+    const s = new SnapshotStore();
+    s.push(
+      snap([{ id: 'v1', lat: 41, lon: 29, bearing: null, speed: 0, route_id: null }]) as unknown as VehicleSnapshot,
+    );
+    // push() ilk çağrıda t0=t1=next setler → t0/t1 dolu, interval=0 →
+    // denom=FALLBACK_INTERVAL_MS. elapsed≈0 → alpha≈0.
+    const a = s.getAlpha(performance.now());
+    expect(a).not.toBeNull();
+    expect(a! >= 0 && a! <= 1).toBe(true);
+  });
+
+  it('returns alpha clamped to [0, 1] across a synthetic interval', () => {
+    const s = new SnapshotStore();
+    s.push(
+      snap([{ id: 'v1', lat: 41, lon: 29, bearing: null, speed: 0, route_id: null }]) as unknown as VehicleSnapshot,
+    );
+    s.push(
+      snap([{ id: 'v1', lat: 41.1, lon: 29.1, bearing: null, speed: 0, route_id: null }]) as unknown as VehicleSnapshot,
+    );
+    const t1Wall = performance.now();
+    expect(s.getAlpha(t1Wall)).toBeLessThan(0.05);
+    expect(s.getAlpha(t1Wall + 10 * 60 * 1000)).toBe(1);
+  });
+
+  it('returns 1 in the frozen-state (way past the interval)', () => {
+    const s = new SnapshotStore();
+    s.push(
+      snap([{ id: 'v1', lat: 41, lon: 29, bearing: null, speed: 0, route_id: null }]) as unknown as VehicleSnapshot,
+    );
+    s.push(
+      snap([{ id: 'v1', lat: 42, lon: 30, bearing: null, speed: 0, route_id: null }]) as unknown as VehicleSnapshot,
+    );
+    // 5 dakika sonra → interval ≪ elapsed → clamp 1
+    expect(s.getAlpha(performance.now() + 5 * 60 * 1000)).toBe(1);
+  });
+});
+
 describe('SnapshotStore.getVehicleBBoxForRoute', () => {
   it('returns null when no snapshot has been pushed', () => {
     const s = new SnapshotStore();

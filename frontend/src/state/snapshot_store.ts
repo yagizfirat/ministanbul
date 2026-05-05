@@ -52,6 +52,19 @@ export class SnapshotStore {
     }
   }
 
+  // v0.8.3 KM-b: render loop frozen-state guard için. Alpha 1.0'a
+  // ulaştığında interpolation donar (clamp 0..1, extrapolation yok),
+  // pozisyonlar yeni snapshot gelene kadar değişmez. Caller iki RAF
+  // üst üste 1.0 görürse setData skip edebilir → 6900 feature reindex
+  // pure overhead'i kalkar. null = snapshot yok (boş state).
+  getAlpha(now: number): number | null {
+    if (this.t1 === null || this.t0 === null) return null;
+    const interval = this.t1.dataTime - this.t0.dataTime;
+    const elapsed = now - this.t1.receivedWall;
+    const denom = interval > 0 ? interval : FALLBACK_INTERVAL_MS;
+    return clamp(elapsed / denom, 0, 1);
+  }
+
   getInterpolated(now: number): InterpolatedVehicle[] {
     if (this.t1 === null || this.t0 === null) return [];
 

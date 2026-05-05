@@ -53,21 +53,48 @@ describe('buildFleetPaint', () => {
     expect(radius[0]).toBe('interpolate');
   });
 
-  // v0.8.2 KM-c: metrobüs için her zoom stop'unda +1 birim radius.
-  // KM-a deseni: outer interpolate(['zoom']), inner case is_metrobus.
-  it('circle-radius nested case: metrobus +1 over default at each zoom stop', () => {
+  // v0.8.2 KM-c + v0.8.3 KM-b LOD: zoom 7→0 (gizli), zoom 9 küçük case,
+  // zoom 10/14 mevcut KM-c case. Stops: [7, 0], [9, case], [10, case],
+  // [14, case].
+  it('circle-radius LOD stops: zoom 7=0 (hidden), 9=case, 10=case, 14=case', () => {
     const radius = buildFleetPaint()['circle-radius'] as readonly unknown[];
     expect(radius[0]).toBe('interpolate');
     expect(radius[1]).toEqual(['linear']);
     expect(radius[2]).toEqual(['zoom']);
-    // Stops: [10, case], [14, case]
-    expect(radius[3]).toBe(10);
-    const at10 = radius[4] as readonly unknown[];
-    expect(at10[0]).toBe('case');
-    expect([at10[2], at10[3]]).toEqual([4, 3]); // metrobus 4, default 3
-    expect(radius[5]).toBe(14);
-    const at14 = radius[6] as readonly unknown[];
-    expect([at14[2], at14[3]]).toEqual([7, 6]); // metrobus 7, default 6
+    // Stop 1: zoom 7, value 0 (LOD cull)
+    expect(radius[3]).toBe(7);
+    expect(radius[4]).toBe(0);
+    // Stop 2: zoom 9, value case (metrobus 2, default 1)
+    expect(radius[5]).toBe(9);
+    const at9 = radius[6] as readonly unknown[];
+    expect(at9[0]).toBe('case');
+    expect([at9[2], at9[3]]).toEqual([2, 1]);
+    // Stop 3: zoom 10, value case (metrobus 4, default 3) — KM-c
+    expect(radius[7]).toBe(10);
+    const at10 = radius[8] as readonly unknown[];
+    expect([at10[2], at10[3]]).toEqual([4, 3]);
+    // Stop 4: zoom 14, value case (metrobus 7, default 6) — KM-c
+    expect(radius[9]).toBe(14);
+    const at14 = radius[10] as readonly unknown[];
+    expect([at14[2], at14[3]]).toEqual([7, 6]);
+  });
+
+  it('circle-radius LOD: stops are monotonically non-decreasing for the default branch', () => {
+    // LOD anlam kontrolü: 0 → 1 → 3 → 6 (default), 0 → 2 → 4 → 7 (metrobus)
+    const radius = buildFleetPaint()['circle-radius'] as readonly unknown[];
+    const evalCase = (stop: unknown, isMetrobus: boolean): number => {
+      if (typeof stop === 'number') return stop;
+      const c = stop as readonly unknown[];
+      return (isMetrobus ? c[2] : c[3]) as number;
+    };
+    const defaults = [radius[4], radius[6], radius[8], radius[10]].map((s) =>
+      evalCase(s, false),
+    );
+    const metro = [radius[4], radius[6], radius[8], radius[10]].map((s) =>
+      evalCase(s, true),
+    );
+    expect(defaults).toEqual([0, 1, 3, 6]);
+    expect(metro).toEqual([0, 2, 4, 7]);
   });
 
   it('KM-a regression guard: ["zoom"] does not appear nested inside circle-radius case stops', () => {

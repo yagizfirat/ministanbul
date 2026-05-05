@@ -60,8 +60,17 @@ export function buildFleetPaint(focused: readonly string[] | null = null) {
   // nested ['zoom'] yasak, setPaintProperty Error fırlatır).
   const isMetrobusCase = ['==', ['get', 'is_metrobus'], true] as const;
   const base = {
+    // v0.8.3 KM-b: LOD low-zoom culling. zoom 7 (ülke ölçeği) altında
+    // 6900 nokta görsel olarak okunamaz; radius 0 ile MapLibre rendering
+    // pipeline'ı circle'ı erken atlar (fragment shader fully transparent
+    // pixel için zaman harcamaz). zoom 9'da küçük (1-2px), zoom 10'dan
+    // itibaren mevcut KM-c boyutları (3/4 → 6/7).
+    // KM-a guard: case içinde nested ['zoom'] yok (interpolate stops
+    // top-level, case yalnız output expression).
     'circle-radius': [
       'interpolate', ['linear'], ['zoom'],
+      7, 0,
+      9, ['case', isMetrobusCase, 2, 1],
       10, ['case', isMetrobusCase, 4, 3],
       14, ['case', isMetrobusCase, 7, 6],
     ],

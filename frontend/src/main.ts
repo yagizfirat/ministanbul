@@ -393,9 +393,24 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
 }
 
 function startRenderLoop(): void {
+  // v0.8.3 KM-b: İETT fleet frozen-state guard. Alpha 1.0'a ulaştığında
+  // (snapshot yaşı ≥ interval) lerp donar; iki RAF üst üste 1.0 ise
+  // pozisyonlar değişmemiştir → updateFleet (6900 feature build + setData
+  // reindex) pure overhead. Skip ile her saniye 60 RAF × ~5-10ms =
+  // ~300-600ms/saniye CPU tasarrufu mobilde measurable.
+  // Scheduled fleet skip YAPILMAZ — vehicle sürekli hareket halinde,
+  // alpha kavramı yok (trip-progress bazlı interpolation).
+  let lastFleetAlpha: number | null = null;
   function frame(): void {
-    const positions = store.getInterpolated(performance.now());
-    updateFleet(map, positions);
+    const now = performance.now();
+    const alpha = store.getAlpha(now);
+    const isFrozen =
+      alpha === null || (alpha === 1 && lastFleetAlpha === 1);
+    if (!isFrozen) {
+      const positions = store.getInterpolated(now);
+      updateFleet(map, positions);
+    }
+    lastFleetAlpha = alpha;
     const nowSec = nowSecondsIstanbul();
     const allScheduled: InterpolatedScheduledTrip[] = [];
     for (const fleet of scheduledFleets.values()) {
