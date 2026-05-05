@@ -1,21 +1,10 @@
-// Faz 6 KM1 alt-iş f-5 — sağ hat paneli.
+// Right-side route panel.
 //
-// Mimari prensipler (kullanıcı kararı: panel ileride yer/boyut/davranış
-// olarak değişebilir; kod buna hazır):
-//   - Tüm magic number'lar RoutePanelConfig içinde, override'lanabilir
-//   - DOM class isimli, CSS değişken kontrol noktalarıyla bağlı
-//   - State (RouteVisibility) view'dan ayrı; panel sadece view
-//   - 5 mod grup: metro/marmaray/tram/funicular/ferry. Bus listesi
-//     KM5-e.2'de iptal — yerine iki bağımsız toggle satırı (İETT Otobüs
-//     + Metrobüs) eklendi (Spec §3.3 v0.8.0). Mapping retire sonrası
-//     hat-bazlı kontrol anlamsız; vehicle.is_metrobus kategorize
-//     payload field'ına göre filter expression çalışır.
-//
-// Sınırlar:
-//   - Drag/star/favori yok (Faz 6 KM5)
-//   - Mobile bottom-sheet yok (Faz 6 KM2)
-//   - Hat tıklamayla focus mode yok (alt-iş g)
-//   - Search debounce yok (her keystroke ~2ms fuzzyMatch)
+// Architecture: magic numbers in RoutePanelConfig (overridable),
+// DOM-class + CSS-variable bindings, RouteVisibility state separated
+// from view. 5 mode groups (metro/marmaray/tram/funicular/ferry) plus
+// two standalone toggles (İETT bus + metrobüs); İETT bus is filtered
+// by vehicle.is_metrobus payload, not route_id (mapping disabled).
 
 import './route_panel.css';
 import type { RouteSummary } from '../data/api';
@@ -47,8 +36,7 @@ interface ModeRow {
   label: string;
 }
 
-// KM5-e.2: bus mode kaldırıldı — yerine iki sabit toggle satırı (İETT
-// Otobüs + Metrobüs) MODE_ORDER dışında render edilir.
+// İETT bus + metrobüs render as standalone toggle rows below MODE_ORDER.
 const MODE_ORDER: ReadonlyArray<ModeRow> = [
   { key: 'metro', label: 'Metro' },
   { key: 'marmaray', label: 'Marmaray' },
@@ -78,23 +66,16 @@ interface BusToggleRefs {
 export interface RoutePanelOptions {
   visibility: RouteVisibility;
   routes: RouteSummary[];
-  // Reset butonunun döndüğü visible set. Genelde polyline + ferry
-  // route_id'leri (bus default hidden — Mini Tokyo 3D paterni).
+  // Reset target: typically polyline + ferry route_ids (bus default hidden).
   defaultVisibleIds: readonly string[];
-  // Alt-iş g: hat satırına çift tıklayınca focus + bbox zoom.
   onRouteDoubleClick?: (routeId: string) => void;
-  // f-polish-5: variant header çift tıkla → tüm variants union focus.
+  // Variant header double-click → focus the union of all variants.
   onVariantGroupDoubleClick?: (routeIds: readonly string[]) => void;
-  // KM5-e.2: iki bağımsız toggle değiştiğinde main.ts MapLibre filter
-  // expression'ı günceller (buildFleetFilter). Default ikisi true.
   onBusVisibilityChange?: (visible: boolean) => void;
   onMetrobusVisibilityChange?: (visible: boolean) => void;
-  // KM-g: header bulk butonları (Tümü/Hiçbiri) Kanal A dışında Kanal B
-  // (bus/metrobüs) ve Kanal C (routeFocus) için de sinyal verir.
-  // allOn=true → Tümü, allOn=false → Hiçbiri.
+  // Tümü → allOn=true, Hiçbiri → allOn=false. Caller propagates to
+  // bus/metrobüs filter and routeFocus.
   onSelectAllChange?: (allOn: boolean) => void;
-  // KM-g: Reset butonu — defaultVisibleIds geri yüklenirken caller
-  // bus/metrobüs default'unu (true) ve focus reset'i de yapar.
   onResetRequested?: () => void;
   config?: Partial<RoutePanelConfig>;
 }
@@ -105,17 +86,13 @@ const HINT_TEXT =
 export interface RoutePanelHandle {
   element: HTMLElement;
   setRoutes(routes: RouteSummary[]): void;
-  // KM5-e.2: snapshot.push sonrası main.ts canlı sayım hesaplayıp gönderir.
-  // Snapshot yoksa {bus:0, metrobus:0}; bağlam: store.countByMetrobus().
+  // Latest snapshot vehicle counts; passed by caller after snapshot push.
   setVehicleCounts(counts: { bus: number; metrobus: number }): void;
-  // KM-g: Tümü/Hiçbiri/Reset callback'lerinden caller atomik UI sync için
-  // çağırır. Hem panel iç state'ini hem checkbox.checked'i günceller,
-  // onBusVisibilityChange/onMetrobusVisibilityChange tetiklemez (sonsuz
-  // döngü guard'ı).
+  // Atomic checkbox + internal-state sync; does NOT fire
+  // onBus/MetrobusVisibilityChange callbacks (loop guard).
   setFleetVisibility(state: { bus: boolean; metrobus: boolean }): void;
-  // KM-h.1 (Borç #15): main.ts routeFocus.subscribe'tan tetiklenir.
-  // null → highlight temizlenir; string[] → o satırlar `data-focused="true"`
-  // alır, variant grup başlığı da grup üyesi varsa highlight olur.
+  // null clears the focus highlight; otherwise marks matching rows and
+  // their variant-group header with data-focused="true".
   setFocusedRoutes(focused: readonly string[] | null): void;
   destroy(): void;
 }
@@ -131,26 +108,21 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   let busVisible = true;
   let metrobusVisible = true;
   let vehicleCounts = { bus: 0, metrobus: 0 };
-  // KM-h.1 (Borç #15): rebuildItems/applySearch DOM'u sıfırlıyor; panel
-  // her render sonrası aktif focus'u yeniden uygular. Set kullanımı O(1)
-  // lookup, 100+ satır için fark yapar.
+  // Re-applied after every DOM rebuild; Set used for O(1) row lookup.
   let focusedSet: Set<string> = new Set();
-  // Variant gruplarının açık/kapalı durumu — `${mode}|${shortName}` key.
+  // Open/closed state per variant group, keyed `${mode}|${shortName}`.
   const expandedGroups = new Set<string>();
 
   const root = document.createElement('div');
   root.className = 'route-panel';
   root.dataset.position = config.position;
   root.dataset.collapsed = 'false';
-  // v0.8.3 KM-a (Spec Ek A.19, Faz 6 KM2 devralındı): 768px altı bottom
-  // sheet. Default kapalı; CSS desktop'ta bu attribute'ü görmezden gelir
-  // (@media (max-width: 768px) içinde geçerli).
+  // Default closed; meaningful only in the <=768px bottom-sheet layout.
   root.dataset.mobileOpen = 'false';
   root.style.setProperty('--route-panel-width', config.width);
   root.style.setProperty('--route-panel-collapse-width', config.collapseWidth);
 
-  // v0.8.3 KM-a: drag handle (sadece mobilde görünür, CSS-controlled).
-  // İlk satır olarak panel'in tepesinde — bottom sheet pattern'inde tipik.
+  // Visible only on mobile (CSS-controlled).
   const dragHandle = document.createElement('div');
   dragHandle.className = 'route-panel__drag-handle';
   root.appendChild(dragHandle);
@@ -175,11 +147,8 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   collapseBtn.addEventListener('click', () => toggleCollapse());
   row1.append(title, hintIcon, collapseBtn);
 
-  // KM5-e.2: "121 hat görünür" sayacı kaldırıldı. KM5-a sonrası
-  // mapping kapalı + İETT bus için hat-bazlı kontrol yok; toplam sayım
-  // çelişkili (raylı/vapur 121 hat hat-bazlı, otobüs 2 toggle). Bulk
-  // action butonları sadece raylı/vapur (visibility scope'undaki hatlar)
-  // için anlamlı kalır.
+  // Bulk actions apply only to rail/ferry (the route_id-based scope);
+  // bus/metrobüs are toggled via their dedicated rows.
   const row2 = document.createElement('div');
   row2.className = 'route-panel__header-row2';
   const bulkActions = document.createElement('div');
@@ -229,8 +198,7 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
     groupsByMode.set(m.key, refs);
   }
 
-  // KM5-e.2: iki bağımsız toggle satırı (İETT Otobüs + Metrobüs).
-  // MODE_ORDER dışında, ayrı section olarak render edilir.
+  // İETT bus + metrobüs toggle rows, rendered below the mode groups.
   const busTogglesEl = document.createElement('div');
   busTogglesEl.className = 'route-panel__iett-bus-toggles';
   const busToggleRef = createBusToggleRow({
@@ -268,11 +236,9 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
 
   document.body.appendChild(root);
 
-  // v0.8.3 KM-a: hamburger button + backdrop. Body'ye doğrudan eklenir
-  // (panel'in sibling'i) — hamburger her zaman görünür olabilsin (panel
-  // collapsed/translated olduğunda DOM içinde kalsın), backdrop tıklaması
-  // panel'in dışındaki tıklamalar olarak okunsun. Desktop'ta her ikisi
-  // de CSS ile gizli.
+  // Hamburger + backdrop attach to body (siblings of panel) so the
+  // hamburger stays mounted when the panel is closed/translated. Both
+  // are hidden via CSS on desktop.
   const hamburger = document.createElement('button');
   hamburger.className = 'mobile-hamburger';
   hamburger.setAttribute('aria-label', 'Hatlar panelini aç/kapat');
@@ -343,7 +309,6 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   }
 
   function rebuildItems(): void {
-    // KM5-e.2: tüm modlar polyline-style (bus özel dal kaldırıldı).
     for (const [modeKey, refs] of groupsByMode) {
       refs.body.replaceChildren();
       refs.itemByKey.clear();
@@ -371,9 +336,8 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
     return renderVariantHeader(item.shortName, item.mode, item.variants);
   }
 
-  // f-polish-5: variant satırı sade — checkbox + "Araç N". long_name
-  // (mojibake'li) ve agency_name görünmez. Çift tıkla → sadece o
-  // variant'a focus + bbox.
+  // Variant rows show only checkbox + short label ("Araç N"); long_name
+  // (often mojibake) and agency are hidden.
   function renderVariantItem(route: RouteSummary, displayLabel: string): HTMLElement {
     const el = document.createElement('div');
     el.className = 'route-panel__route-item route-panel__route-item--variant';
@@ -443,7 +407,7 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
 
     el.append(toggle, cb, dot, shortEl, countEl);
     el.addEventListener('click', () => onVariantToggle(mode, shortName));
-    // f-polish-5: çift tıkla → tüm variant'ların union focus + bbox.
+    // Double-click focuses + bbox-zooms the union of all variants.
     el.addEventListener('dblclick', (e) => {
       e.stopPropagation();
       opts.onVariantGroupDoubleClick?.(ids);
@@ -488,14 +452,13 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
     operatorEl.textContent = route.agency_name || '';
 
     el.append(cb, dot, shortEl, longEl, operatorEl);
+    // Click anywhere on the row toggles the checkbox.
     el.addEventListener('click', () => {
-      // Item gövdesine click → checkbox toggle (UX kolaylığı).
       cb.checked = !cb.checked;
       opts.visibility.toggle(route.route_id);
     });
+    // Double-click focuses the route and bbox-zooms.
     el.addEventListener('dblclick', (e) => {
-      // Çift tıkla → focus + bbox zoom. Single click toggle'ı geri
-      // al (browser dblclick öncesi 2 click event tetikler).
       e.stopPropagation();
       opts.onRouteDoubleClick?.(route.route_id);
     });
@@ -511,7 +474,6 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   }
 
   function applySearch(): void {
-    // Search state değişti — tüm bodyleri yeniden flatten + DOM rebuild.
     for (const [modeKey, refs] of groupsByMode) {
       refs.body.replaceChildren();
       refs.itemByKey.clear();
@@ -534,10 +496,8 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
     updateGroupCounts();
   }
 
-  // KM-h.1 (Borç #15): aktif focus'taki satırları `data-focused="true"`
-  // ile işaretler. Variant grup başlığı, herhangi bir varyantı focused
-  // ise highlight alır (kullanıcı grup tıklamasında tüm union'ı focus'a
-  // alır → header da bu durumu yansıtır).
+  // Marks rows currently in focus with data-focused="true". A variant
+  // group header is highlighted when any of its variants is focused.
   function applyFocusedClasses(): void {
     for (const [, refs] of groupsByMode) {
       for (const node of refs.itemByKey.values()) {
@@ -559,9 +519,6 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
 
   function syncCheckboxes(): void {
     for (const [, refs] of groupsByMode) {
-      // Polyline modları: variant header indeterminate state ve item
-      // checkbox'ları güncellenir. flat list küçük (≤30) — refs.body
-      // child'larını tara.
       for (const node of refs.itemByKey.values()) {
         const cb = node.querySelector<HTMLInputElement>('input[type="checkbox"]');
         if (!cb) continue;
@@ -641,7 +598,6 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
         : '>';
   }
 
-  // KM5-e.2: iki bağımsız toggle satırı factory.
   function createBusToggleRow(rowOpts: {
     key: string;
     label: string;

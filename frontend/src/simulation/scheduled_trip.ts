@@ -9,10 +9,9 @@ import {
 export interface StopProjection {
   arrivalSec: number;
   arcLengthM: number;
-  // KM5-d: popup'ta sonraki durak listesi için (Spec §5.8). prepareTrip
-  // backend'den gelen stop_name + sequence'ı projection'a yansıtır;
-  // computeNextStops bu projection üzerinden anlık (vehicle interpolated
-  // pozisyonundan bağımsız) k+1...k+5 durağı çeker.
+  // stopName + sequence are surfaced for the popup's "next stops" panel;
+  // computeNextStops walks the projections directly (independent of the
+  // vehicle's interpolated pose).
   stopName: string;
   sequence: number;
 }

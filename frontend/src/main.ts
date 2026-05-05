@@ -42,9 +42,9 @@ const STYLE_URL = 'https://tiles.openfreemap.org/styles/bright';
 const REST_FALLBACK_DELAY_MS = 5_000;
 const REST_POLL_INTERVAL_MS = 60_000;
 
-// Modes drawn as polylines on app load. Marmaray ships inside `subway` and is
-// split out by short_name in api.ts. ferry/metrobus/bus are panel opt-ins
-// (KM6) — metrobus polyline waits on Faz 5 OSM snapping (Ek A.10).
+// Modes drawn as polylines on app load. Marmaray ships inside `subway`
+// and is split out by short_name in api.ts. Ferry routes are listed in
+// the panel without polylines; bus/metrobüs render only as live circles.
 const ALWAYS_VISIBLE_MODES = ['subway', 'tram', 'funicular'];
 const ROUTE_FETCH_BATCH = 10;
 const SCHEDULED_POLL_INTERVAL_MS = 60_000;
@@ -113,9 +113,8 @@ let routeVisibility: RouteVisibility | null = null;
 let routePanel: RoutePanelHandle | null = null;
 const routeFocus = new RouteFocus();
 
-// Alt-iş g: focus state değişiminde 3 layer paint + glow filter
-// güncellenir. f-polish-5: focused readonly string[] | null —
-// multi-route focus (variant grup).
+// Re-paints the three layers + glow filter when the focused set changes.
+// `focused` is null (no focus) or one or more route_ids.
 function applyFocusPaint(focused: readonly string[] | null): void {
   if (map.getLayer('route-lines')) {
     const p = buildRouteLinePaint(focused) as Record<string, unknown>;
@@ -187,10 +186,9 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
   }
   console.log(`[routes] all done: ${loaded} loaded, ${skipped} skipped`);
 
-  // KM1 alt-iş f-6 — RoutePanel + route filter wiring.
-  // Ferry polyline çizilmez (KM3 paterni) ama panel'de listelenir;
-  // scheduled vehicle layer'ı route_id filter'ına tabi olduğu için
-  // ferry default visible kalır (vapur scheduled noktalar görünür).
+  // Ferry routes are listed in the panel without polylines (Şehir
+  // Hatları geometry not in the public feed). They still need
+  // RouteStore registration so vehicle popups can resolve their metadata.
   let ferrySummaries: RouteSummary[] = [];
   try {
     ferrySummaries = await fetchActiveRoutes(['ferry']);
@@ -198,31 +196,19 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
   } catch (err) {
     console.warn('[routes] ferry fetch failed', err);
   }
-  // KM-d.2 fix (Spec Ek A.19 borç #6): vapur popup'ı "Hat metadata
-  // bulunamadı" gösteriyordu çünkü RouteStore.summariesByRouteId ferry
-  // route_id'lerini içermiyordu. Polyline modlar zaten loadAlwaysVisible
-  // başlangıcında register edildi; ferry için ayrı çağrı şart.
   routeStore.registerSummaries(ferrySummaries);
 
   const initialRoutes = [...polylineSummaries, ...ferrySummaries];
   const initialIds = initialRoutes.map((r) => r.route_id);
-  // KM-b: URL state persistence (Spec Ek A.19 #5). Sayfa yüklenirken
-  // `?routes=...&bus=off&...` paramlarını okur; default'larla merge.
-  // Bilinmeyen route_id'ler (eski link, hat artık feed'de yok) sessizce
-  // süzülür — initialIds whitelist'i.
+  // Restore visibility/fleet/focus state from `?routes=...&bus=off&...`;
+  // unknown route_ids (stale share-links) are filtered out silently.
   const urlState = parseUrlState(window.location.search);
   const initialIdSet = new Set(initialIds);
   const filteredUrlRoutes = urlState.routes?.filter((id) => initialIdSet.has(id));
   const initiallyVisible = filteredUrlRoutes ?? initialIds;
-  // 5 polyline modu (subway+tram+funicular+marmaray) + ferry = default visible.
-  // Bus default hidden — lazy fetch sonrası expandTotalCount.
   routeVisibility = new RouteVisibility(initialIds, initiallyVisible);
-  // KM5-e.2: iki bağımsız toggle state, default ikisi açık.
-  // Panel callback'leri burada state'i günceller ve fleet_layer
-  // filter expression'ını yeniden çizer.
   let busVisible = urlState.bus ?? true;
   let metrobusVisible = urlState.metrobus ?? true;
-  // KM-b: URL focus restore — initialIdSet whitelist (bilinmeyen ID süzülür).
   if (urlState.focus) {
     const validFocus = urlState.focus.filter((id) => initialIdSet.has(id));
     if (validFocus.length > 0) routeFocus.setFocus(validFocus);
@@ -234,27 +220,23 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
       buildFleetFilter(busVisible, metrobusVisible) as never,
     );
   }
-  // KM-e Fix-A: hızlı state değişimlerinde (Reset, Tümü, Hiçbiri,
-  // hızlı checkbox toggle) setFilter chain'ini RAF'a debounce et.
+  // Debounce the setFilter chain so Reset/Select-All/rapid toggles
+  // collapse into a single MapLibre style invalidation.
   const debouncedApplyFleet = debounceFrame(applyFleetVisibilityFilter);
-  // KM-g: header bulk butonları (Tümü/Hiçbiri/Reset) Kanal A (route_id)
-  // dışında Kanal B (bus/metrobus filter) ve Kanal C (routeFocus paint)
-  // için de tetiklenir. Borç #12/#13/#14 tek koordinasyon noktasıyla
-  // çözülür (Tasarım A, _research/2026-05-05-km-g-...).
+  // Header bulk actions (Tümü/Hiçbiri/Reset) propagate to all three
+  // visibility channels: route_id set, bus/metrobüs filter, and routeFocus.
   function applyFleetState(bus: boolean, metrobus: boolean): void {
     busVisible = bus;
     metrobusVisible = metrobus;
     debouncedApplyFleet();
     routePanel?.setFleetVisibility({ bus, metrobus });
     routeFocus.setFocus(null);
-    // KM-b: focus zaten null ise routeFocus.setFocus(null) no-op →
-    // subscribe fire etmez → URL güncellenmezdi. Bus/metrobus state
-    // değişimi her durumda URL'e yansımalı.
+    // setFocus(null) is a no-op when focus is already null, so push
+    // the URL update explicitly to capture the bus/metrobüs change.
     debouncedUpdateUrl();
   }
-  // KM-b: URL state sync. RAF debounce hızlı toggle'da URL flooding'i
-  // önler; replaceState (push DEĞİL) browser history'sini şişirmez.
-  // routeVisibility/routeFocus subscribe + bus/metrobus callback'leri.
+  // history.replaceState (not pushState) avoids polluting the browser
+  // back-stack on every checkbox flip.
   function updateUrl(): void {
     if (!routeVisibility) return;
     const search = serializeUrlState(
@@ -294,15 +276,11 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
 
   function focusAndZoom(routeIds: readonly string[]): void {
     routeFocus.setFocus(routeIds);
-    // Bbox lookup zinciri:
-    //   1. route_lines_layer.collection — polyline modlar (metro/marmaray/
-    //      tram/funicular). Ferry buraya eklenmez (KM3 paterni).
-    //   2. SnapshotStore — İETT canlı vehicle konumları. Bus için
-    //      mapping kapalı, route_id null çoğunlukla; sadece scheduled
-    //      modlarına denk gelmeyen edge case'lerde dolu.
-    //   3. KM-d.1 fix: ScheduledFleet.getRoutesBBox — vapur (ve diğer
-    //      scheduled modlar) için active PreparedTrip polyline'ları.
-    //      Adım 1 zaten bbox dönmüşse buraya inilmez.
+    // Bbox lookup chain:
+    //   1. polyline modes (metro/marmaray/tram/funicular)
+    //   2. SnapshotStore — live İETT vehicle positions
+    //   3. ScheduledFleet — active prepared trips (covers ferry, which
+    //      has no polyline; falls through here only)
     let bbox = getRoutesBBox(routeIds) ?? store.getVehicleBBoxForRoutes(routeIds);
     if (bbox === null) {
       for (const fleet of scheduledFleets.values()) {
@@ -317,12 +295,10 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
     }
   }
 
-  // Focus paint listener — alt-iş g.
   routeFocus.subscribe(applyFocusPaint);
-  // KM-h.1 (Borç #15): focus değişiminde panel satırında highlight.
   routeFocus.subscribe((focused) => routePanel?.setFocusedRoutes(focused));
 
-  // Polyline tıkla → focus o hat. Map global click → boş alan ise reset.
+  // Polyline click focuses the route; clicks on empty map area reset focus.
   map.on('click', 'route-lines', (e) => {
     const rid = e.features?.[0]?.properties?.route_id as string | undefined;
     if (rid) routeFocus.setFocus([rid]);
@@ -334,11 +310,8 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
   map.on('click', 'scheduled-circles', (e) => {
     if (!e.features?.[0]) return;
     const props = e.features[0].properties as { trip_id?: string; mode?: string };
-    // KM5-d: popup zengin versiyonu için PreparedTrip + nowSec context'i.
-    // Mod feature.properties'tan, fleet de SCHEDULED_MODES Map'inden gelir;
-    // fleet bulunmaz veya trip_id eksikse prepared null → popup meta-only
-    // fallback'a düşer (gracefully degrade, vehicle_popup test'lerinde
-    // "context.prepared null" senaryosu ile teyit edildi).
+    // Pass PreparedTrip + nowSec for the rich popup variant; missing
+    // fleet/trip_id falls through to a meta-only popup gracefully.
     const fleet = props.mode ? scheduledFleets.get(props.mode) : undefined;
     const prepared = (fleet && props.trip_id)
       ? fleet.getPreparedTrip(props.trip_id)
@@ -353,8 +326,8 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
     );
   });
   map.on('click', (e) => {
-    // Layer-spesifik handler'lar zaten yakaladı; boş alana tıklamada
-    // queryRenderedFeatures targeted layer'larda boş döner → focus reset.
+    // Empty-area click resets focus (layer-specific handlers above
+    // handle the non-empty cases).
     const hits = map.queryRenderedFeatures(e.point, {
       layers: ['route-lines', 'fleet-circles', 'scheduled-circles'],
     });
@@ -370,36 +343,23 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
     if (map.getLayer('scheduled-circles')) {
       map.setFilter('scheduled-circles', routeF as never);
     }
-    // KM-e Fix-B (Spec Ek A.19 borç #7): fleet-circles ARTIK BURAYA
-    // dokunmuyor. Önceki tasarımda hem applyFilters (route_id-based)
-    // hem applyFleetVisibilityFilter (is_metrobus-based) aynı layer'a
-    // setFilter ediyordu, sonuncusu kazanıyordu — Reset sonrası
-    // route_id null vehicle'lar (KM5-a mapping retire) gizleniyordu.
-    // Tek-kanal: fleet-circles sadece bus/metrobus toggle ile.
+    // fleet-circles is intentionally not touched here — it has its own
+    // single-channel filter in applyFleetVisibilityFilter (bus/metrobüs
+    // payload, not route_id).
   }
-  // KM-e Fix-A: RouteVisibility fire'ı RAF'a debounce et — Reset 1
-  // fire = 2 setFilter (route-lines, scheduled-circles), N hızlı
-  // toggle aynı frame içinde tek apply'a sıkışır.
+  // RAF debounce: Reset/Select-All collapse N subscribe fires into one.
   const debouncedApplyFilters = debounceFrame(applyFilters);
   routeVisibility.subscribe(debouncedApplyFilters);
   applyFilters();
   applyFleetVisibilityFilter();
-
-  // KM5-e.2: bus listesi panel'den iptal — fetchAllBusRoutes / virtual
-  // list / setBusLoading akışı kaldırıldı. Vehicle.is_metrobus payload
-  // field'ı kategorize için yeterli, hat-bazlı listeye gerek yok.
-  // Otobüs / metrobüs sayım initial 0; render frame'inde snapshot
-  // değişimleriyle güncellenir.
 }
 
 function startRenderLoop(): void {
-  // v0.8.3 KM-b: İETT fleet frozen-state guard. Alpha 1.0'a ulaştığında
-  // (snapshot yaşı ≥ interval) lerp donar; iki RAF üst üste 1.0 ise
-  // pozisyonlar değişmemiştir → updateFleet (6900 feature build + setData
-  // reindex) pure overhead. Skip ile her saniye 60 RAF × ~5-10ms =
-  // ~300-600ms/saniye CPU tasarrufu mobilde measurable.
-  // Scheduled fleet skip YAPILMAZ — vehicle sürekli hareket halinde,
-  // alpha kavramı yok (trip-progress bazlı interpolation).
+  // Frozen-state guard: when interpolation alpha clamps to 1.0 (snapshot
+  // age ≥ interval), positions stop changing. Skipping updateFleet on
+  // back-to-back frozen frames avoids re-feeding ~6900 features into
+  // the GeoJSON source for nothing. Scheduled fleet has no equivalent
+  // (trip-progress driven, always advancing).
   let lastFleetAlpha: number | null = null;
   function frame(): void {
     const now = performance.now();

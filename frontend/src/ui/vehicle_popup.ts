@@ -1,15 +1,13 @@
-// Faz 6 KM1 alt-iş g — vehicle nokta tıklama popup'ı.
-// KM5-d (Spec §3.3, §5.8): otobüs minimal + raylı/vapur zengin (sonraki
-// 5 durak listesi). Mapping retire (Ek A.18 R12) sonrası İETT bus için
-// hat etiketi gösterilmiyor — sadece "İETT Otobüs · KapiNo X". Metrobüs
-// ayrımı yok (categorize sinyali %22 yanlış kararıyla v0.8.0 vizyonunda
-// monolitik kütle olarak tutuldu).
+// Click popup for vehicle dots.
+//   İETT bus: minimal — "İETT Otobüs · KapiNo X" (no route label since
+//   the SHATKODU→route_id mapping is disabled). Metrobüs uses the
+//   "Metrobüs" label when is_metrobus=true.
+//   Scheduled (rail/ferry): rich — title, agency, next 5 stops with ETA.
 //
-// Veri kaynakları:
-// - props (id, route_id, trip_id, mode): map feature.properties
-// - meta (RouteSummary): RouteStore lookup, hat ad/güzergah/agency
-// - context (ScheduledPopupContext): scheduled vehicle için PreparedTrip +
-//   nowSec; computeNextStops anlık olarak k+1...k+5 durağı çeker.
+// Inputs:
+//   props (id, route_id, trip_id, mode, is_metrobus): MapLibre feature properties
+//   meta (RouteSummary): from RouteStore — name/long_name/agency
+//   context.prepared + nowSec: drives computeNextStops for the rich popup
 
 import { Popup, type Map as MapLibreMap, type LngLat } from 'maplibre-gl';
 import type { RouteStore } from '../state/route_store';
@@ -27,7 +25,6 @@ export interface VehicleProps {
   trip_id?: string;
   route_id?: string;
   mode?: string;
-  // KM5-e.1 (backend) → KM-c.2 (popup): metrobüs hatları için ayrı label.
   is_metrobus?: boolean;
 }
 
@@ -52,8 +49,8 @@ export function showVehiclePopup(
     .addTo(map);
 }
 
-// Pure helper — RouteStore inject edilmiş metadata + props ile HTML
-// üretir. Tüm escape garantili.
+// Pure helper — produces the popup HTML; all dynamic strings go
+// through escapeHtml.
 export function buildPopupHtml(
   props: VehicleProps,
   source: VehicleSource,
@@ -67,9 +64,8 @@ export function buildPopupHtml(
 
 function renderTitleRow(meta: RouteSummary): string {
   const longRaw = meta.long_name ?? '';
-  // KM-c.1: mojibake durumda bozuk metni hiç render etme — sadece uyarı.
-  // Önceki davranış (⚠ + bozuk metin) Yağız 2026-05-04 smoke'da kafa
-  // karıştırıcı bulundu (Spec Ek A.19 borç #3).
+  // Hide the broken text entirely when long_name is mojibake; show only
+  // a warning — rendering both was confusing in practice.
   const longHtml = isMojibake(longRaw)
     ? `<span class="vehicle-popup__mojibake" style="color:#f59e0b" title="GTFS feed bozuk">⚠ Hat adı okunamıyor</span>`
     : escapeHtml(longRaw);
@@ -126,10 +122,8 @@ function renderScheduledPopup(
 }
 
 function renderIettPopup(props: VehicleProps): string {
-  // KM5-d: hat etiketi/uyarısı yok. Mapping kapalı, kütle UX (Spec §3.3,
-  // Ek A.18 R12). f-polish-3 "henüz hat eşlemesi yapılmamış" mesajı
-  // silindi — bilinçli kapatma kararı, pipeline güncellenme değil.
-  // KM-c.2: is_metrobus=true ise "Metrobüs" label, değilse "İETT Otobüs".
+  // Minimal popup: no route label (mapping disabled). is_metrobus=true
+  // surfaces a "Metrobüs" label; everything else reads "İETT Otobüs".
   const label = props.is_metrobus === true ? 'Metrobüs' : 'İETT Otobüs';
   const kapi = `<b>${escapeHtml(props.id ?? '?')}</b>`;
   return `<div class="vehicle-popup">

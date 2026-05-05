@@ -26,25 +26,14 @@ interface RouteCollection {
 const collection: RouteCollection = { type: 'FeatureCollection', features: [] };
 const shapeIndex = new Map<string, LonLat[]>();
 
-// Pure paint factory — focused null/[] → mevcut paint.
-// focused string[] → bu hatlar belirgin parlar (opacity 1.0, kalın
-// stops 4/7/10), diğerleri belirgin söner (opacity 0.15, ince stops
-// 1/2/3 — focused'un yarısının altı, kontrast ≥3x her zoom'da).
+// Pure paint factory. focused=null/[] → base paint; focused=ids →
+// matching lines render at full opacity and 4/7/10 px (zoom 10/14/18),
+// others at 0.15 opacity and 1/2/3 px — kontrast ≥3× at every zoom.
 //
-// v0.8.1 KM-h.2 (Borç #16): non-focused width yarıya indirildi (2/4/6
-// → 1/2/3), focused width 1 birim artırıldı (3/6/9 → 4/7/10), non-
-// focused opacity 0.2 → 0.15. Glow layer (route-lines-glow) zaten
-// focus'a göre filter ile toggle ediliyor — bu fix line katmanının
-// kendi kontrastını da büyütür, glow halo'nun üstüne biner.
-//
-// v0.8.1 KM-a fix (Spec Ek A.19): MapLibre style spec'te ``["zoom"]``
-// expression yalnız top-level ``interpolate``/``step`` input'unda
-// kullanılabilir; ``case`` içinde nested zoom kabul edilmez ve
-// ``setPaintProperty('line-width', …)`` runtime'da hata fırlatır.
-// focused dolu paint'i bu nedenle "outer interpolate(zoom) → inner
-// data-driven case stops" desenine çevrildi: zoom interpolation top-
-// level kalır, her stop'un output'u kendi içinde focused/non-focused
-// arası ayrım yapar.
+// MapLibre style-spec constraint: ['zoom'] expression is only valid as
+// the top-level interpolate input — never nested inside a case. So
+// per-zoom widths use `interpolate(['zoom'], ...)` at the top with
+// `case` only inside each stop's output value.
 export function buildRouteLinePaint(focused: readonly string[] | null = null) {
   if (focused === null || focused.length === 0) {
     return {
@@ -98,9 +87,8 @@ export function buildRouteFeature(
   };
 }
 
-// Glow halo paint — focused hat altında çift layer ışın kılıcı
-// efekti. Filter ile başlangıçta hiçbir feature match etmez (focused
-// null), focus aktif olunca filter focused id'ye set'lenir.
+// Glow halo painted under the focused line(s); hidden initially via a
+// no-match filter, switched on by setGlowFocus.
 export function buildRouteLineGlowPaint() {
   return {
     'line-color': ['get', 'color'],
@@ -117,9 +105,7 @@ export function buildRouteLineGlowPaint() {
 
 export function initRouteLinesLayer(map: MapLibreMap, beforeId?: string): void {
   map.addSource(SOURCE_ID, { type: 'geojson', data: collection });
-  // Glow ALTTA — normal route-lines ÜSTTE (DOM order, MapLibre layer
-  // stack'inde sonradan eklenen üstte). Önce glow eklenir, sonra
-  // route-lines beforeId ile aynı slot'a yerleşir.
+  // Glow goes underneath; route-lines added second to render on top.
   map.addLayer(
     {
       id: GLOW_LAYER_ID,
@@ -143,8 +129,7 @@ export function initRouteLinesLayer(map: MapLibreMap, beforeId?: string): void {
   );
 }
 
-// Focus state değişiminde main.ts tarafından çağrılır.
-// f-polish-5: array filter, multi-route focus'ta hepsi parlar.
+// Lights up the glow layer for a single route or a variant-group union.
 export function setGlowFocus(map: MapLibreMap, focused: readonly string[] | null): void {
   if (!map.getLayer(GLOW_LAYER_ID)) return;
   map.setFilter(
@@ -182,15 +167,13 @@ export function getShapeFor(shapeId: string): LonLat[] | null {
   return shapeIndex.get(shapeId) ?? null;
 }
 
-// Bbox (min lon, min lat, max lon, max lat) — panel çift tıkla zoom
-// için. Single-route convenience wrapper, multi-route varyant grubu
-// için getRoutesBBox kullanılır.
+// Bbox [minLon, minLat, maxLon, maxLat] used by panel double-click zoom.
+// Single-route convenience wrapper around getRoutesBBox.
 export function getRouteBBox(routeId: string): [number, number, number, number] | null {
   return getRoutesBBox([routeId]);
 }
 
-// f-polish-5: union bbox over multiple route_ids (variant group).
-// Tüm matching feature'ların coordinates birleşiminin min/max'i.
+// Union bbox over multiple route_ids (e.g. all variants of a group).
 export function getRoutesBBox(
   routeIds: readonly string[],
 ): [number, number, number, number] | null {

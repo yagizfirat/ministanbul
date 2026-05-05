@@ -5,23 +5,14 @@ import { MODE_FALLBACK_COLORS } from '../styling/route_colors';
 const SOURCE_ID = 'fleet';
 const LAYER_ID = 'fleet-circles';
 
-// Faz 6 KM1 alt-iş d: tüm İETT araçları İBB belediye sarısı.
-// Mapped/unmapped ayrımı renk yerine border ile (mavi/kırmızı kaldırıldı —
-// kırmızı "hata" çağrışımı yapıyordu, oysa unmapped doğal bir durum,
-// spec §A.13/A.14).
-//
-// KM5-e.2 (Spec §3.3): is_metrobus=true → antrasit gri (kurumsal metrobüs
-// hattı görsel kimliği). Backend mapping cache lookup'ı %22 yanlış
-// kategori riskiyle gelir (Rapor 12); Yağız bilinçli tolerans (rengin
-// yokluğu = %0 bilgi, varlığı = %78 doğru, B yolundan dönüş kararı).
+// İETT vehicles render as municipal yellow circles; mapped vs unmapped
+// is signalled by a dark-brown border (not by color, to avoid the
+// "error" connotation of red). Metrobüs vehicles render anthracite
+// grey + white border + slightly larger radius to stand out among the
+// ~6700 yellow circles.
 const COLOR_FILL = MODE_FALLBACK_COLORS.bus;
-const COLOR_FILL_METROBUS = '#3A3D40';   // antrasit
-const COLOR_STROKE_MAPPED = '#3a2a00'; // koyu kahve — sarının HSL koyu tonu
-// v0.8.2 KM-c (Spec Ek A.19 #9): metrobüs noktası 6700+ sarı kalabalıkta
-// gözle ayırt edilemiyor. Beyaz border antrasit zemin üzerinde maksimum
-// kontrast verir; radius +1 birim her zoom seviyesinde göze daha çabuk
-// çarpar. Kategori sinyali (KM5-e.1 categorize-only) zaten doğru çalışıyor;
-// görsel sunum güçlendirildi.
+const COLOR_FILL_METROBUS = '#3A3D40';
+const COLOR_STROKE_MAPPED = '#3a2a00';
 const COLOR_STROKE_METROBUS = '#FFFFFF';
 const STROKE_WIDTH_MAPPED = 1.5;
 const STROKE_WIDTH_METROBUS = 1.5;
@@ -29,11 +20,10 @@ const STROKE_WIDTH_UNMAPPED = 0;
 
 interface FleetFeatureProperties {
   id: string;
-  // route_id is set ONLY for mapped vehicles. The paint expression
-  // uses ['has', 'route_id'] to draw the border.
+  // Set ONLY for mapped vehicles; absence drives the no-border branch.
   route_id?: string;
-  // KM5-e.2: kategori bayrağı; paint case expression'ında antrasit/sarı
-  // ayrımı + filter expression'ında bağımsız toggle için kullanılır.
+  // Categorization flag from backend; drives both color/border case
+  // and the bus/metrobüs visibility filter.
   is_metrobus?: boolean;
 }
 
@@ -50,23 +40,19 @@ interface FleetCollection {
 
 const EMPTY_FC: FleetCollection = { type: 'FeatureCollection', features: [] };
 
-// Pure paint factory — focused null/[] → mevcut paint.
-// focused string[] → o hatlardaki İETT vehicle'ları opacity 1.0,
-// diğerleri (mapped + unmapped) 0.2. f-polish-5: array filter.
+// Pure paint factory. focused=null/[] → base paint; focused=ids → those
+// vehicles render at opacity 1.0, the rest at 0.2.
+//
+// MapLibre style-spec constraint: ['zoom'] expression is only valid as
+// the top-level interpolate input — never nested inside a case. So
+// per-zoom stops use `interpolate(['zoom'], ...)` at the top with
+// `case` only inside each stop's output value.
 export function buildFleetPaint(focused: readonly string[] | null = null) {
-  // v0.8.2 KM-c: metrobüs için her zoom stop'unda +1 birim radius.
-  // KM-h.2 / KM-a desenine uygun: outer interpolate(['zoom']) top-level,
-  // inner case is_metrobus stops (MapLibre style spec — case içinde
-  // nested ['zoom'] yasak, setPaintProperty Error fırlatır).
   const isMetrobusCase = ['==', ['get', 'is_metrobus'], true] as const;
   const base = {
-    // v0.8.3 KM-b: LOD low-zoom culling. zoom 7 (ülke ölçeği) altında
-    // 6900 nokta görsel olarak okunamaz; radius 0 ile MapLibre rendering
-    // pipeline'ı circle'ı erken atlar (fragment shader fully transparent
-    // pixel için zaman harcamaz). zoom 9'da küçük (1-2px), zoom 10'dan
-    // itibaren mevcut KM-c boyutları (3/4 → 6/7).
-    // KM-a guard: case içinde nested ['zoom'] yok (interpolate stops
-    // top-level, case yalnız output expression).
+    // LOD: hidden below zoom 7 (city skylines render thousands of
+    // sub-pixel circles otherwise); metrobüs +1 over default at every
+    // visible stop.
     'circle-radius': [
       'interpolate', ['linear'], ['zoom'],
       7, 0,
@@ -74,18 +60,13 @@ export function buildFleetPaint(focused: readonly string[] | null = null) {
       10, ['case', isMetrobusCase, 4, 3],
       14, ['case', isMetrobusCase, 7, 6],
     ],
-    // KM5-e.2: data-driven case — is_metrobus=true → antrasit, else sarı.
-    // Field eksik (eski snapshot, defansif) ['get', 'is_metrobus'] undefined
-    // dönerse case false'a düşer → sarı default.
     'circle-color': [
       'case',
       isMetrobusCase, COLOR_FILL_METROBUS,
       COLOR_FILL,
     ],
-    // v0.8.2 KM-c: 3-branch case. Metrobüs route_id genelde null
-    // (mapping retire) — eski `has route_id` branch'i kapsamazdı, şimdi
-    // metrobüs öncelikli kontrol. Mapped bus eski davranışla 1.5px
-    // koyu kahve border korunur; unmapped bus border'sız kalır.
+    // 3-branch case: metrobüs (route_id often null) is checked first,
+    // then mapped bus (route_id present), else no border.
     'circle-stroke-width': [
       'case',
       isMetrobusCase, STROKE_WIDTH_METROBUS,
@@ -114,10 +95,8 @@ export function buildFleetPaint(focused: readonly string[] | null = null) {
   } as const;
 }
 
-// KM5-e.2: filtre paneli toggle'larına bağlı MapLibre filter expression.
-// İki bağımsız boolean: is_metrobus=true vehicle'lar metrobusVisible'a,
-// is_metrobus=false (veya yok) vehicle'lar busVisible'a bakar. İkisi de
-// false → tüm İETT bus gizli; ikisi true → hepsi görünür (default).
+// MapLibre filter expression for the bus/metrobüs panel toggles.
+// is_metrobus=true vehicles obey metrobusVisible; the rest obey busVisible.
 export function buildFleetFilter(
   busVisible: boolean,
   metrobusVisible: boolean,

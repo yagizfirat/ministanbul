@@ -158,13 +158,13 @@ class StopTime(TimestampedModel):
 class Calendar(models.Model):
     """GTFS calendar.txt — weekly service pattern.
 
-    Faz 5 lite scope:
-      - service_id is the raw GTFS value (no feed prefix); İETT and public
-        namespaces are disjoint (verified during import design).
+    Scope notes:
+      - service_id is the raw GTFS value (no feed prefix); İETT and
+        public namespaces are disjoint.
       - calendar_dates.txt (exception overrides) is intentionally NOT
-        imported — public feed lacks the file and Faz 5 v0 ignores it.
-      - Trip.service_id remains a CharField (not FK upgrade) — that's a
-        Faz 6 polish item.
+        imported — public feed lacks the file.
+      - Trip.service_id remains a CharField rather than an FK; the
+        upgrade is a deferred polish item.
     """
 
     service_id = models.CharField(max_length=64, primary_key=True)

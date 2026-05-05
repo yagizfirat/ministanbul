@@ -1,39 +1,32 @@
 """KapiNo + timestamp lookup that stamps ``route_id`` onto vehicle snapshots.
 
 Pure consumer of the mapping payload built by ``apps.realtime.mapping``
-and cached in Redis under ``iett:mapping:current`` (spec §5.7). This
-helper does not touch Redis itself — the fetch task (Adım 5d) decodes
-the JSON and hands it in as a plain dict.
+and cached in Redis under ``iett:mapping:current``. This helper does
+not touch Redis itself — the fetch task decodes the JSON and hands it
+in as a plain dict.
 
-Phase 2 Step 5i-ii refactor: payloads now use wall-clock seconds
-(Istanbul TZ) keyed by ``snapshot_date`` / ``snapshot_day_type``.
-Lookup is ``bisect_right`` over the per-KapiNo ``start_sec`` list, so
-the algorithm is O(log n) per vehicle. End is inclusive; vehicles whose
-KapiNo is missing from the mapping or whose wall-clock seconds fall
-into a gap between intervals come out with ``route_id=None``.
+Lookup is ``bisect_right`` over a per-KapiNo list of (start_sec, end_sec)
+intervals keyed by Istanbul wall-clock seconds — O(log n) per vehicle.
+End is inclusive. Vehicles whose KapiNo isn't in the mapping, or whose
+wall-clock seconds fall into a gap between intervals, come back with
+``route_id=None``.
 
-Per-vehicle overnight detection: a vehicle whose local timestamp lies
-on the day after ``snapshot_date`` AND before 04:00 falls into the
-extended interval range (``end_sec >= 86400``); its ``now_sec`` is
-shifted by 86400 so the bisect lands on the right interval.
+Per-vehicle overnight detection: when the vehicle's local timestamp
+lies on the day after ``snapshot_date`` AND before 04:00, ``now_sec``
+is shifted by 86400 so the bisect lands inside the corresponding
+extended-range interval (those have ``end_sec >= 86400``).
 
-Overlap convention (spec §5.7 + ROADMAP 5c): when two intervals cover
-the same instant the later-starting one wins, which is what
-``bisect_right - 1`` naturally returns.
+Overlap convention: when two intervals cover the same instant the
+later-starting one wins — which is exactly what ``bisect_right - 1``
+returns.
 
-Mismatch detection (today_dt != snapshot_day_type AND not overnight)
-lives in ``tasks.py::fetch_iett_positions`` — this function stays a
-pure best-effort lookup and never short-circuits the loop.
-
-Stale vehicle.timestamp filter (2026-05-02): when ``reference_now`` is
-supplied, vehicles whose ``timestamp`` drifts more than
-``STALE_VEHICLE_TIMESTAMP_THRESHOLD_S`` from it (in either direction)
-are demoted to ``route_id=None`` even if the bisect found a matching
-interval. Empirical motivation: İETT fleet endpoint can return a
-multi-hour-old ``DTGUNCELLEMESAATI`` for idle/parked vehicles — bisect
-lands on the OLD active interval and stamps an outdated PK. Threshold
-180s sits 3× the nominal 60 s tick, comfortably above the 0–60 s
-mikro-tick band observed in the diagnostic histogram.
+Stale-timestamp filter: when ``reference_now`` is supplied, vehicles
+whose timestamp drifts more than ``STALE_VEHICLE_TIMESTAMP_THRESHOLD_S``
+from it (either direction) are demoted to ``route_id=None`` even when
+the bisect found a matching interval. Motivation: İETT's fleet endpoint
+can serve multi-hour-old ``DTGUNCELLEMESAATI`` for idle/parked vehicles,
+which would otherwise stamp an outdated PK. Threshold of 180s sits 3×
+the nominal 60 s tick.
 """
 from __future__ import annotations
 
@@ -80,16 +73,13 @@ def enrich_with_route_id(
     by_kapi = mapping.get("by_kapi", {})
     snapshot_next_date = _snapshot_next_date(mapping)
 
-    # v0.8.0 (KM5-a): IETT bus mapping retire (Spec §5.7, Ek A.18 R12).
-    # Flag default kapalı; tüm İETT bus için route_id=None, drift filter
-    # de tetiklenmez (route_id None ⇒ stale check zaten skip). Hibernation
-    # path (flag açık) aşağıda aynen korunur, gelecekte İBB veri kalitesi
-    # düzelirse tek satırlık reaktivasyon.
-    #
-    # KM5-e.1: Flag-kapalı path bile mapping cache'i is_metrobus
-    # kategorize için kullanır. Semantik ayrım: "flag kapalı = route_id
-    # stampleme yok", "mapping cache hiç kullanılmaz" değil. Kategori
-    # bilgisi cache'in yan ürünü, ek query yok.
+    # The İETT bus mapping is hibernated by default
+    # (settings.IETT_BUS_MAPPING_ENABLED=False) — every bus gets
+    # route_id=None and the stale-timestamp filter is skipped (route_id
+    # is None anyway). The cache is still consulted for is_metrobus
+    # categorization, which is a free side-effect of the same lookup.
+    # If İBB data quality improves, flipping the flag re-enables the
+    # mapping path below unchanged.
     if not settings.IETT_BUS_MAPPING_ENABLED:
         out: list[VehiclePosition] = []
         for v in vehicles:
@@ -107,9 +97,9 @@ def enrich_with_route_id(
     stale_dropped = 0
     for v in vehicles:
         hat = _resolve_active_hat(v, by_kapi, snapshot_next_date)
-        # Yol B: translate SHATKODU → GTFS Route.route_id PK so the
-        # frontend's RouteStore (keyed by route_id) matches. Lookup
-        # miss → None (orphan SHATKODU stays unmapped, graceful).
+        # Translate SHATKODU → GTFS Route.route_id PK so the frontend's
+        # RouteStore (keyed by route_id) matches. An orphan SHATKODU
+        # not in the index stays unmapped (None), which is graceful.
         route_id = pk_index.get(hat) if hat is not None else None
         is_metrobus = bool(hat and hat in settings.METROBUS_SHORT_NAMES)
 
@@ -127,7 +117,7 @@ def enrich_with_route_id(
 
 
 def _snapshot_next_date(mapping: dict) -> date | None:
-    """Mapping'in snapshot tarihinin ertesi günü — overnight bisect bumps için."""
+    """The day after the mapping snapshot — used for overnight bisect bumps."""
     snapshot_date_str = mapping.get("snapshot_date")
     if snapshot_date_str is None:
         return None
@@ -142,19 +132,17 @@ def _resolve_active_hat(
     by_kapi: dict,
     snapshot_next_date: date | None,
 ) -> str | None:
-    """KapiNo + timestamp → o anda aktif SHATKODU; yoksa None.
+    """KapiNo + timestamp → the SHATKODU active at that moment, or None.
 
-    Flag-açık (route_id stampleme) ve flag-kapalı (is_metrobus
-    kategorize) path'leri aynı bisect mantığını paylaşır. Pure helper:
-    DB / Redis / settings bağlamı kullanmaz (settings whitelist kontrolü
-    caller'da).
+    Pure helper — same bisect path is used by both the route_id-stamping
+    branch and the is_metrobus-categorization branch. Doesn't touch
+    settings/DB/Redis (whitelist checks live at the caller).
 
-    Per-vehicle overnight check: vehicle date is exactly the day AFTER
-    snapshot_date AND before 04:00 → look in extended range. Date-based
-    comparison (not day_type) avoids false positives when snapshot_day_type
-    and next_day_type happen to coincide (e.g. Wed snapshot + Thu vehicle,
-    both "weekday"). Overlap convention: bisect_right - 1 picks the
-    later-starting interval when two cover the same instant (spec §5.7).
+    Per-vehicle overnight check: when the vehicle's local date is
+    exactly the day AFTER snapshot_date and the hour is before 04:00,
+    we look up the extended range. Comparing dates (rather than day
+    types) avoids false positives when snapshot_day_type and the next
+    day's type coincide (e.g. Wed/Thu both "weekday").
     """
     intervals = by_kapi.get(vehicle.vehicle_id)
     if not intervals:

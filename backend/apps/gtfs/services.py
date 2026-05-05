@@ -1,8 +1,7 @@
-"""Faz 5 query services for /api/trips/active/.
+"""Query helpers for /api/trips/active/.
 
-Filter contract derived from discovery report Ek Keşif Tablo C
-(docs/phase5_trips_active_discovery.md). The naïve aggregation relies
-on Faz 1's (trip_id, stop_sequence) composite index for stop_times.
+The naïve aggregation relies on the (trip_id, stop_sequence) composite
+index defined on stop_times.
 """
 from __future__ import annotations
 

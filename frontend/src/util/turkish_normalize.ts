@@ -1,10 +1,10 @@
-// Türkçe diakritikleri Latin karşılığa indir + lowercase. Hat
-// arama için (Faz 6 KM1 alt-iş f-3): "şiş" "Şişhane" ile,
-// "29b" "29B" ile, "USKUDAR" "Üsküdar" ile match etmeli.
+// Turkish-aware lowercase + diacritic folding for the route search box.
+// Goal: "şiş" matches "Şişhane", "29b" matches "29B", "USKUDAR"
+// matches "Üsküdar".
 //
-// Intl.Collator ve String.prototype.normalize('NFD') Türkçe için
-// yanlış sonuçlar üretir (İ/ı ayrımı kaybolur). Manuel char-map
-// deterministik ve hızlı.
+// Intl.Collator and String.prototype.normalize('NFD') misbehave for
+// Turkish (they collapse the İ/ı distinction), so we use an explicit
+// char-map — deterministic and faster.
 
 const TR_MAP: Record<string, string> = {
   'İ': 'i', 'I': 'i', 'ı': 'i',
@@ -17,9 +17,7 @@ const TR_MAP: Record<string, string> = {
 
 export function normalize(s: string): string {
   let out = '';
-  // for…of iterates code points; BMP karakterler için davranış
-  // toplama operatörüyle aynı, gelecekteki surrogate-pair (emoji)
-  // içeriklere karşı güvenli.
+  // for…of iterates by code point — surrogate-safe for future emoji.
   for (const ch of s) {
     out += TR_MAP[ch] ?? ch.toLowerCase();
   }
@@ -27,14 +25,14 @@ export function normalize(s: string): string {
 }
 
 export function fuzzyMatch(query: string, target: string): boolean {
-  if (query === '') return true; // boş arama → tüm hedefler match
+  if (query === '') return true;
   return normalize(target).includes(normalize(query));
 }
 
-// Backend `import_gtfs._demojibake` iETT routes'larının ~%76'sını
-// kurtardı (f-polish-4 hibrit pass). Kalan ~%24'te ya U+FFFD ya da
-// karışık byte sequence (cp1252-undefined + utf-8 karması) — kaynakta
-// kurtarılamaz. Frontend bu kalanları UI'da uyarı ikonuyla işaretler.
+// The backend's GTFS demojibake pass recovers most İETT route names,
+// but a residual fraction stays broken (mixed cp1252/utf-8 byte
+// sequences or U+FFFD replacement chars are unrecoverable at source).
+// The frontend flags those rows in the UI with a warning icon.
 //
 // Üç indikatör:
 //   1. U+FFFD replacement char doğrudan

@@ -57,13 +57,11 @@ class VehicleAllConsumer(AsyncJsonWebsocketConsumer):
         finally:
             await client.aclose()
 
-        # accept first, then group_add. Pre-accept group_add ile
-        # RedisChannelLayer Daphne handshake'i bloklar (ROADMAP 6d-iv
-        # bisect: V2 incr+expire+aclose OK, V3 + group_add → handshake
-        # timeout). Race window: accept ile group_add arası microsecond
-        # mertebesinde, fetch task 60sn tick disiplini ile bu pencerede
-        # broadcast düşme ihtimali ihmal edilebilir. Frontend timestamp-
-        # based dedup ek savunma (Faz 4 design).
+        # accept() must run before group_add — calling group_add on a
+        # RedisChannelLayer before the handshake completes deadlocks
+        # Daphne. The microsecond-scale race between accept and group_add
+        # is harmless given the 60s broadcast cadence; the frontend's
+        # timestamp-based dedup is a second line of defence.
         await self.accept()
         await self.channel_layer.group_add(VEHICLES_ALL_GROUP, self.channel_name)
         await self._send_initial_snapshot()
@@ -84,9 +82,8 @@ class VehicleAllConsumer(AsyncJsonWebsocketConsumer):
         if action == "ping":
             await self.send_json({"type": "pong"})
             return
-        # Subscribe protocol returns in Faz 5 (rail/ferry per-route
-        # channels). Until then unknown actions drop silently with a
-        # warning so a stray frontend bug doesn't 400.
+        # Per-route subscribe protocol is reserved for a future version;
+        # for now any unknown action just logs a warning rather than 400.
         logger.warning(
             "VehicleAllConsumer: unknown action=%r, ignored", action,
         )

@@ -1,15 +1,12 @@
-// Hat-bazlı kurumsal renk haritası (Faz 6 KM1 alt-iş a).
+// Per-route brand color map. The İBB GTFS feeds don't publish color
+// metadata (public feed's route.color column is empty; the İETT feed
+// omits the column entirely), so canonical hexes are hard-coded here.
 //
-// İBB GTFS feed'leri renk metadata'sı yayınlamıyor: public feed'in
-// route.color kolonu boş (Faz 1, spec §A.10), İETT feed'inde kolon
-// hiç yok. Kanonik renkler manuel hardcode edilir.
-//
-// Birincil kaynak: Wikipedia "Module:Adjacent_stations/Istanbul_Metro"
+// Primary source: Wikipedia "Module:Adjacent_stations/Istanbul_Metro"
 //   https://en.wikipedia.org/wiki/Module:Adjacent_stations/Istanbul_Metro
-// Bu modül istasyon diagramları için kullanılan kanonik hex tablosu.
-//
-// İkincil kaynak (mod fallback): İBB / Şehir Hatları kurumsal kimlik —
-// hex teyidi tam doğrulanmadı; aşağıda yorumda işaretli.
+// Mode-fallback hexes (ferry/bus etc.) are best-effort approximations
+// and tagged with TODOs where canonical brand-guideline confirmation
+// is still pending.
 
 export const ROUTE_COLORS: Record<string, string> = {
   // --- Metro İstanbul (kaynak: Wikipedia Lua modülü) ---
@@ -55,8 +52,7 @@ export const ROUTE_COLORS: Record<string, string> = {
   // hex doğrulaması — şimdilik funicular mod fallback'ine düşer.
 };
 
-// Mod-bazlı fallback (renk haritasında olmayan hatlar için).
-// Faz 4 KM3 polyline paletiyle hizalı.
+// Mode-level fallback (used when a short_name isn't in ROUTE_COLORS).
 export const MODE_FALLBACK_COLORS: Record<string, string> = {
   metro:     '#1e40af',  // lacivert
   marmaray:  '#00B7CD',  // turkuaz (yukarıdaki Marmaray ile tutarlı)
@@ -149,11 +145,11 @@ function hslToRgb([h, s, l]: HSL): RGB {
 }
 
 /**
- * Hex rengin HSL uzayında L değerini `amount` kadar artırır
- * (clamp [0, 1]). Scheduled vehicle dot'larının polyline
- * üzerinde "açık ton" görünmesi için kullanılacak (alt-iş c).
+ * Lightens a hex color by `amount` in HSL space (clamped to [0, 1]).
+ * Used to derive the lighter tint of scheduled vehicle dots over
+ * their darker polyline.
  *
- * @example lighten('#009E4F', 0.2) → daha açık yeşil
+ * @example lighten('#009E4F', 0.2) → lighter green
  * @example lighten('#000000', 0.5) → '#808080' (mid-gray)
  */
 export function lighten(hex: string, amount: number): string {

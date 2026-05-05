@@ -1,15 +1,16 @@
 """Import GTFS data from data/gtfs/ into PostGIS.
 
-Two sources (spec §4.1, empirical 2026-04-21 — both are loose CSV
-directories with *incompatible* encodings and delimiters):
+Two sources, each a loose CSV directory with *incompatible* encodings
+and delimiters:
 
   - ``data/gtfs/iett/``    6 CSVs: UTF-8 (with BOM), ``;``-delimited.
-                           No shapes.csv — İETT does not publish route
-                           geometry; Faz 5+ will synthesize via OSM.
-  - ``data/gtfs/public/``  8 CSVs: cp1254 (Windows Turkish), ``,``-delimited.
+                           No shapes.csv — İETT doesn't publish route
+                           geometry; downstream code synthesizes from
+                           stop sequences or falls back to straight lines.
+  - ``data/gtfs/public/``  8 CSVs: cp1254 (Windows Turkish), comma-delim.
                            Includes shapes.csv and frequencies.csv.
 
-Because İBB's CSV formats do not conform to the GTFS spec, we bypass
+Because İBB's CSV formats don't conform to the GTFS spec, we bypass
 gtfs-kit (which assumes UTF-8 + comma) and parse with ``pandas.read_csv``
 directly, auto-detecting encoding and delimiter per file.
 
@@ -678,9 +679,8 @@ class Command(BaseCommand):
         return len(objs)
 
     def _load_calendar(self, df, label: str) -> int:
-        # Faz 5 KM1: import calendar.txt rows into Calendar model.
-        # calendar_dates.txt is intentionally not imported — public feed
-        # lacks the file; Faz 5 v0 ignores exception overrides.
+        # calendar_dates.txt (exception overrides) is intentionally not
+        # imported — public feed lacks the file.
         if df is None or df.empty:
             return 0
         weekday_cols = ("monday", "tuesday", "wednesday", "thursday",
@@ -822,22 +822,21 @@ _MOJIBAKE_MARKERS = "ÃÄÅÐĐÞ"
 
 
 def _demojibake(s: str) -> str:
-    """Reverse encoding mojibake — try multiple round-trip patterns.
+    """Reverse encoding mojibake using multiple round-trip patterns.
 
-    İBB iETT routes.csv kaynakta cp1252↔UTF-8 ve latin1↔UTF-8
-    karması ile bozulmuş. Tek pass (cp1252) önceki turda %58
-    kurtardı; kalan ~%42 farklı pattern. f-polish-4 hibrit:
+    İBB iETT routes.csv arrives with a mix of cp1252↔UTF-8 and
+    latin1↔UTF-8 corruption. We try three passes:
 
-      Pass 1 (cp1252→UTF-8):    "KADIKÃ–Y" → "KADIKÖY"
-      Pass 2 (latin1→UTF-8):    cp1252 superset, byte 0x80-0x9F farklı eşler
-      Pass 3 (utf-8→iso-8859-9): Türkçe-spesifik ters yön bozulma
+      1. cp1252→UTF-8 round-trip   ("KADIKÃ–Y" → "KADIKÖY")
+      2. latin1→UTF-8 round-trip   (cp1252 superset; bytes 0x80-0x9F differ)
+      3. utf-8→iso-8859-9          (Turkish-specific reverse direction)
 
-    **Sanity check**: round-trip sonucu Türkçe karakter (şğıçöü vb.)
-    içermiyorsa kabul edilmez — yanlış decoding ihtimali. Sadece
-    Türkçe alfabe çıktısı dönerse winning pass kabul.
+    A pass is only accepted if the result contains at least one
+    Turkish-specific letter (ş/ğ/ı/ç/ö/ü etc.) — otherwise we treat
+    the round-trip as a coincidence and fall back to the original.
 
-    Idempotent: temiz Türkçe → marker yok → no-op. U+FFFD içerenler
-    her pass'ta fail eder → orijinal.
+    Idempotent: clean Turkish has no markers → no-op. Strings with
+    U+FFFD fail every pass → returned unchanged.
     """
     if not s:
         return s

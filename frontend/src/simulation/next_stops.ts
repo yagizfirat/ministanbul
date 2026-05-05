@@ -1,12 +1,12 @@
-// KM5-d (Spec §5.8) — sonraki durak listesi compute helper.
+// Pure helper for the popup's "next stops" panel.
 //
-// Pure: PreparedTrip.stopProjections + nowSec → planlı saatten itibaren
-// gelmemiş k+1...k+limit durağı çeker. ETA = arrivalSec - nowSec (planlı
-// saat referansı; real-time ETA v0.9+).
+// PreparedTrip.stopProjections + nowSec → up to `limit` upcoming stops
+// (those whose arrivalSec is still ahead). ETA is scheduled-relative
+// (arrivalSec − nowSec); real-time ETA is post-1.0.
 //
-// Vehicle pozisyonu ya da bearing'e bakılmaz — projection arrivalSec
-// monotone artıyor (prepareTrip sort), filter ile "şu andan sonra"
-// kalan duraklar zaten yön-doğru sıradadır.
+// Vehicle pose isn't consulted: stopProjections is already monotonically
+// sorted by arrivalSec, so filtering by "arrivalSec > nowSec" yields
+// the correct direction order.
 
 import type { PreparedTrip } from './scheduled_trip';
 

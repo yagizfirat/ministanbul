@@ -8,8 +8,8 @@ export interface InterpolatedPos {
   lon: number;
 }
 
-// V2-ready signature: vehicleId + optional polyline reserved for KM4 (Faz 4)
-// when route polylines drive interpolation along the geometry instead of LERP.
+// vehicleId + optional polyline are placeholders for an upcoming
+// version that snaps the path to route geometry instead of LERPing.
 export function interpolatePosition(
   _vehicleId: string,
   t0: VehiclePosition,

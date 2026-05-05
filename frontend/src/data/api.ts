@@ -21,10 +21,9 @@ export interface RouteSummary {
   // App-level mode. Backend returns route_type ints; we map them back via the
   // query mode and post-process subway → marmaray when short_name says so.
   mode: string;
-  // KM5-b (Spec §3.3, v0.8.0): metrobüs kategorize sinyali. Backend
-  // RouteSerializer.is_metrobus settings.METROBUS_SHORT_NAMES'a bakıyor;
-  // KM5-d'de antrasit gri rendering ayrımı için kullanılacak. Optional —
-  // eski response'lara karşı defansif.
+  // Backend categorization flag (settings.METROBUS_SHORT_NAMES);
+  // drives the metrobüs render branch on the frontend. Optional for
+  // defensive parsing of older responses.
   is_metrobus?: boolean;
 }
 
@@ -163,8 +162,8 @@ export async function fetchRouteShape(routeId: string): Promise<ShapeFeature | n
   return (await res.json()) as ShapeFeature;
 }
 
-// Per-shape lookup for scheduled trips. Each direction's shape is its own
-// row in GTFS, so trips reference shape_id directly (Faz 5 KM3-a fix).
+// Per-shape lookup for scheduled trips. Each direction's shape is a
+// separate GTFS row, so trips reference shape_id directly.
 export async function fetchShape(shapeId: string): Promise<ShapeFeature> {
   const url = `/api/shapes/${shapeId}/`;
   const res = await fetch(url, { headers: { Accept: 'application/json' } });

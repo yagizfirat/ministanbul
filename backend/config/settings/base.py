@@ -37,10 +37,9 @@ DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 
 INSTALLED_APPS = [
-    # daphne MUST be first: Channels 4'te `runserver` komutunu Daphne'nin
-    # ASGI versiyonuyla değiştirir. Sıralama bozulursa Django'nun WSGI
-    # runserver'ı devreye girer ve WebSocket route'ları sessizce 404'e
-    # düşer.
+    # daphne MUST be listed first — in Channels 4 it overrides Django's
+    # `runserver` with the ASGI variant. If something else comes before
+    # it the WSGI runserver wins and WebSocket routes silently 404.
     "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
@@ -129,15 +128,14 @@ REST_FRAMEWORK = {
     ],
 }
 
-# Faz 5.5 v0.8.0 — Public Transit Refresh (Spec §3.3, §5.7, Ek A.18 + R12)
-IETT_BUS_MAPPING_ENABLED = False    # Tüm İETT bus için kapalı (metrobüs dahil).
-                                     # Hibernation; gelecekte İBB veri kalitesi
-                                     # düzelirse veya GTFS-RT açılırsa flag ile aktive.
+# İETT bus → route_id stamping is hibernated (data quality not good
+# enough). Flip to True to re-enable the mapping pipeline as-is when
+# upstream improves or İBB publishes GTFS-RT.
+IETT_BUS_MAPPING_ENABLED = False
 
-# Metrobüs short_name set'i — SADECE kategorize için (frontend antrasit gri ayrımı).
-# Mapping davranışını etkilemez. v0.7.x'teki "whitelist exception" semantiği
-# v0.8.0'da kaldırıldı (Ek A.18 Rapor 12: metrobüs için %22 yanlış,
-# p90=8273m, hat etiketi UX olarak savunulamaz).
+# Metrobüs short_name set — used ONLY for is_metrobus categorization
+# (the anthracite-grey render branch on the frontend). Does not
+# influence the route_id mapping pipeline.
 METROBUS_SHORT_NAMES = frozenset({
     "34", "34A", "34AS", "34B", "34BZ",
     "34C", "34G", "34T", "34U", "34Z",
@@ -147,9 +145,9 @@ METROBUS_SHORT_NAMES = frozenset({
 # lock, mapping cache, and pub/sub. Single URL, single source of truth.
 REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
 
-# Channels (Faz 3+) — WebSocket layer Redis. Memurai db=1, Celery db=0
-# ile fiziksel olarak ayrı tut: FLUSHDB yanlış db'ye gitmesin diye
-# explicit env var, REDIS_URL'den türetme YOK.
+# Channels WebSocket-layer Redis kept on a dedicated DB index so an
+# accidental FLUSHDB never wipes Celery state. Set explicitly via env
+# rather than derived from REDIS_URL.
 CHANNELS_REDIS_URL = env("CHANNELS_REDIS_URL", default="redis://localhost:6379/1")
 
 CHANNEL_LAYERS = {
@@ -161,14 +159,13 @@ CHANNEL_LAYERS = {
     },
 }
 
-# WebSocket consumer policies (Faz 3+ — VehicleAllConsumer 6d).
-# Per-IP eşzamanlı bağlantı cap. Localhost dev'de tüm bağlantılar
-# 127.0.0.1'den geliyor görünür — çoklu sekme/test için yükseltebilirsin.
-# Consumer her connect'te lazy okur (override_settings test'lerde
-# ve dev hot-reload'da çalışsın diye), modül-level sabit değil.
+# Per-IP concurrent WebSocket cap. The consumer reads it lazily on
+# every connect so override_settings in tests and hot-reload in dev
+# both pick up changes without restart. Localhost dev sees every
+# connection as 127.0.0.1, so bump this when juggling many tabs.
 WS_MAX_CONN_PER_IP = env.int("WS_MAX_CONN_PER_IP", default=5)
 
-# Celery — worker/beat config. Tasks populated in Phase 2 Step 2+.
+# Celery worker/beat config.
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TIMEZONE = "UTC"
@@ -178,10 +175,10 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_BEAT_SCHEDULE = {
     "fetch-iett-positions": {
         "task": "apps.realtime.tasks.fetch_iett_positions",
-        "schedule": 60.0,  # her 60 saniyede bir (spec §5.7)
+        "schedule": 60.0,
     },
     "refresh-iett-mapping": {
         "task": "apps.realtime.tasks.refresh_iett_mapping",
-        "schedule": crontab(hour=4, minute=0),  # her gün UTC 04:00 (= TR 07:00)
+        "schedule": crontab(hour=4, minute=0),  # daily, UTC 04:00 (TR 07:00)
     },
 }

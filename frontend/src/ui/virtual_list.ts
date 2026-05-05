@@ -1,13 +1,12 @@
-// Faz 6 KM1 alt-iş f-4 — windowed rendering for the bus route list
-// (9000+ items). Sabit yükseklikli item'lar, viewport içi + overscan
-// kadar node DOM'da bulunur, gerisi spacer ile temsil edilir.
+// Windowed list — only items inside the viewport (plus an overscan
+// margin) are kept in the DOM; the rest is represented by a spacer.
+// Useful for long lists.
 //
-// Caller sözleşmesi:
+// Caller contract:
 //   - opts.container: position:relative, overflow:auto, fixed height
-//     (CSS RoutePanel f-5'te ayarlanır)
-//   - opts.itemHeight: sabit pixel; variable height yok (KM1 polish)
-//   - opts.renderItem: absolute pozisyonlama bu modül uygular,
-//     caller'ın inline top/left set etmesi gerekmez
+//   - opts.itemHeight: constant pixel height (no variable-height items)
+//   - opts.renderItem: this module applies the absolute positioning;
+//     the caller doesn't need to set top/left
 
 const SPACER_CLASS = 'virtual-list__spacer';
 const ITEM_CLASS = 'virtual-list__item';

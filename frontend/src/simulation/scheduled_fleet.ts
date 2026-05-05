@@ -91,17 +91,14 @@ export class ScheduledFleet {
     return out;
   }
 
-  // KM5-d: popup zengin versiyonu için PreparedTrip lookup. Click handler
-  // trip_id'yi feature.properties'tan okuyup buradan PreparedTrip'i alır
-  // ve computeNextStops'a geçirir.
+  // PreparedTrip lookup for the rich popup variant; popup uses it via
+  // computeNextStops to render the upcoming-stops list.
   getPreparedTrip(tripId: string): PreparedTrip | null {
     return this.prepared.get(tripId) ?? null;
   }
 
-  // KM-d.1 fix (Spec Ek A.19 borç #6): ferry/scheduled hatlar için bbox
-  // fallback. SnapshotStore İETT canlı kapsamında, polyline modlar
-  // route_lines_layer collection'ında — vapur ne ikisinde. Active
-  // PreparedTrip'lerin polyline koordinatlarından union bbox hesaplar.
+  // Bbox over active prepared trips for the given route(s) — the
+  // focus-zoom fallback for ferry, which has no static polyline layer.
   getRouteBBox(routeId: string): [number, number, number, number] | null {
     return this.getRoutesBBox([routeId]);
   }

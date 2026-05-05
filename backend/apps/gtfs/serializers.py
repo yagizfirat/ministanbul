@@ -1,7 +1,7 @@
 """DRF serializers for GTFS data.
 
-Phase 1 preview uses simple {lat, lon} pairs for Stop (Leaflet-friendly);
-only Shape uses proper GeoJSON via drf-gis (route-line rendering).
+Stop serializers use simple {lat, lon} pairs (Leaflet-friendly); only
+Shape uses proper GeoJSON via drf-gis for route-line rendering.
 """
 from django.conf import settings
 from rest_framework import serializers
@@ -21,12 +21,9 @@ class RouteSerializer(serializers.ModelSerializer):
     route_type_label = serializers.CharField(
         source="get_route_type_display", read_only=True
     )
-    # KM5-b (Spec §3.3, v0.8.0): metrobüs hatları için kategorize sinyali.
-    # Mapping davranışını etkilemez (KM5-a sonrası tüm İETT bus için
-    # route_id=None); frontend KM5-d'de antrasit gri rendering ayrımı için
-    # kullanır. METROBUS_SHORT_NAMES içindeki short_name'ler İETT'ye özel
-    # (Spec §3.3 — discovery query: 34-prefix'li başka short_name yok),
-    # agency=İETT kontrolü gereksiz.
+    # Categorization flag for the frontend's metrobüs render branch.
+    # Doesn't affect mapping; METROBUS_SHORT_NAMES is İETT-specific so
+    # no agency filter is needed.
     is_metrobus = serializers.SerializerMethodField()
 
     class Meta:
@@ -74,7 +71,7 @@ _INVERSE_MODE_BY_RT = {0: "tram", 4: "ferry", 7: "funicular"}
 
 
 class TripActiveSerializer(serializers.ModelSerializer):
-    """Faz 5 /api/trips/active/ payload (flat trip + stop_times)."""
+    """/api/trips/active/ payload — flat trip plus its stop_times list."""
 
     mode = serializers.SerializerMethodField()
     route_id = serializers.CharField(source="route.route_id")
@@ -101,12 +98,10 @@ class TripActiveSerializer(serializers.ModelSerializer):
         return obj.shape.shape_id if obj.shape_id else None
 
     def get_stop_times(self, obj):
-        # Discovery: arrival_time is timedelta — serialize as int seconds.
-        # StopTime.Meta.ordering already includes stop_sequence, so the
-        # prefetched list arrives in order. lat/lon embedded for frontend
-        # stop projection (KM3-a) — saves a separate /api/stops/ batch fetch.
-        # KM5-d: stop_name eklendi — Spec §5.8 sonraki durak listesi popup'ında
-        # "Şişli-Mecidiyeköy 14:32 (2 dk)" gibi insan-okur etiket için zorunlu.
+        # arrival_time is a timedelta; serialize as int seconds.
+        # StopTime.Meta.ordering includes stop_sequence so the prefetched
+        # list arrives in order. lat/lon are embedded so the frontend
+        # can project stops without a separate /api/stops/ batch.
         return [
             {
                 "stop_id": st.stop.stop_id,

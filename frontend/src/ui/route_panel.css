@@ -253,10 +253,10 @@
   display: none;
 }
 
-/* KM-h.1 (Borç #15): aktif focus highlight. Sol kenarda mavi accent
-   bar + hafif arka plan, kullanıcı haritada hangi hata baktığını
-   panelden hemen görür. Variant header focused olduğunda da aynı stil
-   uygulanır. */
+/* Active focus highlight — left accent bar + soft background so the
+   user can tell at a glance which route is focused on the map. The
+   variant-group header gets the same style when any of its variants
+   is focused. */
 .route-panel__route-item[data-focused="true"],
 .route-panel__route-variant-header[data-focused="true"] {
   background: rgba(99, 102, 241, 0.18);
@@ -344,13 +344,12 @@
   margin-left: auto;
 }
 
-/* Variant body item'ları indent — header altında olduğu görünmesi için. */
+/* Indent variant rows so they read as children of the group header. */
 .route-panel__route-item--variant {
   padding-left: 32px;
   background: rgba(0, 0, 0, 0.15);
 }
 
-/* f-polish-5: variant satırı sade — checkbox + "Araç N" italic gri. */
 .route-panel__variant-label {
   font-size: 12px;
   color: #9ca3af;
@@ -358,10 +357,8 @@
   margin-left: 4px;
 }
 
-/* KM5-e.2: bus + metrobüs toggle satırları. Hat-bazlı liste yerine iki
-   sabit, bağımsız toggle (Spec §3.3). Mode group'larından sonra ayrı
-   section olarak render edilir; vehicle sayıları snapshot push'unda
-   anlık güncellenir. */
+/* İETT bus + metrobüs toggle rows, rendered as a separate section
+   below the mode groups; vehicle counts update on snapshot push. */
 .route-panel__iett-bus-toggles {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   padding: 8px 12px;
@@ -396,9 +393,9 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Vehicle popup (alt-iş g madde 5) — MapLibre default popup stili
-   üzerine küçük yapısal düzenleme. MapLibre body'ye render eder,
-   route-panel scope dışı ama tek CSS dosyasında tutuyoruz. */
+/* Vehicle popup styles. MapLibre renders popups into document.body so
+   these selectors live outside the .route-panel scope, but we keep
+   them in a single CSS file. */
 .vehicle-popup {
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 12px;
@@ -452,9 +449,8 @@
   font-style: normal;
 }
 
-/* KM5-d (Spec §5.8) — popup kütle (otobüs) + zengin (raylı/vapur).
-   Otobüs popup minimal: KapiNo satırı; mapping retire sonrası hat etiketi
-   yok. Raylı/vapur popup zengin: sonraki 5 durak listesi, scroll'lu kart. */
+/* Minimal-popup (bus) shows just KapiNo; rich popup (rail/ferry)
+   shows the title + next-5-stops scrollable list. */
 .vehicle-popup__kapi {
   font-size: 11px;
   color: #4b5563;
@@ -513,8 +509,8 @@
   font-style: italic;
 }
 
-/* Toast (alt-iş g f-polish-3 madde 3): bus zoom başarısız vb. küçük
-   bilgi mesajları için fade-in/fade-out element. */
+/* Toast: small fade-in/out info messages (e.g. "no active vehicles
+   to zoom to"). */
 .toast {
   position: fixed;
   bottom: 24px;
@@ -553,17 +549,15 @@
 
 .route-panel__bus-list {
   /* virtual_list mount target — fixed height + position:relative
-     virtual_list sözleşmesi (virtual_list.ts caller contract). */
+     required by createVirtualList. */
   position: relative;
   overflow: auto;
   height: 50vh;
   min-height: 200px;
 }
 
-/* Collapsed state */
+/* Collapsed (48px-wide) state — vertical title above the toggle button. */
 .route-panel[data-collapsed="true"] .route-panel__header {
-  /* 48px width — buton üstte, dikey title altta, açık gap.
-     f-polish-3 madde 1: title + buton overlap'i ortadan kaldır. */
   flex-direction: column;
   align-items: center;
   padding: 10px 0;
@@ -580,7 +574,7 @@
 }
 
 .route-panel[data-collapsed="true"] .route-panel__collapse-btn {
-  /* Explicit visible guard + button-styled accent (f-polish-3 madde 1). */
+  /* Explicit visible guard + button-styled accent. */
   display: block;
   flex: 0 0 auto;
   margin: 0;
@@ -599,27 +593,20 @@
   display: none;
 }
 
-/* v0.8.3 KM-a — Mobile responsive (768px breakpoint, Spec Ek A.19,
-   Faz 6 KM2 devralındı). Desktop CSS'i dokunulmadı; aşağıdaki override
-   pattern sadece dar viewport'larda devreye girer.
-
-   Mimari kararlar:
-     • Bottom sheet pattern: harita üstte görünür, panel ekran altından
-       %50-60 yükselir. Full-screen modal değil — public yayında "şu
-       hatları aç, haritayı göster" UX'i.
-     • Hamburger button + backdrop her zaman DOM'da, CSS ile mobilde
-       görünür yapılır. Desktop koşulları (display:none) override.
-     • Touch target boyutları: min 36px buton, 44px satır (Apple HIG
-       minimum). Mevcut 28px chip'ler küçük parmak için yetersiz.
-     • Drag handle görsel — swipe-to-dismiss gesture v1.0+ backlog,
-       ilk sürüm tıkla-kapat (hamburger veya backdrop). */
+/* Mobile responsive layer (≤768px viewport).
+     • Bottom-sheet pattern (panel rises from the bottom, map stays
+       visible above) — swipe-to-dismiss is post-1.0; first release
+       relies on the hamburger button or backdrop tap to close.
+     • Hamburger + backdrop are always in the DOM, hidden via CSS on
+       desktop and shown only inside this @media block.
+     • Touch targets follow Apple HIG: 44px rows, 36px buttons. */
 
 .route-panel__drag-handle {
-  display: none; /* desktop'ta gizli */
+  display: none;
 }
 
 .mobile-hamburger {
-  display: none; /* desktop'ta gizli */
+  display: none;
   position: fixed;
   top: 12px;
   left: 12px;
@@ -645,7 +632,7 @@
 }
 
 .mobile-backdrop {
-  display: none; /* desktop'ta gizli */
+  display: none;
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.4);
@@ -653,7 +640,6 @@
 }
 
 @media (max-width: 768px) {
-  /* Hamburger + backdrop görünür. */
   .mobile-hamburger {
     display: flex;
   }
@@ -661,7 +647,6 @@
     display: block;
   }
 
-  /* Drag handle görünür — bottom sheet'in tipik visual cue'su. */
   .route-panel__drag-handle {
     display: block;
     width: 40px;
@@ -672,10 +657,8 @@
     flex-shrink: 0;
   }
 
-  /* Panel: bottom sheet pozisyonu. Desktop'tan farklı: top:auto, full
-     width, alt yarıyı kapla, transform ile slide animasyonu. Position
-     attribute'leri (left/right) kalsın diye [data-position] kullanmıyoruz —
-     mobilde her iki yön de aynı bottom sheet. */
+  /* Bottom-sheet docked at the bottom; closed by default, slid in
+     via setMobileOpen(true). */
   .route-panel {
     top: auto;
     bottom: 0;
@@ -693,14 +676,11 @@
     z-index: 10;
   }
 
-  /* Mobile open state — hamburger ya da api ile setMobileOpen(true). */
   .route-panel[data-mobile-open="true"] {
     transform: translateY(0);
   }
 
-  /* Desktop collapse mekanizması mobilde anlamsız: panel zaten kapalı
-     başlar, hamburger ile toggle edilir. data-collapsed her ne olursa
-     olsun width override. Collapse button'ı gizle. */
+  /* Desktop collapse / vertical-title overrides don't apply on mobile. */
   .route-panel,
   .route-panel[data-collapsed="true"],
   .route-panel[data-collapsed="false"] {
@@ -709,15 +689,13 @@
   .route-panel__collapse-btn {
     display: none;
   }
-  /* Desktop collapsed-state vertical title da mobilde anlamsız. */
   .route-panel[data-collapsed="true"] .route-panel__title {
     writing-mode: horizontal-tb;
     transform: none;
     font-size: 14px;
   }
 
-  /* Touch target boyutları. Mevcut 28-30px chip'ler ve 36px header
-     satırları parmak için küçük; min 36px buton, 44px satır. */
+  /* Touch targets: ≥36px buttons, ≥44px rows (Apple HIG minimum). */
   .route-panel__bulk-actions button,
   .route-panel__group-bulk-btn {
     min-height: 36px;
@@ -744,13 +722,14 @@
   }
   .route-panel__search-input {
     min-height: 36px;
-    font-size: 14px; /* iOS Safari 16px altı zoom-on-focus tetikler */
+    /* iOS Safari triggers zoom-on-focus when font-size <16px; 14px is
+       OK because the field height is already 36px. */
+    font-size: 14px;
   }
 }
 
-/* MapLibre popup mobilde okunabilir kalsın — popup container global
-   selector. Maplibre popup'ı arbitrary positioned (vehicle konumuna
-   anchor); tam bottom sheet yapmak yerine boyut sınırla, scroll. */
+/* MapLibre popup is anchored to the vehicle position, so we cap its
+   size on small screens instead of converting it to a bottom sheet. */
 @media (max-width: 768px) {
   .maplibregl-popup-content {
     max-width: 90vw;

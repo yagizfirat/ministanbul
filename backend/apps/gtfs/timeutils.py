@@ -1,7 +1,7 @@
-"""Time helpers for Faz 5 trips_active endpoint.
+"""Time helpers for the trips_active endpoint.
 
-Europe/Istanbul timezone is the project default; GTFS times are local
-HH:MM:SS strings (may exceed 24h for overnight service).
+Europe/Istanbul is the project default; GTFS times are local HH:MM:SS
+strings that may exceed 24h for overnight service.
 """
 from __future__ import annotations
 

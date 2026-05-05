@@ -1,13 +1,7 @@
-// Faz 6 KM1 alt-iş g — multi-route focus state (f-polish-5).
-//
-// Önce tek route_id idi; varyant gruplama (29B = 7 hat) sonrası grup
-// header çift tıklama tüm variant'ları focus'a almalı, paint expression
-// 'in literal' filter ile aynı anda parlar.
-//
-// Sözleşme:
-//   null              → focus yok (default render)
-//   readonly string[] → 1 veya N hat focused (tek-variant ve grup
-//                        aynı interface ile çalışır)
+// Multi-route focus state. A single route or a variant-group union
+// (e.g. all variants sharing short_name "29B") share the same shape.
+//   null              → no focus (default render)
+//   readonly string[] → 1 or N routes focused
 
 export type RouteFocusListener = (focused: readonly string[] | null) => void;
 
@@ -25,7 +19,8 @@ export class RouteFocus {
     return this.focused;
   }
 
-  // Toggle: aynı set zaten focused ise null; değilse setFocus(routeIds).
+  // Toggle: clears focus if the given set is already focused; otherwise
+  // replaces the focus with it.
   toggle(routeIds: readonly string[]): void {
     if (this.equals(this.focused, routeIds)) {
       this.setFocus(null);

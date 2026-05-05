@@ -5,10 +5,9 @@ import { getRouteColor, lighten } from '../styling/route_colors';
 const SOURCE_ID = 'scheduled';
 const LAYER_ID = 'scheduled-circles';
 
-// KM1 alt-iş c: scheduled vehicle dot'u kendi hattının polyline
-// renginin açık tonu (HSL +0.2L). Stroke ise hattın orijinal koyu
-// rengi — polyline ile vehicle aynı renk ailesinden, vehicle "halka
-// içinde açık ton" olarak okunuyor.
+// Scheduled vehicle dots render in a lightened tint of the route color
+// (HSL +0.2L) with the original color as the stroke — the dot reads as
+// "lighter halo inside the line color".
 const LIGHTEN_AMOUNT = 0.2;
 
 interface ScheduledFeature {
@@ -30,9 +29,8 @@ interface ScheduledCollection {
 
 const EMPTY_FC: ScheduledCollection = { type: 'FeatureCollection', features: [] };
 
-// Pure paint factory — focused null/[] → mevcut paint.
-// focused string[] → o hatların trip'leri opacity 1.0, diğerleri 0.2.
-// f-polish-5: array filter, multi-route focus.
+// Pure paint factory. focused=null/[] → base paint; focused=ids →
+// matching trips at opacity 1.0, others at 0.2.
 export function buildScheduledLayerPaint(focused: readonly string[] | null = null) {
   const base = {
     'circle-radius': [
@@ -61,8 +59,8 @@ export function buildScheduledLayerPaint(focused: readonly string[] | null = nul
   } as const;
 }
 
-// Pure feature builder — `getRouteColor + lighten` lookup'ı burada
-// yapılır, paint expression sadece property'den okur.
+// Color lookup happens here so the paint expression just reads
+// per-feature properties.
 export function buildScheduledFeature(p: InterpolatedScheduledTrip): ScheduledFeature {
   const baseColor = getRouteColor(p.short_name, p.mode);
   return {

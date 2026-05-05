@@ -1,18 +1,11 @@
-"""Pydantic schemas for the realtime pipeline — Phase 2 Step 2.
+"""Pydantic schemas for the realtime pipeline.
 
-Canonical schemas that flow through the pipeline:
-
-- VehiclePosition: per-vehicle snapshot yielded by every adapter
-  (IETT SOAP, simulated metro, ferry, etc.) before it hits the WebSocket
-  and REST layers. Independent of upstream field names (spec §5.3).
-- IettArsivGorev: single record from ibb360.asmx::GetIettArsivGorev_json,
-  used to build the time-bound KapiNo → HatKodu mapping
-  (spec Ek A.13, A.14).
-
-Helpers:
+- VehiclePosition: per-vehicle snapshot emitted by every adapter
+  (IETT SOAP, simulated metro, ferry, etc.) before it reaches the
+  WebSocket and REST layers. Independent of upstream field names.
+- IettArsivGorev: single record from ibb360.asmx::GetIettArsivGorev_json
+  used to build the time-bound KapiNo → HatKodu mapping.
 - parse_msdate: Microsoft JSON Date parser (/Date(ms)/ or /Date(ms+HHMM)/).
-
-Adapter implementations, tasks and the rate limiter land in Steps 3–5.
 """
 from __future__ import annotations
 
@@ -53,7 +46,7 @@ def parse_msdate(raw: str) -> datetime:
 
 
 class VehiclePosition(BaseModel):
-    """Canonical position snapshot emitted by every realtime adapter (spec §5.3)."""
+    """Canonical position snapshot emitted by every realtime adapter."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -67,17 +60,15 @@ class VehiclePosition(BaseModel):
     timestamp: datetime
     source: str
     mode: str
-    # KM5-e.1 (Spec §3.3): metrobüs kategorize sinyali — frontend antrasit
-    # gri rendering ayrımı için. enrich.py mapping cache lookup'ı her iki
-    # IETT_BUS_MAPPING_ENABLED durumunda yapar; route_id stampleme flag'a
-    # bağlı, is_metrobus değil. Mapping cache miss → False (defansif).
-    # %22 yanlış kategori riski Yağız kararı (B yolundan dönüş): rengin
-    # yokluğu = %0 bilgi, varlığı yanlışlık olsa bile %78 doğru.
+    # Categorization flag for metrobüs vehicles, populated by enrich.py
+    # via the same KapiNo mapping cache lookup. Independent of the
+    # IETT_BUS_MAPPING_ENABLED flag — categorization is a side-effect
+    # of the lookup and runs regardless. Defaults to False on cache miss.
     is_metrobus: bool = False
 
 
 class IettArsivGorev(BaseModel):
-    """Single record from ibb360.asmx::GetIettArsivGorev_json (spec Ek A.14)."""
+    """Single record from ibb360.asmx::GetIettArsivGorev_json."""
 
     model_config = ConfigDict(frozen=True)
 

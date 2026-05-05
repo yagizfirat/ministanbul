@@ -1,18 +1,17 @@
-// v0.8.2 KM-b — URL state persistence (Spec Ek A.19 #5).
+// URL state persistence for the panel's visibility toggles, so a
+// shareable link reproduces the same view.
 //
-// Sağ paneldeki görünürlük state'lerini URL query string'e yansıtır,
-// böylece "şu hatları açtım, sana göstereyim" linki paylaşılabilir.
+//   parse:     pure; missing fields stay undefined for the caller
+//              to merge with its defaults.
+//   serialize: takes the full state + defaults and omits fields that
+//              equal the defaults (default-elision keeps URLs short).
 //
-// Tasarım:
-//   - parse: pure, raw partial state döner. Eksik field undefined.
-//     Caller defaults ile merge eder.
-//   - serialize: full state + defaults alır, default'a eşit field'ları
-//     URL'den atar (default-elision — kısa URL).
-//   - routes/focus için comma-separated; on/off bus/metrobus için
-//     literal "on"/"off".
-//   - URL'i okurken `URLSearchParams` (decode tolerant); yazarken
-//     manual concat (encode'suz okunabilir route_id'ler — `public:m2`
-//     query value'sunda RFC 3986 reserved değil, modern browser kabul).
+// Wire format:
+//   ?routes=id1,id2&bus=off&metrobus=off&focus=id1
+//   - routes / focus: comma-separated; serializer writes them raw
+//     (`public:m2`), parser uses URLSearchParams which also accepts
+//     percent-encoded forms (`%3A`).
+//   - bus / metrobus: literal "on" / "off".
 
 export interface UrlState {
   routes?: readonly string[];

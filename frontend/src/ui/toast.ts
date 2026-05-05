@@ -1,6 +1,6 @@
-// Faz 6 KM1 alt-iş g f-polish-3 — küçük bilgi mesajları için toast.
-// Tek module-level element; üst üste çağrılarda mesaj güncellenir,
-// timer reset'lenir.
+// Single module-level toast for small info messages; calling
+// showToast() again before the previous one fades just updates the
+// text and resets the dismiss timer.
 
 let toastEl: HTMLElement | null = null;
 let toastTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -25,7 +25,7 @@ export function showToast(message: string, durationMs = DEFAULT_DURATION_MS): HT
   return toastEl;
 }
 
-// Test'te DOM temizlemek için.
+// Test-only DOM cleanup.
 export function _resetToastForTests(): void {
   if (toastTimeout) {
     clearTimeout(toastTimeout);

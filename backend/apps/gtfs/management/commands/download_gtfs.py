@@ -1,28 +1,25 @@
 """Download GTFS CSV files from İBB Açık Veri Portalı.
 
-Spec §4.1 — two CKAN datasets, both structured as loose CSV resources
-(empirical, 2026-04-21):
+Two CKAN datasets are pulled, both structured as loose CSV resources:
 
-  - ``iett-gtfs-verisi``            → 6 CSVs: agency, calendar, routes,
-    stops, trips, stop_times. No shapes.csv — İETT does not publish route
-    geometry (spec §7.1 fallback: straight-line or OSM snap in Phase 5+).
+  - ``iett-gtfs-verisi``            → 6 CSVs (agency, calendar, routes,
+    stops, trips, stop_times). No shapes.csv — İETT doesn't publish
+    route geometry; downstream code falls back to straight-line/OSM.
 
-    Note (2026-05-02, Faz 5.5 patch turu): the dataset also publishes a
-    ``stop_times.zip`` resource alongside ``stop_times.csv``. Pre-patch
-    code dismissed it as "redundant gzip" and pulled the CSV — but the
-    CSV was Excel-truncated to 2^20 - 1 rows, while the ZIP carries the
-    canonical 6.155.691-row GTFS-standard ``stop_times.txt`` (UTF-8 +
-    comma, no BOM). We now prefer the ZIP for stop_times via
-    ``_resolve_resource_for``, extract its single member, and write it
-    over ``stop_times.csv`` so the import layer sees the full feed. See
-    Spec Ek A.17 for the full incident.
+    The dataset also publishes a ``stop_times.zip`` next to
+    ``stop_times.csv``. The CSV variant is Excel-truncated to 2^20 - 1
+    rows, while the ZIP carries the canonical ~6M-row GTFS-standard
+    ``stop_times.txt`` (UTF-8, comma, no BOM). We prefer the ZIP for
+    stop_times via ``_resolve_resource_for``, extract its single
+    member, and write it over ``stop_times.csv`` so the import layer
+    sees the full feed.
 
   - ``public-transport-gtfs-data``  → 8 CSVs: above 6 + shapes + frequencies.
 
-Strategy: per-file HEAD-before-GET against a ``{feed}.manifest.json`` cache,
-so unchanged CSVs are never re-downloaded. Feed-level integrity hash is
-sha256 of the canonical ``{filename: sha256}`` mapping — deterministic and
-independent of any local repackaging.
+Strategy: per-file HEAD-before-GET against a ``{feed}.manifest.json``
+cache, so unchanged CSVs are never re-downloaded. The feed-level
+integrity hash is sha256 of the canonical ``{filename: sha256}``
+mapping — deterministic and independent of any local repackaging.
 """
 from __future__ import annotations
 
@@ -231,9 +228,9 @@ class Command(BaseCommand):
     # CKAN resolution
     # ------------------------------------------------------------------
     def _resolve_ckan_resources(self, dataset_id: str) -> list[dict]:
-        """Return CSV + ZIP resources from the dataset. Pre-patch this
-        was CSV-only, which silently dismissed the canonical
-        ``stop_times.zip`` (see module docstring + Spec Ek A.17)."""
+        """Return CSV + ZIP resources from the dataset. Including ZIPs
+        is necessary because stop_times only ships canonically as a
+        ZIP (see module docstring)."""
         resp = requests.get(
             CKAN_BASE, params={"id": dataset_id},
             headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT,

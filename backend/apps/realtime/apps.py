@@ -1,16 +1,14 @@
-"""Realtime app config + KM5-f mapping cache warm-up startup hook.
+"""Realtime app config with a mapping-cache warm-up hook.
 
-Mapping cache (``iett:mapping:current``) Celery beat task ``refresh-
-iett-mapping`` tarafından her gün UTC 04:00'te yenileniyor. Fresh
-deployment / dev restart / Redis flush sonrası ilk doğal tetiklemeye
-kadar 24 saate kadar boş kalabilir; KM5-e.1'den itibaren is_metrobus
-categorize lookup'ı bu cache'e bağlı (KM5-a flag'tan bağımsız), boş
-cache → tüm vehicle'lar is_metrobus=False (kategorize sinyali kayıp).
-
-Fix: Django ready() içinde cache boşsa sync refresh tetiklenir
-(Celery worker'a değil, in-process). Idempotent — cache canlıysa
-no-op. Her exception yutulur — startup patlamamalı, mapping yokken
-sistem degradeli ama çalışır halde başlar.
+The Redis mapping cache (``iett:mapping:current``) is normally refreshed
+by the daily Celery-beat task at UTC 04:00. After a fresh deployment,
+dev restart, or Redis flush it can sit empty until that next firing —
+during which the is_metrobus categorization lookup falls through to
+False for every vehicle. To avoid that gap, ready() does a synchronous
+in-process refresh when it detects the cache is empty. Idempotent (no-op
+if the cache is already populated) and exceptions are swallowed so a
+broken refresh never blocks startup; the system degrades gracefully
+while still starting.
 """
 from __future__ import annotations
 
@@ -28,17 +26,14 @@ class RealtimeConfig(AppConfig):
     verbose_name = "Realtime"
 
     def ready(self) -> None:
-        # Test koşumunda warm-up atlansın: pytest fakeredis kullanıyor,
-        # ready() seam'de gerçek Redis'e dokunmak gereksiz + adapter
-        # mock'ları daha bağlanmadan çağrılır. Yardımcı sentinel:
-        # pytest runner sys.argv[0] "pytest" içerir.
+        # Skip under pytest — fakeredis is in use and adapter mocks may
+        # not be wired yet at app-ready time.
         import sys
         if any("pytest" in arg for arg in sys.argv):
             return
-        # autoreload child process koruması: runserver/daphne autoreload
-        # ana proseste de child proseste de ready() çağırır. Yalnız child
-        # (RUN_MAIN=true) ya da prod (RUN_MAIN unset) çağrı yeterli, ana
-        # autoreload watcher'da skip et.
+        # Django's autoreload runs ready() in both the watcher parent
+        # and the worker child; only the child (or production, where
+        # RUN_MAIN is unset) should warm the cache.
         if os.environ.get("RUN_MAIN") == "false":
             return
         try:
@@ -53,10 +48,10 @@ class RealtimeConfig(AppConfig):
 
         client = redis.from_url(settings.REDIS_URL)
         if client.strlen("iett:mapping:current") > 0:
-            return  # canlı cache, no-op
+            return  # already populated
 
-        # Lazy import — ready() çağrı zinciri Celery + tasks ağacını
-        # baştan yüklerse circular import potansiyeli var.
+        # Lazy import — eager import here risks a circular load chain
+        # through the Celery + tasks tree.
         from apps.realtime.tasks import refresh_iett_mapping
 
         result = refresh_iett_mapping.apply()

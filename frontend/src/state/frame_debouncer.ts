@@ -1,21 +1,16 @@
-// KM-e Fix-A (Spec Ek A.19 borç #7): MapLibre setFilter chain'ini
-// requestAnimationFrame'e debounce et. Reset / Tümü / Hiçbiri /
-// hızlı checkbox toggle gibi operasyonlarda RouteVisibility.fire()
-// üst üste tetiklenirse, listener'lar (applyFilters, syncCheckboxes)
-// tek bir frame'de toplanıp bir kere çalışır. setFilter + setData
-// pipeline çakışması ve cumulative paint maliyeti azalır.
+// Coalesce repeated calls into a single requestAnimationFrame tick so
+// rapid bursts (Reset, Tümü, Hiçbiri, fast checkbox toggles) cause one
+// MapLibre setFilter call instead of N. Scheduler is injectable for
+// tests (sync or fake-timer schedulers).
 //
-// Kullanım:
+// Usage:
 //   const debouncedApply = debounceFrame(applyFilters);
 //   routeVisibility.subscribe(debouncedApply);
-//
-// Test edilebilirlik için scheduler injection: testte requestAnimationFrame
-// yerine sync scheduler ya da fake timer geçilebilir.
 
 export type FrameScheduler = (cb: () => void) => void;
 
 const defaultScheduler: FrameScheduler = (cb) => {
-  // SSR / test ortamlarında requestAnimationFrame yoksa setTimeout fallback.
+  // setTimeout fallback for SSR / test environments without rAF.
   if (typeof requestAnimationFrame === 'function') {
     requestAnimationFrame(cb);
   } else {

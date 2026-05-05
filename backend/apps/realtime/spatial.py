@@ -1,32 +1,24 @@
-"""Spatial sanity check for vehicle-to-route mapping (Faz 3 6h-i).
+"""Spatial sanity check for vehicle-to-route mapping.
 
-Mapping cache (zaman-bazlı kapı→hat tablosu) bir aracın o anda
-hangi hat üzerinde olması GEREKTİĞİNİ söyler — gerçekte nerede
-olduğunu söylemez. Bir araç sefer bitiminde garaja dönüyor ya
-da molada olabilir; mapping yine onu hat üzerindeymiş gibi
-etiketler. Spatial check bu gap'i kapatır: araç mapped olduğu
-hat'ın shape geometrisinden THRESHOLD metreden uzaktaysa
-``route_id`` None'a düşürülür (unmapped'e degrade).
+The mapping cache (a time-bound KapiNo → SHATKODU table) only says
+which line a vehicle SHOULD be running. A vehicle can be returning
+to the depot or on break, in which case the mapping still labels it
+as if it were on the route. This module closes the gap: when a vehicle
+sits more than THRESHOLD metres away from the shape geometry of its
+mapped route, route_id is demoted to None.
 
-Cache stratejisi: lazy load module-level dict. İlk
-``get_route_shape_cache()`` çağrısında DB'den tüm aktif
-route'ların shape'leri çekilir, ``short_name → np.ndarray
-of (lat, lon)`` formatında saklanır. Cold start tick'i ~7-10sn
-mertebesinde (614 route × ~100 nokta = ~61K nokta), sonraki
-tick'ler O(0).
+Cache strategy: lazy module-level dict. The first
+``get_route_shape_cache()`` call loads every active route's shape
+into a ``short_name → np.ndarray[(lat, lon)]`` map. Cold start is on
+the order of seconds; subsequent ticks are O(0).
 
-Per-vehicle maliyet: numpy vectorized haversine, route shape
-pool'unun TÜMÜNE bir kerede minimum mesafe. ~100 noktalık bir
-shape için <0.5ms.
+Per-vehicle cost: a numpy vectorized haversine across the whole shape
+pool — under 1 ms per ~100-point shape.
 
-Veri kısıtı (6h-i-fix-2): İETT GTFS feed'i şu an shape verisi
-içermiyor (1096 short_name'in 0'ı shape'li). Public feed
-(raylı+vapur, 496/496) shape'li. Canlı veri akışı SADECE
-İETT'den geldiği için spatial check'in pratik etkisi şu an
-Faz 5+ trip simülasyonuna kadar gelecek. Cache miss'te check
-skip edilir (mapping'e güvenilir) — detay tasks.py spatial_check
-loop'unda. Spec §10 Risk tablosu "shapes.txt eksikse → fallback
-+ Faz 6'da OSM" politikasıyla tutarlı.
+Caveat: the live İETT feed currently has no shapes for bus routes.
+Public-feed routes (rail/ferry) all have shapes. The check skips on
+cache miss (trusts the mapping) — see the spatial_check loop in
+tasks.py for details.
 """
 from __future__ import annotations
 

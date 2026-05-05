@@ -77,8 +77,9 @@ class RouteViewSet(viewsets.ReadOnlyModelViewSet):
     def stops(self, request, route_id=None):
         """Distinct stops visited by this route, across all its trips.
 
-        TODO(perf): optimize for large routes in Faz 6 — current query walks
-        stop_times (1.25M rows) with 2 joins; ordered routes may take 3-5s.
+        TODO(perf): for large routes the current query walks stop_times
+        (~1.25M rows) with 2 joins and can take a few seconds. Consider
+        a materialized stops-per-route view if this becomes a bottleneck.
         """
         route = self.get_object()
         qs = (Stop.objects
@@ -112,10 +113,10 @@ class RouteViewSet(viewsets.ReadOnlyModelViewSet):
 class ShapeDetailView(RetrieveAPIView):
     """Direct lookup of a Shape geometry by GTFS shape_id.
 
-    Faz 5 KM3-a fix: scheduled trips reference their own shape per
-    direction. Looking up `/api/routes/{id}/shape/` only returns one
-    arbitrary direction's shape (route-level "first trip with a shape"),
-    which dropped half the trips. Trips now fetch by shape_id directly.
+    Scheduled trips reference their own shape per direction, so the
+    frontend fetches each direction's shape directly by shape_id. The
+    older `/api/routes/{id}/shape/` endpoint only exposes one arbitrary
+    direction's shape and is unsuitable here.
     """
 
     queryset = Shape.objects.all()
@@ -146,13 +147,13 @@ class StopViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 def preview(request):
-    """Phase 1 Leaflet preview — all stops (clustered) + sample routes."""
+    """Server-rendered Leaflet preview — all stops (clustered) + sample routes."""
     return render(request, "preview.html")
 
 
 @api_view(["GET"])
 def trips_active(request):
-    """Faz 5 KM2: trips active right now for the requested mode.
+    """Trips active right now for the requested mode.
 
     Query params:
       mode  (required): metro | marmaray | tram | funicular | ferry

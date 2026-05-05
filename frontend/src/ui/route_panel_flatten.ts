@@ -1,13 +1,10 @@
-// Route panel item flattening — varyant gruplaması ve search filtre
-// (Faz 6 KM1 alt-iş f-polish-2 madde 3).
+// Route-panel flattening: variant grouping + search filter.
 //
-// İBB iETT feed'inde aynı `short_name` (örn. "29B") 7+ ayrı route_id
-// olarak gelir (yön + uç-nokta varyantları). Panel'de her satır olarak
-// göstermek bunaltıcı — tek başlık + expandable body modeline geçiyoruz.
-//
-// Saf fonksiyon: input (routes, expandedGroups, searchQuery) → output
-// FlatItem[]. Hem polyline modların DOM render'ı hem bus'ın virtual_list
-// setItems çağrısı aynı dizilimi tüketir.
+// The İETT feed often serves a single short_name (e.g. "29B") as 7+
+// route_ids — direction and endpoint variants. Listing every row is
+// noisy, so the panel folds them under a single header with an
+// expandable body. This module returns a flat list of items that the
+// view layer renders verbatim.
 
 import type { RouteSummary } from '../data/api';
 import { fuzzyMatch } from '../util/turkish_normalize';
@@ -19,8 +16,8 @@ export type FlatItem =
       kind: 'group-variant';
       route: RouteSummary;
       parentShortName: string;
-      // f-polish-5: variant satırı uzun isim/operatör göstermez,
-      // sıralı "Araç 1, Araç 2, ..." labelları kullanır.
+      // Variant rows show "Araç N" rather than long_name/agency to keep
+      // the body compact under a shared header.
       displayLabel: string;
     };
 
@@ -96,9 +93,8 @@ export function flattenRoutesForDisplay(
     const bodyVisible = expandedGroups.has(groupKey) || autoExpand;
     if (!bodyVisible) continue;
 
-    // f-polish-5: variant'ları route_id alfabetik sırayla "Araç N"
-    // labelı ile döndür. Sort hem deterministic numbering hem
-    // search match subset'inin nasıl göründüğünü stabilize eder.
+    // Sort by route_id so the "Araç N" numbering stays deterministic
+    // and search-filtered subsets keep a stable order.
     const sorted = [...variants]
       .map((route, originalIdx) => ({ route, originalIdx }))
       .sort((a, b) => a.route.route_id.localeCompare(b.route.route_id));

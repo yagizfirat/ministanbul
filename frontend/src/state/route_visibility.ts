@@ -1,20 +1,17 @@
-// Faz 6 KM1 alt-iş f — sağ hat panelinin görünürlük state'i.
-// Panel hat checkbox'ı bu state'i toggle eder; listener composite
-// filter üzerinden 3 layer'a (route-lines, scheduled-circles,
-// fleet-circles) MapLibre setFilter çağrısı tetikler.
-//
-// mode_visibility ile mimari simetri: snapshot listener (mutation
-// race önler), ['in', 'literal'] filter, edge-case'ler için no-op
-// (null) ve never-match expression.
+// Visibility state behind the panel's route checkboxes. Listeners
+// (typically a debounced applyFilters in main.ts) translate this set
+// into MapLibre setFilter calls on route-lines and scheduled-circles.
+// The fire() snapshot copies the set so listeners can't observe a
+// mutation race.
 
 export type RouteVisibilityListener = (visible: ReadonlySet<string>) => void;
 
 export class RouteVisibility {
   private readonly visible: Set<string>;
   private readonly listeners: RouteVisibilityListener[] = [];
-  // ALL_ROUTES — tüm route_id'lerin sayısı; getFilterExpression'ın
-  // "tümü visible → null" karar noktası için bilinmesi şart.
-  // Bus lazy fetch sonrası expandAllIds ile artırılır.
+  // Total count of known route_ids; getFilterExpression compares it
+  // against visible.size to short-circuit to a no-op filter when all
+  // routes are visible.
   private totalCount: number;
 
   constructor(allRouteIds: readonly string[], initiallyVisible: readonly string[]) {
@@ -40,8 +37,8 @@ export class RouteVisibility {
     this.fire();
   }
 
-  // Tek bir snapshot+fire — mod grup checkbox'ı 9275 bus hattını
-  // tek seferde toggle ederken 9275 listener tetiklemesini önler.
+  // Single fire() for the whole batch — toggling a mode group with
+  // hundreds of routes shouldn't fire hundreds of listener calls.
   setBulkVisible(routeIds: readonly string[], visible: boolean): void {
     let changed = false;
     for (const id of routeIds) {
@@ -65,17 +62,14 @@ export class RouteVisibility {
     return this.totalCount;
   }
 
-  // Bus lazy fetch için: yeni route_id'ler totalCount'a eklenir
-  // ama default hidden — visible Set dokunulmaz, listener tetiklenmez
-  // (visible açısından hiçbir şey değişmedi). getFilterExpression
-  // sonraki çağrılarında "tümü visible" yanlış değerlendirmesin diye
-  // totalCount'un güncel olması şart.
+  // Adds new (default-hidden) route_ids to totalCount without firing —
+  // visible Set is unchanged, only the "all visible?" predicate
+  // denominator grows.
   expandTotalCount(addedCount: number): void {
     this.totalCount += addedCount;
   }
 
-  // Reset butonu için: visible set'i defaultIds'e geri al. No-op
-  // (zaten default state'te) ise listener tetiklenmez.
+  // No-op (and no fire) if the visible set already equals defaultIds.
   resetToDefault(defaultIds: readonly string[]): void {
     if (defaultIds.length === this.visible.size) {
       let allMatch = true;
@@ -102,8 +96,10 @@ export class RouteVisibility {
   }
 }
 
-// Filter expression — mode_visibility.getFilterExpression ile aynı
-// API. Tip annotasyonu unknown — caller MapLibre cast'ini yapar.
+// Returns the MapLibre filter for the current visibility set:
+//   empty set → FILTER_NEVER (hide everything)
+//   all visible → null (no filter, fast path)
+//   otherwise   → ['in', ['get', 'route_id'], ['literal', ids]]
 type Filter = unknown;
 
 export const FILTER_NEVER: Filter = ['==', ['get', 'route_id'], '__none__'];
@@ -113,6 +109,6 @@ export function getFilterExpression(
   totalCount: number,
 ): Filter {
   if (visible.size === 0) return FILTER_NEVER;
-  if (visible.size === totalCount) return null; // no-op: tüm feature'lar geçer
+  if (visible.size === totalCount) return null;
   return ['in', ['get', 'route_id'], ['literal', Array.from(visible)]];
 }
