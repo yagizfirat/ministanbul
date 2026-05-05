@@ -89,6 +89,13 @@ export interface RoutePanelOptions {
   // expression'ı günceller (buildFleetFilter). Default ikisi true.
   onBusVisibilityChange?: (visible: boolean) => void;
   onMetrobusVisibilityChange?: (visible: boolean) => void;
+  // KM-g: header bulk butonları (Tümü/Hiçbiri) Kanal A dışında Kanal B
+  // (bus/metrobüs) ve Kanal C (routeFocus) için de sinyal verir.
+  // allOn=true → Tümü, allOn=false → Hiçbiri.
+  onSelectAllChange?: (allOn: boolean) => void;
+  // KM-g: Reset butonu — defaultVisibleIds geri yüklenirken caller
+  // bus/metrobüs default'unu (true) ve focus reset'i de yapar.
+  onResetRequested?: () => void;
   config?: Partial<RoutePanelConfig>;
 }
 
@@ -101,6 +108,11 @@ export interface RoutePanelHandle {
   // KM5-e.2: snapshot.push sonrası main.ts canlı sayım hesaplayıp gönderir.
   // Snapshot yoksa {bus:0, metrobus:0}; bağlam: store.countByMetrobus().
   setVehicleCounts(counts: { bus: number; metrobus: number }): void;
+  // KM-g: Tümü/Hiçbiri/Reset callback'lerinden caller atomik UI sync için
+  // çağırır. Hem panel iç state'ini hem checkbox.checked'i günceller,
+  // onBusVisibilityChange/onMetrobusVisibilityChange tetiklemez (sonsuz
+  // döngü guard'ı).
+  setFleetVisibility(state: { bus: boolean; metrobus: boolean }): void;
   destroy(): void;
 }
 
@@ -534,15 +546,18 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
   function onSelectAll(): void {
     const ids = allRoutes.map((r) => r.route_id);
     opts.visibility.setBulkVisible(ids, true);
+    opts.onSelectAllChange?.(true);
   }
 
   function onSelectNone(): void {
     const ids = allRoutes.map((r) => r.route_id);
     opts.visibility.setBulkVisible(ids, false);
+    opts.onSelectAllChange?.(false);
   }
 
   function onReset(): void {
     opts.visibility.resetToDefault(opts.defaultVisibleIds);
+    opts.onResetRequested?.();
   }
 
   function toggleCollapse(): void {
@@ -616,6 +631,13 @@ export function createRoutePanel(opts: RoutePanelOptions): RoutePanelHandle {
     setVehicleCounts(counts: { bus: number; metrobus: number }): void {
       vehicleCounts = counts;
       refreshBusToggleCounts();
+    },
+
+    setFleetVisibility(state: { bus: boolean; metrobus: boolean }): void {
+      busVisible = state.bus;
+      metrobusVisible = state.metrobus;
+      busToggleRef.checkbox.checked = state.bus;
+      metrobusToggleRef.checkbox.checked = state.metrobus;
     },
 
     destroy(): void {

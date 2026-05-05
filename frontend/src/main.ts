@@ -223,6 +223,17 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
   // KM-e Fix-A: hızlı state değişimlerinde (Reset, Tümü, Hiçbiri,
   // hızlı checkbox toggle) setFilter chain'ini RAF'a debounce et.
   const debouncedApplyFleet = debounceFrame(applyFleetVisibilityFilter);
+  // KM-g: header bulk butonları (Tümü/Hiçbiri/Reset) Kanal A (route_id)
+  // dışında Kanal B (bus/metrobus filter) ve Kanal C (routeFocus paint)
+  // için de tetiklenir. Borç #12/#13/#14 tek koordinasyon noktasıyla
+  // çözülür (Tasarım A, _research/2026-05-05-km-g-...).
+  function applyFleetState(bus: boolean, metrobus: boolean): void {
+    busVisible = bus;
+    metrobusVisible = metrobus;
+    debouncedApplyFleet();
+    routePanel?.setFleetVisibility({ bus, metrobus });
+    routeFocus.setFocus(null);
+  }
   routePanel = createRoutePanel({
     visibility: routeVisibility,
     routes: initialRoutes,
@@ -237,6 +248,8 @@ async function loadAlwaysVisibleRoutes(): Promise<void> {
       metrobusVisible = v;
       debouncedApplyFleet();
     },
+    onSelectAllChange: (allOn) => applyFleetState(allOn, allOn),
+    onResetRequested: () => applyFleetState(true, true),
   });
 
   function focusAndZoom(routeIds: readonly string[]): void {

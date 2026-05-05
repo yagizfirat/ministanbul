@@ -42,6 +42,8 @@ function mount(routes = SAMPLE_ROUTES, opts: {
   config?: Parameters<typeof createRoutePanel>[0]['config'];
   onBusVisibilityChange?: (v: boolean) => void;
   onMetrobusVisibilityChange?: (v: boolean) => void;
+  onSelectAllChange?: (allOn: boolean) => void;
+  onResetRequested?: () => void;
 } = {}): RoutePanelHandle {
   const allIds = routes.map((r) => r.route_id);
   const visible = routes.filter((r) => r.mode !== 'bus').map((r) => r.route_id);
@@ -53,6 +55,8 @@ function mount(routes = SAMPLE_ROUTES, opts: {
     config: opts.config,
     onBusVisibilityChange: opts.onBusVisibilityChange,
     onMetrobusVisibilityChange: opts.onMetrobusVisibilityChange,
+    onSelectAllChange: opts.onSelectAllChange,
+    onResetRequested: opts.onResetRequested,
   });
   return panel;
 }
@@ -511,5 +515,91 @@ describe('createRoutePanel — header bulk actions + hint', () => {
     findBtn('Reset').click();
     for (const id of POLYLINE_VISIBLE) expect(rv.isVisible(id)).toBe(true);
     expect(rv.isVisible('iett:29B')).toBe(false); // bus default hidden
+  });
+});
+
+// ── KM-g: Reset/Tümü/Hiçbiri full filter coverage (Borç #12/#13/#14) ──
+describe('createRoutePanel — KM-g full filter coverage', () => {
+  const findBtn = (text: string) =>
+    Array.from(document.querySelectorAll('.route-panel__bulk-actions button')).find(
+      (b) => b.textContent === text,
+    ) as HTMLElement;
+
+  it('Tümü click fires onSelectAllChange(true)', () => {
+    const onAll = vi.fn();
+    mount(SAMPLE_ROUTES, { onSelectAllChange: onAll });
+    findBtn('Tümü').click();
+    expect(onAll).toHaveBeenCalledWith(true);
+  });
+
+  it('Hiçbiri click fires onSelectAllChange(false) — Borç #12/#14 (Kanal B kapatma sinyali)', () => {
+    const onAll = vi.fn();
+    mount(SAMPLE_ROUTES, { onSelectAllChange: onAll });
+    findBtn('Hiçbiri').click();
+    expect(onAll).toHaveBeenCalledWith(false);
+  });
+
+  it('Reset click fires onResetRequested — Borç #13 (Kanal C focus reset sinyali)', () => {
+    const onReset = vi.fn();
+    mount(SAMPLE_ROUTES, { onResetRequested: onReset });
+    findBtn('Reset').click();
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
+  it('Reset does not fire onSelectAllChange (orthogonal callbacks)', () => {
+    const onAll = vi.fn();
+    const onReset = vi.fn();
+    mount(SAMPLE_ROUTES, { onSelectAllChange: onAll, onResetRequested: onReset });
+    findBtn('Reset').click();
+    expect(onAll).not.toHaveBeenCalled();
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
+  it('setFleetVisibility({bus:false, metrobus:false}) syncs both checkboxes to false', () => {
+    const handle = mount();
+    handle.setFleetVisibility({ bus: false, metrobus: false });
+    const cbs = document.querySelectorAll<HTMLInputElement>(
+      '.route-panel__bus-toggle input[type="checkbox"]',
+    );
+    expect(cbs[0].checked).toBe(false);
+    expect(cbs[1].checked).toBe(false);
+  });
+
+  it('setFleetVisibility({bus:true, metrobus:true}) syncs both checkboxes to true', () => {
+    const handle = mount();
+    // First set to false, then back to true
+    handle.setFleetVisibility({ bus: false, metrobus: false });
+    handle.setFleetVisibility({ bus: true, metrobus: true });
+    const cbs = document.querySelectorAll<HTMLInputElement>(
+      '.route-panel__bus-toggle input[type="checkbox"]',
+    );
+    expect(cbs[0].checked).toBe(true);
+    expect(cbs[1].checked).toBe(true);
+  });
+
+  it('setFleetVisibility supports asymmetric state ({bus:false, metrobus:true})', () => {
+    const handle = mount();
+    handle.setFleetVisibility({ bus: false, metrobus: true });
+    const busCb = document.querySelector<HTMLInputElement>(
+      '.route-panel__bus-toggle[data-key="iett-bus"] input[type="checkbox"]',
+    )!;
+    const metroCb = document.querySelector<HTMLInputElement>(
+      '.route-panel__bus-toggle[data-key="metrobus"] input[type="checkbox"]',
+    )!;
+    expect(busCb.checked).toBe(false);
+    expect(metroCb.checked).toBe(true);
+  });
+
+  it('setFleetVisibility does not fire onBus/MetrobusVisibilityChange (loop guard)', () => {
+    const onBus = vi.fn();
+    const onMetro = vi.fn();
+    const handle = mount(SAMPLE_ROUTES, {
+      onBusVisibilityChange: onBus,
+      onMetrobusVisibilityChange: onMetro,
+    });
+    handle.setFleetVisibility({ bus: false, metrobus: false });
+    handle.setFleetVisibility({ bus: true, metrobus: false });
+    expect(onBus).not.toHaveBeenCalled();
+    expect(onMetro).not.toHaveBeenCalled();
   });
 });
