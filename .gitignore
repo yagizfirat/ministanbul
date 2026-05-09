@@ -65,3 +65,7 @@ deploy.zip
 
 # Claude Code instructions (local only)
 CLAUDE.md
+
+# Internal planning docs (local only)
+MINI_ISTANBUL_3D_SPEC.md
+ROADMAP.md
