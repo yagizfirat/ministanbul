@@ -6,6 +6,7 @@
 
 **Canlı demo:** [ministanbul.yagizfirat.com](https://ministanbul.yagizfirat.com)
 
+![Mini İstanbul demo](./docs/hero.gif)
 
 ## Ne yapar
 
