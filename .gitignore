@@ -59,3 +59,9 @@ _research/*.json
 _research/*.xml
 _research/*.pdf
 !_research/*.py
+
+# Build artifacts
+deploy.zip
+
+# Claude Code instructions (local only)
+CLAUDE.md
