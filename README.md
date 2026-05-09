@@ -2,11 +2,14 @@
 
 İstanbul'un toplu taşıma ağını gerçek zamanlı, üç boyutlu bir harita üzerinde gösteren web uygulaması. Otobüsler, metrolar, Marmaray, vapurlar, tramvay ve füniküler — hepsi aynı haritada, kendi konumlarında, kendi rotalarında.
 
-[Mini Tokyo 3D](https://github.com/nagix/mini-tokyo-3d)'in İstanbul versiyonu olarak başladı. Kişisel bir öğrenme projesi; yaklaşık iki ay sürdü.
+[Mini Tokyo 3D](https://github.com/nagix/mini-tokyo-3d)'in İstanbul versiyonu olarak başladı. Kişisel bir öğrenme projesi; yaklaşık üç hafta sürdü.
 
 **Canlı demo:** [ministanbul.yagizfirat.com](https://ministanbul.yagizfirat.com)
 
-![Mini İstanbul demo](./docs/hero.gif)
+<img width="1919" height="1031" alt="Ekran görüntüsü 2026-05-09 153637" src="https://github.com/user-attachments/assets/dc145985-92c2-49cf-ac39-d8eb57f3a49f" />
+<img width="1919" height="1029" alt="Ekran görüntüsü 2026-05-09 153651" src="https://github.com/user-attachments/assets/34befe39-8038-46bb-a8bd-d2300cd17e93" />
+<img width="1919" height="1030" alt="Ekran görüntüsü 2026-05-09 153703" src="https://github.com/user-attachments/assets/6e46624b-0968-46db-809b-484fc91469ac" />
+
 
 ## Ne yapar
 
