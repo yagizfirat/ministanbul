@@ -107,6 +107,12 @@ map.on('load', () => {
   startRenderLoop();
   startRealtime();
   void loadAlwaysVisibleRoutes().then(() => startScheduledPolling());
+
+  const INTERACTIVE_LAYERS = ['route-lines', 'fleet-circles', 'scheduled-circles'] as const;
+  for (const id of INTERACTIVE_LAYERS) {
+    map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
+  }
 });
 
 let routeVisibility: RouteVisibility | null = null;
