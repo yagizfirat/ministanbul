@@ -8,24 +8,24 @@
   right: 0;
   height: 100vh;
   width: var(--route-panel-width, 340px);
-  background: rgba(20, 24, 32, 0.92);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  color: #e5e7eb;
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  color: #1d1d1f;
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 13px;
   display: flex;
   flex-direction: column;
   z-index: 10;
   transition: width 200ms ease;
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .route-panel[data-position="left"] {
   left: 0;
   right: auto;
   border-left: none;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 /* Default state explicit guard — bazı tarayıcı/HMR senaryolarında
@@ -44,7 +44,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   flex-shrink: 0;
 }
 
@@ -62,16 +62,16 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  color: #9ca3af;
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.55);
   font-size: 10px;
   cursor: help;
   user-select: none;
 }
 
 .route-panel__hint-icon:hover {
-  background: rgba(255, 255, 255, 0.2);
-  color: #e5e7eb;
+  background: rgba(0, 0, 0, 0.12);
+  color: #1d1d1f;
 }
 
 .route-panel__bulk-actions {
@@ -82,17 +82,19 @@
 
 .route-panel__bulk-actions button {
   font-size: 11px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #e5e7eb;
-  padding: 3px 8px;
-  border-radius: 3px;
+  font-weight: 500;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  color: #1d1d1f;
+  padding: 5px 10px;
+  border-radius: 6px;
   cursor: pointer;
   font-family: inherit;
+  transition: background 120ms ease;
 }
 
 .route-panel__bulk-actions button:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.1);
 }
 
 .route-panel__title {
@@ -103,24 +105,29 @@
 
 .route-panel__count {
   font-size: 11px;
-  color: #9ca3af;
+  color: rgba(0, 0, 0, 0.55);
   font-variant-numeric: tabular-nums;
   flex-grow: 0;
 }
 
 .route-panel__collapse-btn {
-  background: none;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #e5e7eb;
-  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  color: #1d1d1f;
+  border-radius: 6px;
   padding: 4px 8px;
   cursor: pointer;
   font-family: inherit;
+  transition: background 120ms ease;
+}
+
+.route-panel__collapse-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
 }
 
 .route-panel__search {
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   flex-shrink: 0;
   position: relative;
 }
@@ -128,18 +135,23 @@
 .route-panel__search-input {
   width: 100%;
   box-sizing: border-box;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
-  color: #e5e7eb;
-  padding: 6px 28px 6px 8px;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  border-radius: 8px;
+  color: #1d1d1f;
+  padding: 8px 28px 8px 12px;
   font-size: 13px;
   font-family: inherit;
   outline: none;
+  transition: background 120ms ease;
+}
+
+.route-panel__search-input::placeholder {
+  color: rgba(0, 0, 0, 0.4);
 }
 
 .route-panel__search-input:focus {
-  border-color: #3b82f6;
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .route-panel__search-clear {
@@ -149,7 +161,7 @@
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: #9ca3af;
+  color: rgba(0, 0, 0, 0.45);
   cursor: pointer;
   padding: 4px;
   line-height: 1;
@@ -167,28 +179,104 @@
   overflow-x: hidden;
 }
 
+/* Slim, subtle scrollbar that matches the light-glass aesthetic
+   (descendant selector → any scrollable area inside the panel). */
+.route-panel ::-webkit-scrollbar {
+  width: 6px;
+}
+
+.route-panel ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.route-panel ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+.route-panel ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Custom checkbox — Apple-style filled blue when checked. The layout
+   tweaks (margin/flex-shrink) live in the more-specific
+   .route-panel__route-item input[type="checkbox"] rule below. */
+.route-panel input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.route-panel input[type="checkbox"]:hover {
+  border-color: rgba(0, 0, 0, 0.45);
+}
+
+.route-panel input[type="checkbox"]:checked {
+  background: #007aff;
+  border-color: #007aff;
+}
+
+.route-panel input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid white;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.route-panel input[type="checkbox"]:indeterminate {
+  background: #007aff;
+  border-color: #007aff;
+}
+
+.route-panel input[type="checkbox"]:indeterminate::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 6px;
+  width: 8px;
+  height: 1.5px;
+  background: white;
+}
+
 .route-panel__group {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 .route-panel__group-header {
-  padding: 10px 16px;
+  padding: 12px 16px 8px;
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
   user-select: none;
-  background: rgba(0, 0, 0, 0.2);
+  background: transparent;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: rgba(0, 0, 0, 0.55);
 }
 
 .route-panel__group-header:hover {
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .route-panel__group-toggle {
   background: none;
   border: none;
-  color: #9ca3af;
+  color: rgba(0, 0, 0, 0.55);
   cursor: pointer;
   font-size: 11px;
   padding: 0;
@@ -207,23 +295,24 @@
 
 .route-panel__group-count {
   font-size: 11px;
-  color: #9ca3af;
+  color: rgba(0, 0, 0, 0.45);
   font-variant-numeric: tabular-nums;
 }
 
 .route-panel__group-bulk-btn {
   font-size: 11px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #e5e7eb;
-  padding: 2px 6px;
-  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  color: #1d1d1f;
+  padding: 4px 8px;
+  border-radius: 6px;
   cursor: pointer;
   font-family: inherit;
+  transition: background 120ms ease;
 }
 
 .route-panel__group-bulk-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.1);
 }
 
 .route-panel__group[data-open="false"] .route-panel__group-body {
@@ -239,38 +328,40 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 16px;
+  padding: 8px 16px;
+  margin: 0 8px;
+  border-radius: 6px;
   cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
   /* Bus virtualized list'te absolute positioning virtual_list ile gelir;
      diğer modlar için flex normal akış. */
 }
 
 .route-panel__route-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.04);
+  transform: translateX(2px);
 }
 
 .route-panel__route-item[data-hidden="true"] {
   display: none;
 }
 
-/* Active focus highlight — left accent bar + soft background so the
-   user can tell at a glance which route is focused on the map. The
-   variant-group header gets the same style when any of its variants
-   is focused. */
+/* Active focus highlight — neutral darker background so the user can
+   tell at a glance which route is focused on the map. The variant-
+   group header gets the same style when any of its variants is
+   focused. */
 .route-panel__route-item[data-focused="true"],
 .route-panel__route-variant-header[data-focused="true"] {
-  background: rgba(99, 102, 241, 0.18);
-  box-shadow: inset 3px 0 0 #818cf8;
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .route-panel__route-item[data-focused="true"]:hover,
 .route-panel__route-variant-header[data-focused="true"]:hover {
-  background: rgba(99, 102, 241, 0.26);
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .route-panel__route-item input[type="checkbox"] {
   margin: 0;
-  cursor: pointer;
   flex-shrink: 0;
 }
 
@@ -279,7 +370,12 @@
   height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
-  border: 1px solid rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+  transition: transform 120ms ease;
+}
+
+.route-panel__route-item:hover .route-panel__route-color-dot {
+  transform: scale(1.15);
 }
 
 .route-panel__route-short {
@@ -293,12 +389,12 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #d1d5db;
+  color: rgba(0, 0, 0, 0.75);
 }
 
 .route-panel__route-operator {
   font-size: 10px;
-  color: #6b7280;
+  color: rgba(0, 0, 0, 0.45);
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -316,17 +412,20 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 16px;
+  padding: 8px 16px;
+  margin: 0 8px;
+  border-radius: 6px;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.02);
+  background: transparent;
+  transition: background 120ms ease;
 }
 
 .route-panel__route-variant-header:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .route-panel__route-variant-toggle {
-  color: #9ca3af;
+  color: rgba(0, 0, 0, 0.55);
   font-size: 11px;
   width: 12px;
   text-align: center;
@@ -339,7 +438,7 @@
 
 .route-panel__route-variant-count {
   font-size: 10px;
-  color: #9ca3af;
+  color: rgba(0, 0, 0, 0.45);
   font-variant-numeric: tabular-nums;
   margin-left: auto;
 }
@@ -347,12 +446,12 @@
 /* Indent variant rows so they read as children of the group header. */
 .route-panel__route-item--variant {
   padding-left: 32px;
-  background: rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.02);
 }
 
 .route-panel__variant-label {
   font-size: 12px;
-  color: #9ca3af;
+  color: rgba(0, 0, 0, 0.55);
   font-style: italic;
   margin-left: 4px;
 }
@@ -360,8 +459,8 @@
 /* İETT bus + metrobüs toggle rows, rendered as a separate section
    below the mode groups; vehicle counts update on snapshot push. */
 .route-panel__iett-bus-toggles {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 8px 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 8px 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -372,24 +471,26 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 4px;
+  padding: 8px 16px;
+  margin: 0 8px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 6px;
+  transition: background 120ms ease;
 }
 
 .route-panel__bus-toggle:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .route-panel__bus-toggle-label {
   font-size: 13px;
-  color: #e5e7eb;
+  color: #1d1d1f;
   flex: 1;
 }
 
 .route-panel__bus-toggle-count {
   font-size: 11px;
-  color: #9ca3af;
+  color: rgba(0, 0, 0, 0.45);
   font-variant-numeric: tabular-nums;
 }
 
@@ -538,13 +639,13 @@
 .route-panel__bus-error {
   padding: 16px;
   text-align: center;
-  color: #9ca3af;
+  color: rgba(0, 0, 0, 0.45);
   font-size: 12px;
   font-style: italic;
 }
 
 .route-panel__bus-error {
-  color: #f87171;
+  color: #c41a16;
 }
 
 .route-panel__bus-list {
@@ -573,6 +674,10 @@
   letter-spacing: 1px;
 }
 
+.route-panel[data-collapsed="true"] .route-panel__title {
+  color: rgba(0, 0, 0, 0.55);
+}
+
 .route-panel[data-collapsed="true"] .route-panel__collapse-btn {
   /* Explicit visible guard + button-styled accent. */
   display: block;
@@ -580,9 +685,9 @@
   margin: 0;
   padding: 4px 10px;
   font-size: 14px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  border-radius: 6px;
 }
 
 .route-panel[data-collapsed="true"] .route-panel__header-row2,
@@ -613,12 +718,12 @@
   z-index: 12;
   width: 44px;
   height: 44px;
-  background: rgba(20, 24, 32, 0.92);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.85);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 6px;
-  color: #e5e7eb;
+  color: #1d1d1f;
   cursor: pointer;
   align-items: center;
   justify-content: center;
@@ -628,7 +733,7 @@
 }
 
 .mobile-hamburger:hover {
-  background: rgba(40, 44, 52, 0.95);
+  background: rgba(255, 255, 255, 0.95);
 }
 
 .mobile-backdrop {
@@ -651,7 +756,7 @@
     display: block;
     width: 40px;
     height: 4px;
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(0, 0, 0, 0.2);
     border-radius: 2px;
     margin: 8px auto 4px;
     flex-shrink: 0;
@@ -671,7 +776,7 @@
     transition: transform 250ms ease;
     border-left: none;
     border-right: none;
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
     border-radius: 12px 12px 0 0;
     z-index: 10;
   }
