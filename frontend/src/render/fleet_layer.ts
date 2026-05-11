@@ -16,7 +16,7 @@ const COLOR_STROKE_MAPPED = '#3a2a00';
 const COLOR_STROKE_METROBUS = '#FFFFFF';
 const STROKE_WIDTH_MAPPED = 1.5;
 const STROKE_WIDTH_METROBUS = 1.5;
-const STROKE_WIDTH_UNMAPPED = 0;
+const STROKE_WIDTH_UNMAPPED = 1;
 
 interface FleetFeatureProperties {
   id: string;

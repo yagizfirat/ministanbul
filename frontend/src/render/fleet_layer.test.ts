@@ -44,7 +44,7 @@ describe('buildFleetPaint', () => {
     expect(w[2]).toBe(1.5); // metrobus → border
     expect(w[3]).toEqual(['has', 'route_id']);
     expect(w[4]).toBe(1.5); // mapped bus → border
-    expect(w[5]).toBe(0);   // unmapped bus → no border
+    expect(w[5]).toBe(1);   // unmapped bus → 1px border
   });
 
   it('uses an interpolate expression for circle-radius (zoom-driven)', () => {
@@ -142,7 +142,7 @@ describe('buildFleetPaint', () => {
   });
 
   it('manually evaluates the 3-branch stroke-width case for metrobus / mapped / unmapped', () => {
-    // KM-c: case [is_metrobus → 1.5] ; case [has route_id → 1.5] ; else 0.
+    // KM-c: case [is_metrobus → 1.5] ; case [has route_id → 1.5] ; else 1.
     const expr = buildFleetPaint()['circle-stroke-width'] as readonly unknown[];
     const ev = (props: Record<string, unknown>): number => {
       // [case, isMetrobusCase, w_metrobus, hasRouteIdCase, w_mapped, w_unmapped]
@@ -152,7 +152,7 @@ describe('buildFleetPaint', () => {
     };
     expect(ev({ id: 'x', is_metrobus: true })).toBe(1.5);
     expect(ev({ id: 'x', route_id: '34A' })).toBe(1.5);
-    expect(ev({ id: 'x' })).toBe(0); // unmapped bus
+    expect(ev({ id: 'x' })).toBe(1); // unmapped bus
     // Metrobus + null route_id (gerçek senaryo) → border korunur
     expect(ev({ id: 'x', is_metrobus: true })).toBe(1.5);
   });
