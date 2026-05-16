@@ -89,7 +89,7 @@ def _make_adapter(redis_client) -> IettSoapAdapter:
     )
 
 
-@shared_task(name="apps.realtime.refresh_iett_mapping", bind=True)
+@shared_task(name="apps.realtime.tasks.refresh_iett_mapping", bind=True)
 def refresh_iett_mapping(self) -> dict:
     """Fetch the appropriate İETT archive, build mapping, write to Redis.
 

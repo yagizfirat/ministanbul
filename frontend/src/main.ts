@@ -38,7 +38,7 @@ import { showToast } from './ui/toast';
 import { showVehiclePopup } from './ui/vehicle_popup';
 
 const ISTANBUL_CENTER: [number, number] = [29.00, 41.04];
-const STYLE_URL = 'https://tiles.openfreemap.org/styles/bright';
+const STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
 const REST_FALLBACK_DELAY_MS = 5_000;
 const REST_POLL_INTERVAL_MS = 60_000;
 
